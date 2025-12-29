@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.4] - 2025-12-29
+
+### 🐛 Bug Fix
+- Added shebang (`#!/usr/bin/env node`) to fix npx execution on Windows.
+
 ## [v0.1.3] - 2025-12-29
 
 ### 🔧 CI/CD
