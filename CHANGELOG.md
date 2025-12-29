@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.6] - 2025-12-29
+
+### 🔒 Concurrency Safety
+- **AsyncMutex Lock**: Implemented mutex-based concurrency control to prevent race conditions during simultaneous file writes.
+- Protected write operations:
+  - Discussion: `addGlobalLog()`, `pruneGlobalLogs()`, `clearGlobalLogs()`
+  - Registry: `saveProjectManifest()`, `renameProject()`, `deleteProject()`
+
+### 📦 Schema v2.0
+- **Manifest Schema Enhancements**: Added new optional fields for enterprise coordination:
+  - `apiDependencies`: Map of projectId to version constraint (e.g., `">=v2.1"`)
+  - `gatewayCompatibility`: Gateway version compatibility string
+  - `api_versions`: Feature-level API versions
+  - `feature_tier`: Capability tier declaration (`"free"` | `"pro"` | `"enterprise"`)
+
+### ✅ Tests
+- All 13 unit tests passing.
+
 ## [v0.1.5] - 2025-12-29
 
 ### 🚀 Major Features

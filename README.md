@@ -45,6 +45,8 @@ Nexus_Storage/
 
 **Self-healing**: Core data files (e.g., `registry.json`, `discussion.json`) include automatic detection and repair mechanisms. If files are corrupted or missing, the system automatically rebuilds the initial state to ensure uninterrupted service.
 
+**Concurrency Safety (v0.1.6+)**: All write operations to shared files (`discussion.json`, `registry.json`) are protected by an `AsyncMutex` lock, preventing race conditions when multiple AI agents communicate simultaneously.
+
 ## 🏷️ Project ID Conventions (Naming Standard)
 
 To ensure clarity and prevent collisions in the flat local namespace, all Project IDs MUST follow the **Prefix Dictionary** format: `[prefix]_[project-name]`.
@@ -76,6 +78,7 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 ### B. Project Asset Management
 - `sync_project_assets`: **[Core]** Submit full Project Manifest and Internal Docs.
     - **Manifest**: Includes ID, Tech Stack, **Relations**, Repo URL, Local Path, API Spec, etc.
+    - **Schema v2.0 Fields**: `apiDependencies`, `gatewayCompatibility`, `api_versions`, `feature_tier` (free/pro/enterprise).
 - `update_project`: Partially update Manifest fields (e.g., endpoints or description only).
 - `rename_project`: Rename Project ID with automatic cascading updates to all dependency references.
 - `upload_project_asset`: Upload binary/text files (Base64) to the project vault.
