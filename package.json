@@ -1,15 +1,46 @@
 {
-    "name": "n2ns-nexus",
+    "name": "@datafrog-io/n2n-nexus",
     "version": "0.1.0",
     "description": "Unified Project Asset & Collaboration Hub (MCP Server) designed for AI agent coordination, featuring structured metadata, real-time messaging, and dependency topology.",
     "main": "build/index.js",
     "type": "module",
+    "bin": {
+        "n2ns-nexus": "build/index.js"
+    },
+    "files": [
+        "build",
+        "README.md",
+        "LICENSE"
+    ],
+    "keywords": [
+        "mcp",
+        "mcp-server",
+        "ai-agent",
+        "agent-coordination",
+        "project-management",
+        "local-first",
+        "collaboration"
+    ],
+    "author": "Antigravity Dev Team",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/n2ns/n2ns-nexus.git"
+    },
+    "homepage": "https://github.com/n2ns/n2ns-nexus",
+    "bugs": {
+        "url": "https://github.com/n2ns/n2ns-nexus/issues"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
     "scripts": {
         "build": "tsc",
         "start": "node build/index.js",
         "dev": "tsc -w",
         "test": "vitest run",
-        "lint": "eslint src/**"
+        "lint": "eslint src/**",
+        "prepublishOnly": "npm run build"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "1.25.1"

@@ -74,32 +74,41 @@ Nexus_Storage/
 
 ## 🚀 快速启动
 
-### 1. 构建环境
-```bash
-cd n2ns-nexus
-npm install
-npm run build
-```
-
-### 2. MCP 配置示例
-在你的 MCP 配置文件中（如 `claude_desktop_config.json` 或 Cursor MCP List）：
+### MCP 配置（推荐）
+在你的 MCP 配置文件中（如 `claude_desktop_config.json` 或 Cursor MCP 设置）添加：
 
 ```json
 {
   "mcpServers": {
-    "n2ns-nexus": {
-      "command": "node",
+    "n2n-nexus": {
+      "command": "npx",
       "args": [
-        "D:/DevSpace/MCP_n2ns-nexus/build/index.js",
+        "-y",
+        "@datafrog-io/n2n-nexus",
         "--id", "Master-AI",
         "--moderator-id", "Master-AI",
-        "--root", "D:/DevSpace/Nexus_Storage" 
+        "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
   }
 }
 ```
-*注意：`root` 参数指定了所有 Nexus 数据的物理存储位置。*
+
+### 命令行参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--id` | 当前 AI 助手的实例标识符 | `Assistant` |
+| `--moderator-id` | 管理员 ID（拥有维护权限） | *(无)* |
+| `--root` | 本地数据存储路径 | `./storage` |
+
+### 本地开发
+```bash
+git clone https://github.com/n2ns/n2ns-nexus.git
+cd n2ns-nexus
+npm install
+npm run build
+npm start -- --id Master-AI --root ./my-storage
+```
 
 ---
 © 2025 Antigravity Dev Team. Built for Local-Only AI Workflows.

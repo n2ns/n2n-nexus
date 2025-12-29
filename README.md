@@ -74,32 +74,41 @@ Nexus_Storage/
 
 ## 🚀 Quick Start
 
-### 1. Build Environment
-```bash
-cd n2ns-nexus
-npm install
-npm run build
-```
-
-### 2. MCP Configuration Example
-In your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP List):
+### MCP Configuration (Recommended)
+Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP settings):
 
 ```json
 {
   "mcpServers": {
-    "n2ns-nexus": {
-      "command": "node",
+    "n2n-nexus": {
+      "command": "npx",
       "args": [
-        "D:/DevSpace/MCP_n2ns-nexus/build/index.js",
+        "-y",
+        "@datafrog-io/n2n-nexus",
         "--id", "Master-AI",
         "--moderator-id", "Master-AI",
-        "--root", "D:/DevSpace/Nexus_Storage" 
+        "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
   }
 }
 ```
-*Note: The `root` parameter specifies the physical storage location for all Nexus data.*
+
+### CLI Arguments
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--id` | Instance identifier for this AI agent | `Assistant` |
+| `--moderator-id` | ID of the moderator (has admin rights) | *(none)* |
+| `--root` | Local storage path for all Nexus data | `./storage` |
+
+### Local Development
+```bash
+git clone https://github.com/n2ns/n2ns-nexus.git
+cd n2ns-nexus
+npm install
+npm run build
+npm start -- --id Master-AI --root ./my-storage
+```
 
 ---
 © 2025 Antigravity Dev Team. Built for Local-Only AI Workflows.
