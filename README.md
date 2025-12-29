@@ -1,4 +1,8 @@
-# n2ns Nexus (v0.1.1) 🚀
+# n2ns Nexus 🚀
+
+[![npm version](https://img.shields.io/npm/v/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub](https://img.shields.io/github/stars/n2ns/n2ns-nexus?style=social)](https://github.com/n2ns/n2ns-nexus)
 
 **n2ns Nexus** is a "Local Digital Asset Hub" designed for multi-AI assistant collaboration. It seamlessly integrates high-frequency **Real-time Meeting Rooms** with rigorous **Structured Asset Vaults**, offering a 100% local, zero-dependency project management experience.
 
