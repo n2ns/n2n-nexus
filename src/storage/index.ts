@@ -3,7 +3,47 @@ import path from "path";
 import { CONFIG } from "../config.js";
 import { DiscussionMessage, ProjectManifest, Registry } from "../types.js";
 
+/**
+ * Simple mutex lock for preventing concurrent file writes.
+ * Ensures that only one write operation can happen at a time.
+ */
+class AsyncMutex {
+    private locked = false;
+    private queue: Array<() => void> = [];
+
+    async acquire(): Promise<void> {
+        if (!this.locked) {
+            this.locked = true;
+            return;
+        }
+        return new Promise<void>((resolve) => {
+            this.queue.push(resolve);
+        });
+    }
+
+    release(): void {
+        if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            next?.();
+        } else {
+            this.locked = false;
+        }
+    }
+
+    async withLock<T>(fn: () => Promise<T>): Promise<T> {
+        await this.acquire();
+        try {
+            return await fn();
+        } finally {
+            this.release();
+        }
+    }
+}
+
 export class StorageManager {
+    // --- Concurrency Control ---
+    private static discussionLock = new AsyncMutex();
+    private static registryLock = new AsyncMutex();
     // --- Path Definitions ---
     static get globalDir() { return path.join(CONFIG.rootStorage, "global"); }
     static get globalBlueprint() { return path.join(this.globalDir, "blueprint.md"); }
@@ -62,6 +102,10 @@ export class StorageManager {
         return JSON.parse(await fs.readFile(p, "utf-8"));
     }
 
+    /**
+     * Save a project manifest and update the global registry.
+     * Uses mutex lock to prevent concurrent registry write conflicts.
+     */
     static async saveProjectManifest(manifest: ProjectManifest) {
         const id = manifest.id;
         if (!id) throw new Error("Manifest ID is missing.");
@@ -70,14 +114,16 @@ export class StorageManager {
         await fs.mkdir(projectDir, { recursive: true });
         await fs.writeFile(path.join(projectDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
-        // Update global registry
-        const registry = await this.listRegistry();
-        registry.projects[id] = {
-            name: manifest.name,
-            summary: manifest.description,
-            lastActive: new Date().toISOString()
-        };
-        await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2));
+        // Update global registry with lock
+        await this.registryLock.withLock(async () => {
+            const registry = await this.listRegistry();
+            registry.projects[id] = {
+                name: manifest.name,
+                summary: manifest.description,
+                lastActive: new Date().toISOString()
+            };
+            await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2));
+        });
     }
 
     static async saveAsset(id: string, fileName: string, content: string | Buffer) {
@@ -106,15 +152,21 @@ export class StorageManager {
     }
 
     // --- Discussion & Log Management ---
+    /**
+     * Add a message to the global discussion log.
+     * Uses mutex lock to prevent concurrent write conflicts.
+     */
     static async addGlobalLog(from: string, text: string, category?: DiscussionMessage["category"]) {
-        const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-        logs.push({ 
-            timestamp: new Date().toISOString(), 
-            from, 
-            text,
-            category 
+        await this.discussionLock.withLock(async () => {
+            const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
+            logs.push({
+                timestamp: new Date().toISOString(),
+                from,
+                text,
+                category
+            });
+            await fs.writeFile(this.globalDiscussion, JSON.stringify(logs, null, 2));
         });
-        await fs.writeFile(this.globalDiscussion, JSON.stringify(logs, null, 2));
     }
 
     static async getRecentLogs(count: number = 10): Promise<DiscussionMessage[]> {
@@ -139,13 +191,25 @@ export class StorageManager {
         return this.loadJsonSafe<Registry>(this.registryFile, { projects: {} });
     }
 
+    /**
+     * Prune global logs, keeping only messages after the specified count.
+     * Uses mutex lock to prevent concurrent write conflicts.
+     */
     static async pruneGlobalLogs(count: number) {
-        const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-        await fs.writeFile(this.globalDiscussion, JSON.stringify(logs.slice(count), null, 2));
+        await this.discussionLock.withLock(async () => {
+            const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
+            await fs.writeFile(this.globalDiscussion, JSON.stringify(logs.slice(count), null, 2));
+        });
     }
 
+    /**
+     * Clear all global logs.
+     * Uses mutex lock to prevent concurrent write conflicts.
+     */
     static async clearGlobalLogs() {
-        await fs.writeFile(this.globalDiscussion, "[]");
+        await this.discussionLock.withLock(async () => {
+            await fs.writeFile(this.globalDiscussion, "[]");
+        });
     }
 
     // --- Global Document Management ---
@@ -245,47 +309,55 @@ export class StorageManager {
             await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
         }
 
-        // 3. Update registry
-        const registry = await this.listRegistry();
-        if (registry.projects[oldId]) {
-            registry.projects[newId] = registry.projects[oldId];
-            delete registry.projects[oldId];
-            await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
-        }
-
-        // 4. Cascade: Update relations in ALL other projects
+        // 3. Update registry with lock and cascade updates
         let updatedCount = 0;
-        const projectIds = Object.keys(registry.projects);
-        for (const id of projectIds) {
-            if (id === newId) continue; // Skip the renamed project itself
-            const otherManifest = await this.getProjectManifest(id);
-            if (!otherManifest || !otherManifest.relations) continue;
+        await this.registryLock.withLock(async () => {
+            const registry = await this.listRegistry();
+            if (registry.projects[oldId]) {
+                registry.projects[newId] = registry.projects[oldId];
+                delete registry.projects[oldId];
+                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
+            }
 
-            let changed = false;
-            for (const rel of otherManifest.relations) {
-                if (rel.targetId === oldId) {
-                    rel.targetId = newId;
-                    changed = true;
+            // 4. Cascade: Update relations in ALL other projects
+            const projectIds = Object.keys(registry.projects);
+            for (const id of projectIds) {
+                if (id === newId) continue; // Skip the renamed project itself
+                const otherManifest = await this.getProjectManifest(id);
+                if (!otherManifest || !otherManifest.relations) continue;
+
+                let changed = false;
+                for (const rel of otherManifest.relations) {
+                    if (rel.targetId === oldId) {
+                        rel.targetId = newId;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    // Note: saveProjectManifest will try to acquire registryLock again,
+                    // but since we're already holding it, we write directly here
+                    const projectDir = path.join(this.projectsRoot, id);
+                    await fs.writeFile(path.join(projectDir, "manifest.json"), JSON.stringify(otherManifest, null, 2));
+                    updatedCount++;
                 }
             }
-            if (changed) {
-                await this.saveProjectManifest(otherManifest);
-                updatedCount++;
-            }
-        }
+        });
 
         return updatedCount;
     }
 
     /**
      * Delete a project from the registry and disk.
+     * Uses mutex lock to prevent concurrent registry write conflicts.
      */
     static async deleteProject(id: string): Promise<void> {
-        const registry = await this.listRegistry();
-        if (registry.projects[id]) {
-            delete registry.projects[id];
-            await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
-        }
+        await this.registryLock.withLock(async () => {
+            const registry = await this.listRegistry();
+            if (registry.projects[id]) {
+                delete registry.projects[id];
+                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
+            }
+        });
 
         const projectDir = path.join(this.projectsRoot, id);
         if (await this.exists(projectDir)) {

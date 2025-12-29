@@ -10,6 +10,12 @@ export interface ProjectManifest {
     localPath: string; // Physical disk path of the project (required)
     endpoints: { name: string; url: string; description: string }[];
     apiSpec: { method: string; path: string; summary: string }[];
+
+    // Schema v2.0 - Enhanced dependency tracking and versioning
+    apiDependencies?: Record<string, string>; // Map of projectId to version constraint (e.g., ">=v2.1")
+    gatewayCompatibility?: string; // Gateway version compatibility (e.g., ">=v2.1")
+    api_versions?: Record<string, string>; // Feature-level API versions (e.g., "client_id_alias": "v3.6.20")
+    feature_tier?: "free" | "pro" | "enterprise"; // Feature tier declaration for capability detection
 }
 
 export interface DiscussionMessage {
