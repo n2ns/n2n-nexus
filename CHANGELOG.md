@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.3] - 2025-12-29
+
+### 🔧 CI/CD
+- Switched to npm Trusted Publishing (OIDC) - no more NPM_TOKEN needed.
+- Upgraded to Node.js 22 for npm 11.5.1+ support.
+- Added `--provenance` flag for supply chain security.
+
 ## [v0.1.2] - 2025-12-29
 
 ### 🔧 Refactoring
