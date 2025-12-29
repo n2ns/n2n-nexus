@@ -5,7 +5,7 @@
     "main": "build/index.js",
     "type": "module",
     "bin": {
-        "n2ns-nexus": "build/index.js"
+        "n2n-nexus": "build/index.js"
     },
     "files": [
         "build",
@@ -25,11 +25,11 @@
     "license": "Apache-2.0",
     "repository": {
         "type": "git",
-        "url": "https://github.com/n2ns/n2ns-nexus.git"
+        "url": "https://github.com/n2ns/n2n-nexus.git"
     },
-    "homepage": "https://github.com/n2ns/n2ns-nexus",
+    "homepage": "https://github.com/n2ns/n2n-nexus",
     "bugs": {
-        "url": "https://github.com/n2ns/n2ns-nexus/issues"
+        "url": "https://github.com/n2ns/n2n-nexus/issues"
     },
     "engines": {
         "node": ">=18.0.0"

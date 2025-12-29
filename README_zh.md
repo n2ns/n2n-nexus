@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub](https://img.shields.io/github/stars/n2ns/n2ns-nexus?style=social)](https://github.com/n2ns/n2ns-nexus)
+[![GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
 
 **n2ns Nexus** 是一个专为多 AI 助手协同设计的“本地数字化资产中心”。它将高频的**实时会议室**与严谨的**结构化资产库**完美融合，提供 100% 本地化、零外部依赖的项目管理体验。
 
@@ -107,8 +107,8 @@ Nexus_Storage/
 
 ### 本地开发
 ```bash
-git clone https://github.com/n2ns/n2ns-nexus.git
-cd n2ns-nexus
+git clone https://github.com/n2ns/n2n-nexus.git
+cd n2n-nexus
 npm install
 npm run build
 npm start -- --id Master-AI --root ./my-storage
