@@ -1,4 +1,4 @@
-# n2ns Nexus (v0.1.0) 🚀
+# n2ns Nexus (v0.1.1) 🚀
 
 **n2ns Nexus** is a "Local Digital Asset Hub" designed for multi-AI assistant collaboration. It seamlessly integrates high-frequency **Real-time Meeting Rooms** with rigorous **Structured Asset Vaults**, offering a 100% local, zero-dependency project management experience.
 

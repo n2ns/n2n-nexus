@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.1] - 2025-12-29
+
+### 📦 npm Release
+- Published to npm as `@datafrog-io/n2n-nexus`.
+- Updated README with `npx` configuration for easy MCP integration.
+- Added CLI arguments documentation table.
+
 ## [v0.1.0] - 2025-12-29
 
 ### 🚀 Major Features
