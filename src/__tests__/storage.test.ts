@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { StorageManager } from "../storage.js";
+import { StorageManager } from "../storage/index.js";
 import { ProjectManifest } from "../types.js";
 import { promises as fs } from "fs";
 import path from "path";

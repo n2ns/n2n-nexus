@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "./config.js";
-import { DiscussionMessage, ProjectManifest, Registry } from "./types.js";
+import { CONFIG } from "../config.js";
+import { DiscussionMessage, ProjectManifest, Registry } from "../types.js";
 
 export class StorageManager {
     // --- Path Definitions ---
@@ -147,7 +147,7 @@ export class StorageManager {
         await this.loadJsonSafe(this.globalDocIndexFile, {});
     }
 
-    static async listGlobalDocs(): Promise<import("./types.js").GlobalDocIndex> {
+    static async listGlobalDocs(): Promise<import("../types.js").GlobalDocIndex> {
         await this.initGlobalDocs();
         return this.loadJsonSafe(this.globalDocIndexFile, {});
     }
