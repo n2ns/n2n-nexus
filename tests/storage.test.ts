@@ -102,4 +102,19 @@ describe("StorageManager", () => {
         expect(topo.edges).toHaveLength(1);
         expect(topo.edges[0]).toMatchObject({ from: "prj-a", to: "prj-b", type: "dependency" });
     });
+
+    it("should delete project correctly", async () => {
+        await StorageManager.saveProjectManifest({
+            id: "prj-del", name: "D", description: "D", techStack: [],
+            relations: [], lastUpdated: "", repositoryUrl: "", localPath: TEST_ROOT, endpoints: [], apiSpec: []
+        });
+        
+        expect(await StorageManager.getProjectManifest("prj-del")).not.toBeNull();
+        
+        await StorageManager.deleteProject("prj-del");
+        
+        expect(await StorageManager.getProjectManifest("prj-del")).toBeNull();
+        const exists = await StorageManager.exists(path.join(StorageManager.projectsRoot, "prj-del"));
+        expect(exists).toBe(false);
+    });
 });

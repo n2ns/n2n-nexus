@@ -68,11 +68,20 @@ export async function listResources() {
             { uri: "mcp://hub/registry", name: "Global Project Registry", description: "Consolidated index of all local projects." },
             { uri: "mcp://docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination." },
             { uri: "mcp://nexus/session", name: "Current Session Info", description: "Your identity and role in this Nexus instance." },
-            ...projectIds.map(id => ({
-                uri: `mcp://hub/projects/${id}/manifest`,
-                name: `Manifest: ${id}`,
-                description: `Structured metadata (Tech stack, relations) for ${id}`
-            }))
+            ...projectIds.map(id => {
+                const prefix = id.split("_")[0];
+                const typeLabel = {
+                    web: "🌐 Website", api: "⚙️ API", chrome: "🧩 Chrome Ext",
+                    vscode: "💻 VSCode Ext", mcp: "🔌 MCP Server", android: "📱 Android",
+                    ios: "🍎 iOS", flutter: "📲 Flutter", desktop: "🖥️ Desktop",
+                    lib: "📦 Library", bot: "🤖 Bot", infra: "☁️ Infra", doc: "📄 Docs"
+                }[prefix] || "📁 Project";
+                return {
+                    uri: `mcp://hub/projects/${id}/manifest`,
+                    name: `${typeLabel}: ${id}`,
+                    description: `Structured metadata (Tech stack, relations) for ${id}`
+                };
+            })
         ],
         resourceTemplates: [
             { uriTemplate: "mcp://hub/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." }

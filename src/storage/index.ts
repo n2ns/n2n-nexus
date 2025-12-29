@@ -106,10 +106,20 @@ export class StorageManager {
     }
 
     // --- Discussion & Log Management ---
-    static async addGlobalLog(from: string, text: string) {
+    static async addGlobalLog(from: string, text: string, category?: DiscussionMessage["category"]) {
         const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-        logs.push({ timestamp: new Date().toISOString(), from, text });
+        logs.push({ 
+            timestamp: new Date().toISOString(), 
+            from, 
+            text,
+            category 
+        });
         await fs.writeFile(this.globalDiscussion, JSON.stringify(logs, null, 2));
+    }
+
+    static async getRecentLogs(count: number = 10): Promise<DiscussionMessage[]> {
+        const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
+        return logs.slice(-count);
     }
 
     static async getProjectDocs(id: string) {
@@ -265,5 +275,21 @@ export class StorageManager {
         }
 
         return updatedCount;
+    }
+
+    /**
+     * Delete a project from the registry and disk.
+     */
+    static async deleteProject(id: string): Promise<void> {
+        const registry = await this.listRegistry();
+        if (registry.projects[id]) {
+            delete registry.projects[id];
+            await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
+        }
+
+        const projectDir = path.join(this.projectsRoot, id);
+        if (await this.exists(projectDir)) {
+            await fs.rm(projectDir, { recursive: true, force: true });
+        }
     }
 }

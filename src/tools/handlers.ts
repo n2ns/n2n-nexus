@@ -8,6 +8,21 @@ import { ProjectManifest } from "../types.js";
 export interface ToolContext {
     currentProject: string | null;
     setCurrentProject: (id: string) => void;
+    notifyResourceUpdate: (uri: string) => void;
+}
+
+/**
+ * Validation helper for Project IDs.
+ */
+function validateProjectId(id: string) {
+    if (!id) throw new McpError(ErrorCode.InvalidParams, "Project ID cannot be empty.");
+    
+    const validPrefixes = ["web_", "api_", "chrome_", "vscode_", "mcp_", "android_", "ios_", "flutter_", "desktop_", "lib_", "bot_", "infra_", "doc_"];
+    const hasPrefix = validPrefixes.some(p => id.startsWith(p));
+    
+    if (!hasPrefix || id.includes("..") || id.startsWith("/") || id.endsWith("/")) {
+        throw new McpError(ErrorCode.InvalidParams, "Project ID must follow the standard '[prefix]_[technical-name]' format and cannot contain '..' or slashes.");
+    }
 }
 
 /**
@@ -37,10 +52,13 @@ export async function handleToolCall(
             return handleReadProject(toolArgs as { projectId: string; include?: string });
 
         case "post_global_discussion":
-            return handlePostDiscussion(toolArgs as { message: string }, ctx);
+            return handlePostDiscussion(toolArgs as { message: string; category?: any }, ctx);
+
+        case "read_recent_discussion":
+            return handleReadRecentDiscussion(toolArgs as { count?: number });
 
         case "update_global_strategy":
-            return handleUpdateStrategy(toolArgs as { content: string });
+            return handleUpdateStrategy(toolArgs as { content: string }, ctx);
 
         case "sync_global_doc":
             return handleSyncGlobalDoc(toolArgs as { docId: string; title: string; content: string });
@@ -55,10 +73,16 @@ export async function handleToolCall(
             return handleUpdateProject(toolArgs as { projectId: string; patch: Partial<ProjectManifest> });
 
         case "rename_project":
-            return handleRenameProject(toolArgs as { oldId: string; newId: string });
+            return handleRenameProject(toolArgs as { oldId: string; newId: string }, ctx);
+
+        case "list_projects":
+            return handleListProjects();
+
+        case "delete_project":
+            return handleRemoveProject(toolArgs as { projectId: string }, ctx);
 
         case "moderator_maintenance":
-            return handleModeratorMaintenance(toolArgs as { action: "prune" | "clear"; count: number });
+            return handleModeratorMaintenance(toolArgs as { action: "prune" | "clear"; count: number }, ctx);
 
         default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -69,6 +93,7 @@ export async function handleToolCall(
 
 function handleRegisterSession(args: { projectId: string }, ctx: ToolContext) {
     if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: projectId");
+    validateProjectId(args.projectId);
     ctx.setCurrentProject(args.projectId);
     return { content: [{ type: "text", text: `Active Nexus Context: ${args.projectId}` }] };
 }
@@ -85,13 +110,14 @@ async function handleSyncProjectAssets(
     }
 
     const m = args.manifest;
-    if (!m.id || !m.name || !m.description || !m.techStack || !m.relations || !m.lastUpdated || !m.repositoryUrl || !m.localPath || !m.endpoints || !m.apiSpec) {
-        throw new McpError(ErrorCode.InvalidParams, "Project manifest incomplete. Required: id, name, description, techStack, relations, lastUpdated, repositoryUrl, localPath, endpoints, apiSpec.");
+    const requiredFields = ["id", "name", "description", "techStack", "relations", "lastUpdated", "repositoryUrl", "localPath", "endpoints", "apiSpec"];
+    for (const field of requiredFields) {
+        if ((m as any)[field] === undefined || (m as any)[field] === null) {
+            throw new McpError(ErrorCode.InvalidParams, `Project manifest incomplete. Missing field: ${field}`);
+        }
     }
 
-    if (m.id.includes("..") || m.id.startsWith("/") || m.id.endsWith("/")) {
-        throw new McpError(ErrorCode.InvalidParams, "Project ID cannot contain '..' or start/end with '/'. Use '/' for namespacing (e.g., 'parent/child').");
-    }
+    validateProjectId(m.id);
 
     if (!await StorageManager.exists(m.localPath)) {
         throw new McpError(ErrorCode.InvalidParams, `localPath does not exist: '${m.localPath}'. Please provide a valid directory path.`);
@@ -100,6 +126,12 @@ async function handleSyncProjectAssets(
     await StorageManager.saveProjectManifest(m);
     await StorageManager.saveProjectDocs(ctx.currentProject, args.internalDocs);
     await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}@${ctx.currentProject}] Asset Sync: Full sync of manifest and docs.`);
+
+    // Notify updates
+    ctx.notifyResourceUpdate(`mcp://hub/projects/${m.id}/manifest`);
+    ctx.notifyResourceUpdate(`mcp://hub/projects/${m.id}/internal-docs`);
+    ctx.notifyResourceUpdate("mcp://hub/registry");
+    ctx.notifyResourceUpdate("mcp://chat/global");
 
     return { content: [{ type: "text", text: "Project assets synchronized (Manifest + Docs)." }] };
 }
@@ -180,14 +212,18 @@ async function handleUpdateProject(args: { projectId: string; patch: Partial<Pro
     return { content: [{ type: "text", text: `Project '${args.projectId}' updated. Changed fields: ${changedFields}.` }] };
 }
 
-async function handleRenameProject(args: { oldId: string; newId: string }) {
+async function handleRenameProject(args: { oldId: string; newId: string }, ctx: ToolContext) {
     if (!args?.oldId || !args?.newId) {
         throw new McpError(ErrorCode.InvalidParams, "Both 'oldId' and 'newId' are required.");
     }
-    if (args.newId.includes("..") || args.newId.startsWith("/") || args.newId.endsWith("/")) {
-        throw new McpError(ErrorCode.InvalidParams, "New ID cannot contain '..' or start/end with '/'.");
-    }
+    validateProjectId(args.newId);
     const updatedCount = await StorageManager.renameProject(args.oldId, args.newId);
+    
+    // Notify all affected project resources and registry
+    ctx.notifyResourceUpdate("mcp://hub/registry");
+    ctx.notifyResourceUpdate(`mcp://hub/projects/${args.newId}/manifest`);
+    ctx.notifyResourceUpdate("mcp://get_global_topology"); // Topology changed
+
     return { content: [{ type: "text", text: `Project renamed: '${args.oldId}' → '${args.newId}'. Cascading updates: ${updatedCount} project(s).` }] };
 }
 
@@ -198,17 +234,37 @@ async function handleGetTopology() {
     return { content: [{ type: "text", text: JSON.stringify(topo, null, 2) }] };
 }
 
-async function handlePostDiscussion(args: { message: string }, ctx: ToolContext) {
+async function handlePostDiscussion(args: { message: string; category?: any }, ctx: ToolContext) {
     if (!args?.message) throw new McpError(ErrorCode.InvalidParams, "Message content cannot be empty.");
-    await StorageManager.addGlobalLog(`${CONFIG.instanceId}@${ctx.currentProject || "Global"}`, args.message);
-    return { content: [{ type: "text", text: "Message broadcasted." }] };
+    await StorageManager.addGlobalLog(`${CONFIG.instanceId}@${ctx.currentProject || "Global"}`, args.message, args.category);
+    
+    // Notify chat resource update
+    ctx.notifyResourceUpdate("mcp://chat/global");
+
+    return { content: [{ type: "text", text: `Message broadcasted to Nexus Room${args.category ? ` [${args.category}]` : ""}.` }] };
 }
 
-async function handleUpdateStrategy(args: { content: string }) {
+async function handleReadRecentDiscussion(args: { count?: number }) {
+    const count = args?.count || 10;
+    const logs = await StorageManager.getRecentLogs(count);
+    return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
+}
+
+async function handleUpdateStrategy(args: { content: string }, ctx: ToolContext) {
     if (!args?.content) throw new McpError(ErrorCode.InvalidParams, "Strategy content cannot be empty.");
     await fs.writeFile(StorageManager.globalBlueprint, args.content);
     await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Updated Coordination Strategy.`);
+    
+    // Notify strategy update
     return { content: [{ type: "text", text: "Strategy updated." }] };
+}
+
+async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext) {
+    if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "projectId is required.");
+    await StorageManager.deleteProject(args.projectId);
+    ctx.notifyResourceUpdate("mcp://hub/registry");
+    ctx.notifyResourceUpdate("mcp://get_global_topology");
+    return { content: [{ type: "text", text: `Project '${args.projectId}' removed from Nexus.` }] };
 }
 
 async function handleSyncGlobalDoc(args: { docId: string; title: string; content: string }) {
@@ -234,17 +290,32 @@ async function handleReadGlobalDoc(args: { docId: string }) {
 
 // --- Admin Handlers ---
 
-async function handleModeratorMaintenance(args: { action: "prune" | "clear"; count: number }) {
+async function handleListProjects() {
+    const registry = await StorageManager.listRegistry();
+    const projects = Object.entries(registry.projects).map(([id, p]) => ({
+        id,
+        name: p.name,
+        summary: p.summary,
+        lastActive: p.lastActive
+    }));
+    return { content: [{ type: "text", text: JSON.stringify(projects, null, 2) }] };
+}
+
+// --- Admin Handlers ---
+
+async function handleModeratorMaintenance(args: { action: "prune" | "clear"; count: number }, ctx: ToolContext) {
     if (!args.action || args.count === undefined) {
         throw new McpError(ErrorCode.InvalidParams, "Both 'action' and 'count' are mandatory for maintenance.");
     }
 
     if (args.action === "clear") {
         await StorageManager.clearGlobalLogs();
+        ctx.notifyResourceUpdate("mcp://chat/global");
         return { content: [{ type: "text", text: "History wiped." }] };
     } else {
         try {
             await StorageManager.pruneGlobalLogs(args.count);
+            ctx.notifyResourceUpdate("mcp://chat/global");
             return { content: [{ type: "text", text: `Pruned ${args.count} logs.` }] };
         } catch {
             return { content: [{ type: "text", text: "Prune operation failed due to malformed logs or missing file." }] };

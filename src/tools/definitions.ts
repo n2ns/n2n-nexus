@@ -4,12 +4,21 @@
 export const TOOL_DEFINITIONS = [
     {
         name: "register_session_context",
-        description: "Declare the project you are currently working on in this IDE session.",
-        inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] }
+        description: "[IDENTITY] Declare the PROJECT identity. Format: [prefix]_[technical-identifier]. (e.g., 'web_datafrog.io', 'mcp_nexus-core').",
+        inputSchema: { 
+            type: "object", 
+            properties: { 
+                projectId: { 
+                    type: "string", 
+                    description: "Strict flat identifier. MUST start with a type-prefix (web_, api_, chrome_, vscode_, mcp_, android_, ios_, flutter_, desktop_, lib_, bot_, infra_, doc_) followed by an underscore and a technical name (Domain for websites, Repo name/Slug for code). Use kebab-case. No hierarchy dots except in domains." 
+                } 
+            }, 
+            required: ["projectId"] 
+        }
     },
     {
         name: "sync_project_assets",
-        description: "CRITICAL: Sync full project state. Both manifest and documentation are MANDATORY.",
+        description: "CRITICAL: [PREREQUISITE: register_session_context] Sync full project state. Both manifest and documentation are MANDATORY.",
         inputSchema: {
             type: "object",
             properties: {
@@ -17,7 +26,7 @@ export const TOOL_DEFINITIONS = [
                     type: "object",
                     description: "Full ProjectManifest metadata.",
                     properties: {
-                        id: { type: "string" },
+                        id: { type: "string", description: "Project ID. MUST follow '[prefix]_[technical-name]' format and match active session." },
                         name: { type: "string" },
                         description: { type: "string" },
                         techStack: { type: "array", items: { type: "string" } },
@@ -26,13 +35,13 @@ export const TOOL_DEFINITIONS = [
                             items: {
                                 type: "object",
                                 properties: {
-                                    targetId: { type: "string" },
+                                    targetId: { type: "string", description: "ID of the target project (e.g., 'acme.auth-service')." },
                                     type: { type: "string", enum: ["dependency", "parent", "child", "related"] }
                                 },
                                 required: ["targetId", "type"]
                             }
                         },
-                        lastUpdated: { type: "string", description: "ISO timestamp." },
+                        lastUpdated: { type: "string", description: "ISO timestamp (e.g., 2025-12-29T...)." },
                         repositoryUrl: { type: "string", description: "GitHub repository URL." },
                         endpoints: {
                             type: "array",
@@ -81,7 +90,12 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "get_global_topology",
-        description: "Retrieve complete project relationship graph.",
+        description: "Retrieve complete project relationship graph. Use this to understand current IDs and their connections.",
+        inputSchema: { type: "object", properties: {} }
+    },
+    {
+        name: "list_projects",
+        description: "List all existing projects registered in the Nexus Hub. Use this to find correct IDs before performing project-specific operations.",
         inputSchema: { type: "object", properties: {} }
     },
     {
@@ -90,7 +104,7 @@ export const TOOL_DEFINITIONS = [
         inputSchema: {
             type: "object",
             properties: {
-                projectId: { type: "string", description: "Project identifier (e.g., 'n2ns.com.backend')" },
+                projectId: { type: "string", description: "Project ID (e.g., 'web_datafrog.io', 'mcp_nexus-hub')." },
                 include: {
                     type: "string",
                     enum: ["manifest", "docs", "repo", "endpoints", "api", "relations", "summary", "all"],
@@ -102,8 +116,29 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "post_global_discussion",
-        description: "Broadcast a message. Content is MANDATORY.",
-        inputSchema: { type: "object", properties: { message: { type: "string" } }, required: ["message"] }
+        description: "Join the 'Nexus Meeting Room' to collaborate with other AI agents. Use this for initiating meetings, making cross-project proposals, or announcing key decisions. Every message is shared across all assistants in real-time.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                message: { type: "string", description: "The core content of your speech, proposal, or announcement." },
+                category: { 
+                    type: "string", 
+                    enum: ["MEETING_START", "PROPOSAL", "DECISION", "UPDATE", "CHAT"],
+                    description: "The nature of this message. Use MEETING_START to call for a synchronous discussion."
+                }
+            },
+            required: ["message"]
+        }
+    },
+    {
+        name: "read_recent_discussion",
+        description: "Quickly 'listen' to the last few messages in the Nexus Room to catch up on the context of the current meeting or collaboration.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                count: { type: "number", description: "Number of recent messages to retrieve (defaults to 10).", default: 10 }
+            }
+        }
     },
     {
         name: "update_global_strategy",
@@ -145,7 +180,7 @@ export const TOOL_DEFINITIONS = [
         inputSchema: {
             type: "object",
             properties: {
-                projectId: { type: "string", description: "Project ID to update" },
+                projectId: { type: "string", description: "Project ID to update (e.g., 'web_datafrog.io')." },
                 patch: {
                     type: "object",
                     description: "Fields to update (e.g., description, techStack, endpoints, apiSpec, relations)",
@@ -161,8 +196,8 @@ export const TOOL_DEFINITIONS = [
         inputSchema: {
             type: "object",
             properties: {
-                oldId: { type: "string", description: "Current project ID" },
-                newId: { type: "string", description: "New project ID" }
+                oldId: { type: "string", description: "Current project ID (e.g., 'web_oldname.com')." },
+                newId: { type: "string", description: "New project ID following the '[prefix]_[name]' standard." }
             },
             required: ["oldId", "newId"]
         }
@@ -177,6 +212,17 @@ export const TOOL_DEFINITIONS = [
                 count: { type: "number", description: "Number of items (use 0 for 'clear')." }
             },
             required: ["action", "count"]
+        }
+    },
+    {
+        name: "delete_project",
+        description: "[ADMIN ONLY] Completely remove a project, its manifest, and all its assets from Nexus.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                projectId: { type: "string", description: "The ID of the project to destroy." }
+            },
+            required: ["projectId"]
         }
     }
 ];

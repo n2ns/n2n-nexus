@@ -45,6 +45,28 @@ Nexus_Storage/
 
 **Self-healing**: Core data files (e.g., `registry.json`, `discussion.json`) include automatic detection and repair mechanisms. If files are corrupted or missing, the system automatically rebuilds the initial state to ensure uninterrupted service.
 
+## 🏷️ Project ID Conventions (Naming Standard)
+
+To ensure clarity and prevent collisions in the flat local namespace, all Project IDs MUST follow the **Prefix Dictionary** format: `[prefix]_[project-name]`.
+
+| Prefix | Category | Example |
+| :--- | :--- | :--- |
+| `web_` | Websites, landing pages, domain-based projects | `web_datafrog.io` |
+| `api_` | Backend services, REST/gRPC APIs | `api_user-auth` |
+| `chrome_` | Chrome extensions | `chrome_evisa-helper` |
+| `vscode_` | VSCode extensions | `vscode_super-theme` |
+| `mcp_` | MCP Servers and MCP-related tools | `mcp_github-repo` |
+| `android_` | Native Android projects (Kotlin/Java) | `android_client-app` |
+| `ios_` | Native iOS projects (Swift/ObjC) | `ios_client-app` |
+| `flutter_` | **Mobile Cross-platform Special Case** | `flutter_unified-app` |
+| `desktop_` | General desktop apps (Tauri, Electron, etc.) | `desktop_main-hub` |
+| `lib_` | Shared libraries, SDKs, NPM/Python packages | `lib_crypto-core` |
+| `bot_` | Bots (Discord, Slack, DingTalk, etc.) | `bot_auto-moderator` |
+| `infra_` | Infrastructure as Code, CI/CD, DevOps scripts | `infra_k8s-config` |
+| `doc_` | Pure technical handbooks, strategies, roadmaps | `doc_coding-guide` |
+
+---
+
 ## 🛠️ Toolset
 
 ### A. Session & Context

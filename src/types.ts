@@ -16,6 +16,7 @@ export interface DiscussionMessage {
     timestamp: string;
     from: string;
     text: string;
+    category?: "MEETING_START" | "PROPOSAL" | "DECISION" | "UPDATE" | "CHAT";
 }
 
 export interface HubConfig {

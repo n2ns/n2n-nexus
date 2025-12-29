@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.5] - 2025-12-29
+
+### 🚀 Major Features
+- **Project ID Naming Convention**: Enforced `[prefix]_[technical-name]` standard with 13 type prefixes (web_, api_, chrome_, vscode_, mcp_, android_, ios_, flutter_, desktop_, lib_, bot_, infra_, doc_).
+- **MCP Prompts Capability**: Added `init_project_nexus` prompt for guiding AI through proper project registration workflow.
+- **delete_project Tool**: New admin tool for complete project removal (manifest, assets, registry entry).
+
+### 🔒 Guardrails
+- Added `validateProjectId()` with runtime regex validation in `handleRegisterSession`, `handleSyncProjectAssets`, and `handleRenameProject`.
+- Projects with invalid ID formats are now rejected at the API level.
+
+### ✨ Enhancements
+- Resource names now display project type icons (e.g., "🌐 Website: web_example.com").
+- Handler unit tests expanded to cover delete, rename, and validation scenarios.
+
+### 📄 Documentation
+- Added "Project ID Conventions" section to README.md.
+- Updated tool descriptions with Prefix Dictionary guidance.
+
 ## [v0.1.4] - 2025-12-29
 
 ### 🐛 Bug Fix

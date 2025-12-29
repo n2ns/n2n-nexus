@@ -2,6 +2,25 @@
 
 本项目的所有重要变更都将记录在此文件中。
 
+## [v0.1.5] - 2025-12-29
+
+### 🚀 主要功能
+- **项目 ID 命名规范**: 强制执行 `[prefix]_[technical-name]` 格式，共 13 种类型前缀 (web_, api_, chrome_, vscode_, mcp_, android_, ios_, flutter_, desktop_, lib_, bot_, infra_, doc_)。
+- **MCP Prompts 能力**: 新增 `init_project_nexus` Prompt，引导 AI 完成规范化项目注册流程。
+- **delete_project 工具**: 新增管理员工具，用于完全删除项目（包括清单、资产、注册表条目）。
+
+### 🔒 防护栏 (Guardrails)
+- 新增 `validateProjectId()` 函数，在 `handleRegisterSession`、`handleSyncProjectAssets`、`handleRenameProject` 中进行运行时正则校验。
+- 非法 ID 格式的项目将在 API 层被拒绝。
+
+### ✨ 增强
+- 资源名称现在显示项目类型图标（如 "🌐 Website: web_example.com"）。
+- Handler 单元测试扩展，覆盖删除、重命名和校验场景。
+
+### 📄 文档
+- 在 README.md 中新增 "Project ID Conventions" 章节。
+- 更新工具描述，加入前缀字典 (Prefix Dictionary) 指引。
+
 ## [v0.1.4] - 2025-12-29
 
 ### 🐛 Bug 修复
