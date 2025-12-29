@@ -4,7 +4,7 @@ import { CONFIG } from "./config.js";
 import { DiscussionMessage, ProjectManifest, Registry } from "./types.js";
 
 export class StorageManager {
-    // --- 路径定义 ---
+    // --- Path Definitions ---
     static get globalDir() { return path.join(CONFIG.rootStorage, "global"); }
     static get globalBlueprint() { return path.join(this.globalDir, "blueprint.md"); }
     static get globalDiscussion() { return path.join(this.globalDir, "discussion.json"); }

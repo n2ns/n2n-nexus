@@ -49,7 +49,7 @@ class NexusServer {
     }
 
     private setupHandlers() {
-        // --- 统一资源列表 ---
+        // --- Unified Resource Listing ---
         this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
             try {
                 const registry = await StorageManager.listRegistry();
@@ -77,7 +77,7 @@ class NexusServer {
             }
         });
 
-        // --- 统一资源读取 ---
+        // --- Unified Resource Reading ---
         this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
             const { uri } = request.params;
             try {
@@ -127,7 +127,7 @@ class NexusServer {
             }
         });
 
-        // --- 统一工具集 ---
+        // --- Unified Toolset ---
         this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
             tools: [
                 {
