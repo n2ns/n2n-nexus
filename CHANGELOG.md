@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.2] - 2025-12-29
+
+### 🔧 Refactoring
+- Modularized codebase into `tools/`, `resources/`, and `storage/` modules.
+- Reduced `index.ts` from 535 to 115 lines.
+- Moved tests from `src/__tests__/` to top-level `tests/` directory.
+
+### 📦 CI/CD
+- Changed GitHub Actions trigger from `release` to tag push (`v*`).
+
+### 📄 Documentation
+- Added npm downloads badge.
+- Fixed repository URLs to `n2n-nexus`.
+
 ## [v0.1.1] - 2025-12-29
 
 ### 📦 npm Release

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { StorageManager } from "../storage/index.js";
-import { ProjectManifest } from "../types.js";
+import { StorageManager } from "../src/storage/index.js";
+import { ProjectManifest } from "../src/types.js";
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../src/config.js";
 
 // Mock fs and CONFIG if needed, or use a temp test directory
 const TEST_ROOT = path.join(process.cwd(), "test-storage");
