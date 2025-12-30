@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     id TEXT PRIMARY KEY,
     topic TEXT NOT NULL,
     status TEXT CHECK(status IN ('active', 'closed', 'archived')) DEFAULT 'active',
+    initiator TEXT,
     participants TEXT DEFAULT '[]',
     created_at TEXT NOT NULL,
     closed_at TEXT,
@@ -73,6 +74,18 @@ export function initDatabase(): Database.Database {
     
     // Initialize schema
     db.exec(SCHEMA);
+    
+    // Migration: Add initiator column if it doesn't exist (Upgrade from v0.1.7)
+    try {
+        const columns = db.prepare("PRAGMA table_info(meetings)").all() as any[];
+        const hasInitiator = columns.some(c => c.name === "initiator");
+        if (!hasInitiator) {
+            console.error("[Nexus] Migrating database: Adding 'initiator' column to 'meetings' table.");
+            db.exec("ALTER TABLE meetings ADD COLUMN initiator TEXT");
+        }
+    } catch (e) {
+        console.error("[Nexus] Migration check failed:", e);
+    }
     
     // Initialize default state if not exists
     const stmt = db.prepare("INSERT OR IGNORE INTO meeting_state (key, value) VALUES (?, ?)");

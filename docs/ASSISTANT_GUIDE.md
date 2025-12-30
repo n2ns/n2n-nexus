@@ -30,33 +30,27 @@
 - `sync_global_doc`: 创建或更新全局文档。适用于提炼通用的最佳实践。
 
 ### 4. 即时同步 (Communication)
-- `post_global_discussion`：任何跨项目的冲突或依赖，必须在全局频道通报。
-- `update_global_strategy`：在达成共识后，更新最高层级的战略蓝图 (`Master Plan`)。
+- **发送消息**: 使用 `send_message`。如果有活跃会议，消息会自动路由至会议室；否则存入全局日志。
+- **查阅进展**: 使用 `read_messages` 以获取最新的讨论流和他人进度。
+- **更新战略**: 在达成共识后，使用 `update_global_strategy` 更新系统蓝图。
 
-### 5. 会议管理 (Meeting Management) 🆕
-当需要结构化的跨 Agent 讨论时，使用会议功能：
+### 5. 战术会议 (Tactical Meetings) 🆕
+当需要结构化的跨 Agent 讨论时，开启独立会议空间：
 
-*   **发起会议**:
-    *   `start_meeting(topic)`: 创建独立的会议文件，返回 `meetingId`。所有后续消息将自动路由到此会议。
+1.  **发起会议**: `start_meeting(topic)`。创建独立的会议记录，系统会将此设为当前默认路由。
+2.  **深度参与**: 在会议中使用 `send_message` 交流技术方案，系统会自动提取 `category: "DECISION"` 的消息作为会议结论。
+3.  **结束任务**: `end_meeting(summary?)`。锁定历史，禁止后续写入，并根据参与者自动推断代码同步建议。
 
-*   **参与讨论**:
-    *   `post_global_discussion`: 消息会自动关联到当前活跃会议（无需手动指定 `meetingId`）。
-
-*   **结束会议**:
-    *   `end_meeting(meetingId?, summary?)`: 锁定会议，禁止后续写入。返回 `suggestedSyncTargets`（基于参与者推断的项目列表）。
-
-*   **查阅历史**:
-    *   `list_meetings(status?)`: 查看 `active`、`closed` 或 `archived` 状态的会议列表。
+*   **辅助工具**:
+    *   `list_meetings(status?)`: 查看 `active`、`closed` 或 `archived` 会议列表。
     *   **快速查阅**：直接读取 `mcp://nexus/active-meeting` 资源，获取当前默认活跃会议的完整 transcript。
     *   `read_meeting(meetingId)`: 读取指定会议内容，包括 `messages` 和 `decisions`。
-
-*   **归档**:
-    *   `archive_meeting(meetingId)`: 将已关闭的会议归档，仅供只读查阅。
+    *   `archive_meeting(meetingId)`: 将已结束的会议移至存档区。
 
 ### 6. 视角切换 (Discovery)
-- 读取 `mcp://hub/registry`：了解公司目前有哪些其他项目。
+- 读取 `mcp://nexus/hub/registry`：了解公司目前有哪些其他项目。
 - 调用 `get_global_topology`：可视化项目间的依赖关系，避免重复造轮子。
-- 调用 `read_project`：查阅其他项目的 API 定义 (`include: "api"`) 或技术文档 (`include: "docs"`)，以便对接。
+- 调用 `read_project`：查阅其他项目的 API 定义 (`include: "api"`) 或技术文档 (`include: "docs"`)。
 
 ## 🛡️ 角色说明
 - **Regular**: 拥有注册、同步资产、讨论和更新各类文档的完整权限。

@@ -77,17 +77,17 @@ export const UnifiedMeetingStore = {
     /**
      * End a meeting
      */
-    async endMeeting(meetingId: string, summary?: string): Promise<{ meeting: MeetingSession; suggestedSyncTargets: string[] }> {
+    async endMeeting(meetingId: string, summary?: string, callerId?: string): Promise<{ meeting: MeetingSession; suggestedSyncTargets: string[] }> {
         const { store } = await getStore();
-        return store.endMeeting(meetingId, summary);
+        return store.endMeeting(meetingId, summary, callerId);
     },
 
     /**
      * Archive a meeting
      */
-    async archiveMeeting(meetingId: string): Promise<void> {
+    async archiveMeeting(meetingId: string, callerId?: string): Promise<void> {
         const { store } = await getStore();
-        return store.archiveMeeting(meetingId);
+        return store.archiveMeeting(meetingId, callerId);
     },
 
     /**

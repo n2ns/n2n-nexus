@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.9] - 2025-12-30
+
+### 🛡️ Collaboration & Security
+- **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`. Only the meeting creator or a system moderator can conclude a session.
+- **Session Presence Awareness**: Automated `[ONLINE/OFFLINE]` status messages in the global log when an IDE session starts or terminates, improving visibility for concurrent agents.
+- **Clean Tool Naming**: Finalized the transition to `send_message` and `read_messages`, removing all deprecated discussion tool aliases.
+
+### 🌐 Resource Namespacing (MCP 2025 Standard)
+- **Unified Authority**: All core resource URIs migrated to `mcp://nexus/` to ensure naming isolation in multi-server environments.
+- **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting` for instant tactical context without tool calls.
+
+## [v0.1.9] - 2025-12-30
+
+### 🛡️ Collaboration & Security
+- **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`. Only the meeting creator or a system moderator can conclude a session.
+- **Session Presence Awareness**: Automated `[ONLINE/OFFLINE]` status messages in the global log when an IDE session starts or terminates, improving visibility for concurrent agents.
+- **Clean Tool Naming**: Finalized the transition to `send_message` and `read_messages`, removing all deprecated discussion tool aliases.
+
+### 🌐 Resource Namespacing (MCP 2025 Standard)
+- **Unified Authority**: All core resource URIs migrated to `mcp://nexus/` to ensure naming isolation in multi-server environments.
+- **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting` for instant tactical context without tool calls.
+
 ## [v0.1.8] - 2025-12-30
 
 ### 🎯 Meeting Architecture (Phase 1 & 2)

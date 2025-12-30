@@ -28,7 +28,7 @@ class NexusServer {
 
     constructor() {
         this.server = new Server(
-            { name: "n2n-nexus", version: "0.1.8" },
+            { name: "n2n-nexus", version: "0.1.9" },
             { capabilities: { resources: {}, tools: {}, prompts: {} } }
         );
         this.setupHandlers();
@@ -164,8 +164,35 @@ class NexusServer {
     }
 
     async run() {
+        // Handle graceful shutdown
+        const shutdown = async (signal: string) => {
+            console.error(`\n[Nexus] Received ${signal}. Shutting down...`);
+            try {
+                // Post-departure log
+                const msg = `Nexus Session Terminated (IDE Closed).`;
+                await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, msg, "UPDATE");
+                console.error(`[Nexus:${CONFIG.instanceId}] Goodbye!`);
+            } catch (e) {
+                // Ignore if storage is already cleaned up
+            }
+            process.exit(0);
+        };
+
+        process.on("SIGINT", () => shutdown("SIGINT"));
+        process.on("SIGTERM", () => shutdown("SIGTERM"));
+
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
+
+        // Announce presence
+        try {
+            await StorageManager.init();
+            const onlineMsg = `Nexus Session Active (IDE Opened). Role: ${CONFIG.isModerator ? "Moderator" : "Regular"}`;
+            await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, onlineMsg, "UPDATE");
+            console.error(`[Nexus:${CONFIG.instanceId}] ${onlineMsg}`);
+        } catch (e) {
+            console.error("[Nexus] Failed to post online message:", e);
+        }
     }
 }
 

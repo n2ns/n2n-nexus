@@ -13,17 +13,17 @@ export async function getResourceContent(
 ): Promise<{ mimeType: string; text: string } | null> {
     await StorageManager.init();
 
-    if (uri === "mcp://chat/global") {
+    if (uri === "mcp://nexus/chat/global") {
         const text = await fs.readFile(StorageManager.globalDiscussion, "utf-8");
         return { mimeType: "application/json", text };
     }
 
-    if (uri === "mcp://hub/registry") {
+    if (uri === "mcp://nexus/hub/registry") {
         const text = await fs.readFile(StorageManager.registryFile, "utf-8");
         return { mimeType: "application/json", text };
     }
 
-    if (uri === "mcp://docs/global-strategy") {
+    if (uri === "mcp://nexus/docs/global-strategy") {
         const text = await fs.readFile(StorageManager.globalBlueprint, "utf-8");
         return { mimeType: "text/markdown", text };
     }
@@ -64,14 +64,14 @@ export async function getResourceContent(
     }
 
     // Dynamic Project Resources (Handles Namespaces)
-    if (uri.startsWith("mcp://hub/projects/")) {
+    if (uri.startsWith("mcp://nexus/projects/")) {
         if (uri.endsWith("/manifest")) {
-            const id = uri.substring("mcp://hub/projects/".length, uri.lastIndexOf("/manifest"));
+            const id = uri.substring("mcp://nexus/projects/".length, uri.lastIndexOf("/manifest"));
             const manifest = await StorageManager.getProjectManifest(id);
             if (manifest) return { mimeType: "application/json", text: JSON.stringify(manifest, null, 2) };
         }
         if (uri.endsWith("/internal-docs")) {
-            const id = uri.substring("mcp://hub/projects/".length, uri.lastIndexOf("/internal-docs"));
+            const id = uri.substring("mcp://nexus/projects/".length, uri.lastIndexOf("/internal-docs"));
             const text = await StorageManager.getProjectDocs(id);
             if (text) return { mimeType: "text/markdown", text };
         }
@@ -89,9 +89,9 @@ export async function listResources() {
 
     return {
         resources: [
-            { uri: "mcp://chat/global", name: "Global Collaboration History", description: "Real-time discussion stream." },
-            { uri: "mcp://hub/registry", name: "Global Project Registry", description: "Consolidated index of all local projects." },
-            { uri: "mcp://docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination." },
+            { uri: "mcp://nexus/chat/global", name: "Global Collaboration History", description: "Real-time discussion stream." },
+            { uri: "mcp://nexus/hub/registry", name: "Global Project Registry", description: "Consolidated index of all local projects." },
+            { uri: "mcp://nexus/docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination." },
             { uri: "mcp://nexus/session", name: "Current Session Info", description: "Your identity and role in this Nexus instance." },
             { uri: "mcp://nexus/status", name: "System Status & Storage Mode", description: "Backend storage mode (sqlite/json) and active meeting counts." },
             { uri: "mcp://nexus/active-meeting", name: "Current Active Meeting", description: "Full transcript and participants of the current default meeting." },
@@ -104,14 +104,14 @@ export async function listResources() {
                     lib: "📦 Library", bot: "🤖 Bot", infra: "☁️ Infra", doc: "📄 Docs"
                 }[prefix] || "📁 Project";
                 return {
-                    uri: `mcp://hub/projects/${id}/manifest`,
+                    uri: `mcp://nexus/projects/${id}/manifest`,
                     name: `${typeLabel}: ${id}`,
                     description: `Structured metadata (Tech stack, relations) for ${id}`
                 };
             })
         ],
         resourceTemplates: [
-            { uriTemplate: "mcp://hub/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." },
+            { uriTemplate: "mcp://nexus/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." },
             { uriTemplate: "mcp://nexus/meetings/{meetingId}", name: "Meeting Insights", description: "Full transcript and decisions for a specific meeting." }
         ]
     };

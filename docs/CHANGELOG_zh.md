@@ -2,6 +2,28 @@
 
 本项目的所有重要变更都将记录在此文件中。
 
+## [v0.1.9] - 2025-12-30
+
+### 🛡️ 协同与权限强化
+- **会议权限控制**: 实现了 **Initiator-only** 停机策略。只有会议发起者或系统管理员 (Moderator) 才能执行 `end_meeting` 和 `archive_meeting`。
+- **自动在线感知**: 实现了会话生命周期日志。AI 实例启动及关闭（IDE 关闭）时会自动发送 `[ONLINE/OFFLINE]` 状态报文，提升多 Agent 协作透明度。
+- **语义名统一**: 完成了工具命名的零别名集成。全面转向 `send_message` 和 `read_messages` 以获得更好的语义理解。
+
+### 🌐 资源命名空间隔离 (MCP 2025)
+- **统一 Authority**: 所有 MCP 资源 URI 已迁移至 `mcp://nexus/` 权威标识符下，防止与其他 MCP Server 发生命名冲突。
+- **状态资源**: 暴露了 `mcp://nexus/status` 和 `mcp://nexus/active-meeting` (当前活跃会议实录) 资源。
+
+## [v0.1.9] - 2025-12-30
+
+### 🛡️ 协同与权限强化
+- **会议权限控制**: 实现了 **Initiator-only** 停机策略。只有会议发起者或系统管理员 (Moderator) 才能执行 `end_meeting` 和 `archive_meeting`。
+- **自动在线感知**: 实现了会话生命周期日志。AI 实例启动及关闭（IDE 关闭）时会自动发送 `[ONLINE/OFFLINE]` 状态报文，提升多 Agent 协作透明度。
+- **语义名统一**: 完成了工具命名的零别名集成。全面转向 `send_message` 和 `read_messages` 以获得更好的语义理解。
+
+### 🌐 资源命名空间隔离 (MCP 2025)
+- **统一 Authority**: 所有 MCP 资源 URI 已迁移至 `mcp://nexus/` 权威标识符下，防止与其他 MCP Server 发生命名冲突。
+- **状态资源**: 暴露了 `mcp://nexus/status` 和 `mcp://nexus/active-meeting` (当前活跃会议实录) 资源。
+
 ## [v0.1.8] - 2025-12-30
 
 ### 🎯 会议架构 (Phase 1 & 2)

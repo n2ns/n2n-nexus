@@ -49,10 +49,10 @@ export class SqliteMeetingStore {
         const participants = JSON.stringify([initiator]);
 
         const stmt = db.prepare(`
-            INSERT INTO meetings (id, topic, status, participants, created_at)
-            VALUES (?, ?, 'active', ?, ?)
+            INSERT INTO meetings (id, topic, status, initiator, participants, created_at)
+            VALUES (?, ?, 'active', ?, ?, ?)
         `);
-        stmt.run(id, topic, participants, now);
+        stmt.run(id, topic, initiator, participants, now);
 
         // Update state
         this.updateState("default_meeting", id);
@@ -65,6 +65,7 @@ export class SqliteMeetingStore {
             topic,
             status: "active",
             startTime: now,
+            initiator,
             participants: [initiator],
             messages: [],
             decisions: []
@@ -82,6 +83,7 @@ export class SqliteMeetingStore {
             id: string;
             topic: string;
             status: MeetingStatus;
+            initiator: string;
             participants: string;
             created_at: string;
             closed_at: string | null;
@@ -111,6 +113,7 @@ export class SqliteMeetingStore {
             status: meeting.status,
             startTime: meeting.created_at,
             endTime: meeting.closed_at || undefined,
+            initiator: meeting.initiator || "Unknown",
             participants: JSON.parse(meeting.participants),
             messages,
             decisions,
@@ -159,7 +162,7 @@ export class SqliteMeetingStore {
     /**
      * End a meeting
      */
-    static endMeeting(meetingId: string, summary?: string): { meeting: MeetingSession; suggestedSyncTargets: string[] } {
+    static endMeeting(meetingId: string, summary?: string, callerId?: string): { meeting: MeetingSession; suggestedSyncTargets: string[] } {
         const db = getDatabase();
         const now = new Date().toISOString();
 
@@ -167,6 +170,11 @@ export class SqliteMeetingStore {
         const meeting = this.getMeeting(meetingId);
         if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
         if (meeting.status !== "active") throw new Error(`Meeting '${meetingId}' is already ${meeting.status}.`);
+
+        // Permission check: Only initiator can end
+        if (callerId && meeting.initiator && meeting.initiator !== callerId) {
+            throw new Error(`Permission denied: Only initiator (${meeting.initiator}) can end this meeting.`);
+        }
 
         // Update meeting
         const stmt = db.prepare(`
@@ -194,12 +202,17 @@ export class SqliteMeetingStore {
     /**
      * Archive a meeting
      */
-    static archiveMeeting(meetingId: string): void {
+    static archiveMeeting(meetingId: string, callerId?: string): void {
         const db = getDatabase();
 
         const meeting = this.getMeeting(meetingId);
         if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
         if (meeting.status === "active") throw new Error(`Meeting '${meetingId}' is still active. End it first.`);
+
+        // Permission check: Only initiator can archive
+        if (callerId && meeting.initiator && meeting.initiator !== callerId) {
+            throw new Error(`Permission denied: Only initiator (${meeting.initiator}) can archive this meeting.`);
+        }
 
         const stmt = db.prepare("UPDATE meetings SET status = 'archived' WHERE id = ?");
         stmt.run(meetingId);

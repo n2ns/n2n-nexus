@@ -110,6 +110,7 @@ export class MeetingStore {
                 topic,
                 status: "active",
                 startTime: new Date().toISOString(),
+                initiator,
                 participants: [initiator],
                 messages: [],
                 decisions: []
@@ -167,11 +168,16 @@ export class MeetingStore {
     /**
      * End a meeting (close it)
      */
-    static async endMeeting(meetingId: string, summary?: string): Promise<{ meeting: MeetingSession; suggestedSyncTargets: string[] }> {
+    static async endMeeting(meetingId: string, summary?: string, callerId?: string): Promise<{ meeting: MeetingSession; suggestedSyncTargets: string[] }> {
         return this.stateLock.withLock(async () => {
             const meeting = await this.getMeeting(meetingId);
             if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
             if (meeting.status !== "active") throw new Error(`Meeting '${meetingId}' is already ${meeting.status}.`);
+
+            // Permission check: Only initiator can end
+            if (callerId && meeting.initiator && meeting.initiator !== callerId) {
+                throw new Error(`Permission denied: Only initiator (${meeting.initiator}) can end this meeting.`);
+            }
 
             // Close the meeting
             meeting.status = "closed";
@@ -200,10 +206,15 @@ export class MeetingStore {
     /**
      * Archive a closed meeting
      */
-    static async archiveMeeting(meetingId: string): Promise<void> {
+    static async archiveMeeting(meetingId: string, callerId?: string): Promise<void> {
         const meeting = await this.getMeeting(meetingId);
         if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
         if (meeting.status === "active") throw new Error(`Meeting '${meetingId}' is still active. End it first.`);
+
+        // Permission check: Only initiator can archive
+        if (callerId && meeting.initiator && meeting.initiator !== callerId) {
+            throw new Error(`Permission denied: Only initiator (${meeting.initiator}) can archive this meeting.`);
+        }
 
         meeting.status = "archived";
         await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");

@@ -52,11 +52,11 @@ export async function handleToolCall(
         case "read_project":
             return handleReadProject(toolArgs as { projectId: string; include?: string });
 
-        case "post_global_discussion":
-            return handlePostDiscussion(toolArgs as { message: string; category?: DiscussionMessage["category"] }, ctx);
+        case "send_message":
+            return handleSendMessage(toolArgs as { message: string; category?: DiscussionMessage["category"] }, ctx);
 
-        case "read_recent_discussion":
-            return handleReadRecentDiscussion(toolArgs as { count?: number });
+        case "read_messages":
+            return handleReadMessages(toolArgs as { count?: number; meetingId?: string });
 
         case "update_global_strategy":
             return handleUpdateStrategy(toolArgs as { content: string }, ctx);
@@ -99,7 +99,7 @@ export async function handleToolCall(
             return handleReadMeeting(toolArgs as { meetingId: string });
 
         case "archive_meeting":
-            return handleArchiveMeeting(toolArgs as { meetingId: string });
+            return handleArchiveMeeting(toolArgs as { meetingId: string }, ctx);
 
         default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -146,10 +146,10 @@ async function handleSyncProjectAssets(
     await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}@${ctx.currentProject}] Asset Sync: Full sync of manifest and docs.`);
 
     // Notify updates
-    ctx.notifyResourceUpdate(`mcp://hub/projects/${m.id}/manifest`);
-    ctx.notifyResourceUpdate(`mcp://hub/projects/${m.id}/internal-docs`);
-    ctx.notifyResourceUpdate("mcp://hub/registry");
-    ctx.notifyResourceUpdate("mcp://chat/global");
+    ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/manifest`);
+    ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/internal-docs`);
+    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+    ctx.notifyResourceUpdate("mcp://nexus/chat/global");
 
     return { content: [{ type: "text", text: "Project assets synchronized (Manifest + Docs)." }] };
 }
@@ -238,8 +238,8 @@ async function handleRenameProject(args: { oldId: string; newId: string }, ctx: 
     const updatedCount = await StorageManager.renameProject(args.oldId, args.newId);
 
     // Notify all affected project resources and registry
-    ctx.notifyResourceUpdate("mcp://hub/registry");
-    ctx.notifyResourceUpdate(`mcp://hub/projects/${args.newId}/manifest`);
+    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+    ctx.notifyResourceUpdate(`mcp://nexus/projects/${args.newId}/manifest`);
     ctx.notifyResourceUpdate("mcp://get_global_topology"); // Topology changed
 
     return { content: [{ type: "text", text: `Project renamed: '${args.oldId}' → '${args.newId}'. Cascading updates: ${updatedCount} project(s).` }] };
@@ -252,7 +252,7 @@ async function handleGetTopology() {
     return { content: [{ type: "text", text: JSON.stringify(topo, null, 2) }] };
 }
 
-async function handlePostDiscussion(args: { message: string; category?: DiscussionMessage["category"] }, ctx: ToolContext) {
+async function handleSendMessage(args: { message: string; category?: DiscussionMessage["category"] }, ctx: ToolContext) {
     if (!args?.message) throw new McpError(ErrorCode.InvalidParams, "Message content cannot be empty.");
 
     const from = `${CONFIG.instanceId}@${ctx.currentProject || "Global"}`;
@@ -269,8 +269,8 @@ async function handlePostDiscussion(args: { message: string; category?: Discussi
     if (activeMeeting) {
         // Route to active meeting
         await UnifiedMeetingStore.addMessage(activeMeeting.id, message);
-        ctx.notifyResourceUpdate(`mcp://meetings/${activeMeeting.id}`);
-        ctx.notifyResourceUpdate("mcp://chat/global");
+        ctx.notifyResourceUpdate(`mcp://nexus/meetings/${activeMeeting.id}`);
+        ctx.notifyResourceUpdate("mcp://nexus/chat/global");
 
         return {
             content: [{
@@ -281,7 +281,7 @@ async function handlePostDiscussion(args: { message: string; category?: Discussi
     } else {
         // Fallback to global discussion (backward compatibility)
         await StorageManager.addGlobalLog(from, args.message, args.category);
-        ctx.notifyResourceUpdate("mcp://chat/global");
+        ctx.notifyResourceUpdate("mcp://nexus/chat/global");
 
         return {
             content: [{
@@ -292,7 +292,7 @@ async function handlePostDiscussion(args: { message: string; category?: Discussi
     }
 }
 
-async function handleReadRecentDiscussion(args: { count?: number; meetingId?: string }) {
+async function handleReadMessages(args: { count?: number; meetingId?: string }) {
     const count = args?.count || 10;
 
     // If meetingId specified, read from that meeting
@@ -343,8 +343,8 @@ async function handleUpdateStrategy(args: { content: string }, _ctx: ToolContext
 async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext) {
     if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "projectId is required.");
     await StorageManager.deleteProject(args.projectId);
-    ctx.notifyResourceUpdate("mcp://hub/registry");
-    ctx.notifyResourceUpdate("mcp://get_global_topology");
+    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+    ctx.notifyResourceUpdate("mcp://nexus/get_global_topology");
     return { content: [{ type: "text", text: `Project '${args.projectId}' removed from Nexus.` }] };
 }
 
@@ -391,12 +391,12 @@ async function handleModeratorMaintenance(args: { action: "prune" | "clear"; cou
 
     if (args.action === "clear") {
         await StorageManager.clearGlobalLogs();
-        ctx.notifyResourceUpdate("mcp://chat/global");
+        ctx.notifyResourceUpdate("mcp://nexus/chat/global");
         return { content: [{ type: "text", text: "History wiped." }] };
     } else {
         try {
             await StorageManager.pruneGlobalLogs(args.count);
-            ctx.notifyResourceUpdate("mcp://chat/global");
+            ctx.notifyResourceUpdate("mcp://nexus/chat/global");
             return { content: [{ type: "text", text: `Pruned ${args.count} logs.` }] };
         } catch {
             return { content: [{ type: "text", text: "Prune operation failed due to malformed logs or missing file." }] };
@@ -413,7 +413,7 @@ async function handleStartMeeting(args: { topic: string }, ctx: ToolContext) {
 
     // Notify updates
     ctx.notifyResourceUpdate("mcp://nexus/status");
-    ctx.notifyResourceUpdate("mcp://chat/global");
+    ctx.notifyResourceUpdate("mcp://nexus/chat/global");
 
     return {
         content: [{
@@ -436,11 +436,15 @@ async function handleEndMeeting(args: { meetingId?: string; summary?: string }, 
         if (!active) throw new McpError(ErrorCode.InvalidRequest, "No active meeting found to end. Please specify meetingId.");
         targetId = active.id;
     }
+    const callerId = ctx.currentProject ? `${CONFIG.instanceId}@${ctx.currentProject}` : `${CONFIG.instanceId}@Global`;
+    
+    // Moderators can end any meeting, others are checked by initiator
+    const effectiveCallerId = CONFIG.isModerator ? undefined : callerId;
 
-    const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary);
+    const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary, effectiveCallerId);
 
     ctx.notifyResourceUpdate("mcp://nexus/status");
-    ctx.notifyResourceUpdate("mcp://chat/global");
+    ctx.notifyResourceUpdate("mcp://nexus/chat/global");
 
     const suggestionText = suggestedSyncTargets.length > 0
         ? `\nSuggested sync targets: ${suggestedSyncTargets.join(", ")}`
@@ -473,9 +477,12 @@ async function handleReadMeeting(args: { meetingId: string }) {
     return { content: [{ type: "text", text: JSON.stringify(meeting, null, 2) }] };
 }
 
-async function handleArchiveMeeting(args: { meetingId: string }) {
+async function handleArchiveMeeting(args: { meetingId: string }, ctx: ToolContext) {
     if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
-    await UnifiedMeetingStore.archiveMeeting(args.meetingId);
+    const callerId = ctx.currentProject ? `${CONFIG.instanceId}@${ctx.currentProject}` : `${CONFIG.instanceId}@Global`;
+    const effectiveCallerId = CONFIG.isModerator ? undefined : callerId;
+    
+    await UnifiedMeetingStore.archiveMeeting(args.meetingId, effectiveCallerId);
     return {
         content: [{
             type: "text",

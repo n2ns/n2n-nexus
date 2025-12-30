@@ -51,12 +51,12 @@ describe("Meeting Integration Tests", () => {
         expect(meetingId).toMatch(/^\d{14}-[a-z0-9-]+-[a-z0-9]{4}$/);
 
         // 2. Post Discussion (Auto-routed to active meeting)
-        await handleToolCall("post_global_discussion", { 
+        await handleToolCall("send_message", { 
             message: "We should use SQLite", 
             category: "PROPOSAL" 
         }, mockContext);
 
-        await handleToolCall("post_global_discussion", { 
+        await handleToolCall("send_message", { 
             message: "Agreed. Let's do it.", 
             category: "DECISION" 
         }, mockContext);
@@ -102,10 +102,10 @@ describe("Meeting Integration Tests", () => {
 
     it("should fallback to global log when no active meeting exists", async () => {
         // No meeting started
-        await handleToolCall("post_global_discussion", { message: "Global broadcast" }, mockContext);
+        await handleToolCall("send_message", { message: "Global broadcast" }, mockContext);
         
         // Reading recent discussion should return from global discussion.json
-        const result = await handleToolCall("read_recent_discussion", { count: 5 }, mockContext);
+        const result = await handleToolCall("read_messages", { count: 5 }, mockContext);
         const data = JSON.parse(result.content[0].text);
         expect(data.source).toBe("global");
         expect(data.messages[0].text).toBe("Global broadcast");
@@ -121,7 +121,7 @@ describe("Meeting Integration Tests", () => {
         const idB = JSON.parse(resB.content[0].text).meetingId;
 
         // Post message (should go to B)
-        await handleToolCall("post_global_discussion", { message: "MSG for B" }, mockContext);
+        await handleToolCall("send_message", { message: "MSG for B" }, mockContext);
 
         const readB = await handleToolCall("read_meeting", { meetingId: idB }, mockContext);
         expect(JSON.parse(readB.content[0].text).messages[0].text).toBe("MSG for B");
@@ -129,7 +129,7 @@ describe("Meeting Integration Tests", () => {
         // End B... A should become default again
         await handleToolCall("end_meeting", { meetingId: idB }, mockContext);
         
-        await handleToolCall("post_global_discussion", { message: "MSG back to A" }, mockContext);
+        await handleToolCall("send_message", { message: "MSG back to A" }, mockContext);
         
         const readA = await handleToolCall("read_meeting", { meetingId: idA }, mockContext);
         expect(JSON.parse(readA.content[0].text).messages[0].text).toBe("MSG back to A");
@@ -142,7 +142,7 @@ describe("Meeting Integration Tests", () => {
         const BURST_SIZE = 20;
         const tasks = [];
         for (let i = 0; i < BURST_SIZE; i++) {
-            tasks.push(handleToolCall("post_global_discussion", { 
+            tasks.push(handleToolCall("send_message", { 
                 message: `Burst message ${i}` 
             }, mockContext));
         }

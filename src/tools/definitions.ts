@@ -115,7 +115,7 @@ export const TOOL_DEFINITIONS = [
         }
     },
     {
-        name: "post_global_discussion",
+        name: "send_message",
         description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",
         inputSchema: {
             type: "object",
@@ -131,8 +131,8 @@ export const TOOL_DEFINITIONS = [
         }
     },
     {
-        name: "read_recent_discussion",
-        description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global discussion log.",
+        name: "read_messages",
+        description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global logs.",
         inputSchema: {
             type: "object",
             properties: {
@@ -240,7 +240,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "end_meeting",
-        description: "End an active meeting. Locks the session for further messages. Returns suggested sync targets based on participants.",
+        description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only initiator or moderator can end].",
         inputSchema: {
             type: "object",
             properties: {
@@ -276,7 +276,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "archive_meeting",
-        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries.",
+        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only initiator or moderator can archive].",
         inputSchema: {
             type: "object",
             properties: {

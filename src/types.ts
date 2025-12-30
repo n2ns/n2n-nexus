@@ -34,6 +34,7 @@ export interface MeetingSession {
     status: MeetingStatus;
     startTime: string;
     endTime?: string;
+    initiator: string;              // The Agent ID who started the meeting
     participants: string[];         // List of Agent IDs who posted
     messages: DiscussionMessage[];
     decisions: string[];            // Extracted DECISION messages (per Daisy's request)

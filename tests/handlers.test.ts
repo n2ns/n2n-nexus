@@ -51,12 +51,12 @@ describe("Tool Handlers", () => {
     });
 
     it("should handle global discussion with category", async () => {
-        await handleToolCall("post_global_discussion", { message: "Meeting start", category: "MEETING_START" }, mockContext);
+        await handleToolCall("send_message", { message: "Meeting start", category: "MEETING_START" }, mockContext);
         
         const logs = await StorageManager.getRecentLogs(1);
         expect(logs[0].text).toBe("Meeting start");
         expect(logs[0].category).toBe("MEETING_START");
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://chat/global");
+        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/chat/global");
     });
 
     it("should rename project and notify updates", async () => {
@@ -81,8 +81,8 @@ describe("Tool Handlers", () => {
         const result = await handleToolCall("rename_project", { oldId: "web_old.io", newId: "web_new.io" }, mockContext);
         expect(result.content[0].text).toContain("web_new.io");
         
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://hub/registry");
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://hub/projects/web_new.io/manifest");
+        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
+        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/projects/web_new.io/manifest");
         
         const oldExists = await StorageManager.getProjectManifest("web_old.io");
         const newManifest = await StorageManager.getProjectManifest("web_new.io");
@@ -115,7 +115,7 @@ describe("Tool Handlers", () => {
         await handleToolCall("moderator_delete_project", { projectId: "web_to-delete.io" }, mockContext);
 
         expect(await StorageManager.getProjectManifest("web_to-delete.io")).toBeNull();
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://hub/registry");
+        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
         // Reset for other tests
         CONFIG.isModerator = false;
     });
@@ -141,7 +141,7 @@ describe("Tool Handlers", () => {
             CONFIG.isModerator = true;
 
             // Add some logs first
-            await handleToolCall("post_global_discussion", { message: "Test message" }, mockContext);
+            await handleToolCall("send_message", { message: "Test message" }, mockContext);
 
             const result = await handleToolCall("moderator_maintenance", { action: "clear", count: 0 }, mockContext);
             expect(result.content[0].text).toContain("wiped");

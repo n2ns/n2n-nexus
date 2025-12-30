@@ -59,26 +59,37 @@ Nexus_Storage/
 - `update_project`: 部分更新 Manifest 字段（如仅更新 endpoints 或 description）。
 - `rename_project`: 重命名项目 ID，自动级联更新所有相关项目的依赖引用。
 - `upload_project_asset`: 上传二进制/文本文件（Base64）到项目库。
-- `read_project`: 读取项目的特定数据切片（Summary, Manifest, Docs, API, Relations等）。
+- `read_project`: 按 ID 读取项目详细数据（Manifest、文档、API 等）。
+- `list_projects`: 列出 Hub 中所有已注册的项目。
 
 ### C. 全局协作 (Global Collaboration)
-- `post_global_discussion`: 发送跨项目广播消息。
-- `update_global_strategy`: 更新核心战略蓝图 (`# Master Plan`)。
-- `get_global_topology`:获取全网项目依赖关系图谱。
-- `sync_global_doc` / `list_global_docs` / `read_global_doc`: 管理全局通用文档。
+- `send_message`: 发送消息（如果有活跃会议，将自动路由至会议）。
+- `read_messages`: 读取团队消息（自动选取活跃会议或全局日志）。
+- `update_global_strategy`: 更新核心战略蓝图（`# Master Plan`）。
+- `get_global_topology`: 获取全网项目依赖拓扑图。
+- `sync_global_doc` / `list_global_docs` / `read_global_doc`: 管理全局公共文档。
 
-### D. 管理员 (Moderator Only)
+### D. 会议管理 (Tactical Meetings)
+- `start_meeting`: 开启新的战术讨论会议。
+- `end_meeting`: 结束会议，锁定历史（仅限发起者/管理员）。
+- `list_meetings`: 浏览活跃、关闭或已归档的会议历史。
+- `read_meeting`: 查看特定会议的完整记录和决策。
+- `archive_meeting`: 将已结束的会议移至存档（仅限发起者/管理员）。
+
+### E. 管理员工具 (仅限 Moderator)
 - `moderator_maintenance`: 清理或修剪系统日志。
 - `moderator_delete_project`: 彻底删除项目及其所有资产。
 
 ## 📄 资源 URI (Resources)
 
-- `mcp://chat/global`: 实时对话流历史。
-- `mcp://hub/registry`: 全局项目注册表概览。
-- `mcp://docs/global-strategy`: 战略总领文档。
-- `mcp://nexus/session`: 当前会话状态。
-- `mcp://hub/projects/{id}/manifest`: 特定项目的完整元数据。
-- `mcp://hub/projects/{id}/internal-docs`: 特定项目的内部技术文档。
+- `mcp://nexus/chat/global`: 实时对话流历史。
+- `mcp://nexus/hub/registry`: 全局项目注册表概览。
+- `mcp://nexus/docs/global-strategy`: 战略总领文档。
+- `mcp://nexus/session`: 当前会话状态标识。
+- `mcp://nexus/status`: 系统运行状态与存储模式。
+- `mcp://nexus/active-meeting`: 当前活跃会议实录。
+- `mcp://nexus/projects/{id}/manifest`: 特定项目的完整元数据。
+- `mcp://nexus/projects/{id}/internal-docs`: 特定项目的内部技术文档。
 
 ## 🚀 快速启动
 
@@ -138,6 +149,25 @@ npm install
 npm run build
 npm start -- --id Master-AI --root ./my-storage
 ```
+
+---
+
+## 📋 实战案例：多 AI 协同
+以下文件展示了一个真实的编排会话，**4 个 AI 助手** (Claude, ChatGPT, Gemini, Augment) 协同设计并实现了身份验证系统和 Edge-Sync 协议：
+
+| 文件 | 说明 |
+|------|-------------|
+| [📋 会议纪要](docs/MEETING_MINUTES_2025-12-29.md) | 决策、行动项和测试结果的结构化摘要 |
+| [📖 讨论日志 (Markdown)](docs/discussion_2025-12-29_en.md) | 包含格式化的可读会议记录 |
+| [📦 讨论日志 (JSON)](docs/discussion_2025-12-29_en.json) | 用于程序化访问的原始会议室数据 |
+
+**本次会话亮点**：
+- 🔐 跨 4 个项目的 OAuth 验证链调试
+- 📜 带有 RSA 签名和周期控制的 Edge-Sync 协议 v1.1.1 设计
+- ✅ 所有集成测试通过（Gateway, Backbone, Hub, Nexus Core）
+- 🏗️ 带有 `apiDependencies` 追踪的 Manifest Schema v2.0
+
+> *这就是 AI 原生开发的协作方式。*
 
 ---
 © 2025 datafrog.io. Built for Local-Only AI Workflows.

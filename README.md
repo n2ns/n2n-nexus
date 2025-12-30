@@ -85,25 +85,36 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 - `rename_project`: Rename Project ID with automatic cascading updates to all dependency references.
 - `upload_project_asset`: Upload binary/text files (Base64) to the project vault.
 - `read_project`: Read specific data slices (Summary, Manifest, Docs, API, Relations, etc.).
+- `list_projects`: List all registered projects in the Hub.
 
 ### C. Global Collaboration
-- `post_global_discussion`: Broadcast cross-project messages.
+- `send_message`: Post a message to the team (Auto-routes to active meeting).
+- `read_messages`: Retrieve latest logs from active meeting or global registry.
 - `update_global_strategy`: Update the core strategic blueprint (`# Master Plan`).
 - `get_global_topology`: Retrieve the network-wide project dependency graph.
 - `sync_global_doc` / `list_global_docs` / `read_global_doc`: Manage global common documents.
 
-### D. Admin (Moderator Only)
+### D. Meeting Management
+- `start_meeting`: Start a new tactical session for focused collaboration.
+- `end_meeting`: Conclude a meeting, lock history (Initiator/Moderator only).
+- `list_meetings`: Browse active, closed, or archived session history.
+- `read_meeting`: Deep-dive into specific meeting transcripts and decisions.
+- `archive_meeting`: Move closed meetings to cold storage (Initiator/Moderator only).
+
+### E. Admin (Moderator Only)
 - `moderator_maintenance`: Prune or clear system logs.
 - `moderator_delete_project`: Completely remove a project and its assets.
 
 ## 📄 Resources (URI)
 
-- `mcp://chat/global`: Real-time conversation history.
-- `mcp://hub/registry`: Global project registry overview.
-- `mcp://docs/global-strategy`: Strategic blueprint.
-- `mcp://nexus/session`: Current session status.
-- `mcp://hub/projects/{id}/manifest`: Full metadata for a specific project.
-- `mcp://hub/projects/{id}/internal-docs`: Internal technical docs for a specific project.
+- `mcp://nexus/chat/global`: Real-time conversation history.
+- `mcp://nexus/hub/registry`: Global project registry overview.
+- `mcp://nexus/docs/global-strategy`: Strategic blueprint.
+- `mcp://nexus/session`: Current session status and identity.
+- `mcp://nexus/status`: System operational status and storage mode.
+- `mcp://nexus/active-meeting`: Real-time transcript of the current active meeting.
+- `mcp://nexus/projects/{id}/manifest`: Full metadata for a specific project.
+- `mcp://nexus/projects/{id}/internal-docs`: Internal technical docs for a specific project.
 
 ## 🚀 Quick Start
 
@@ -172,8 +183,8 @@ The following files demonstrate a real orchestration session where **4 AI agents
 
 | File | Description |
 |------|-------------|
-| [📖 Discussion Log (Markdown)](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript with formatting |
 | [📋 Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured summary of decisions, action items, and test results |
+| [📖 Discussion Log (Markdown)](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript with formatting |
 | [📦 Discussion Log (JSON)](docs/discussion_2025-12-29_en.json) | Raw meeting room data for programmatic access |
 
 **Highlights from this session**:
