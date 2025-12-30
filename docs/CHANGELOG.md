@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.7] - 2025-12-30
+
+### ⚙️ CLI Simplification
+- **Moderator flag**: Replaced `--moderator-id <id>` with simple `--moderator` boolean flag.
+  - Moderator: `--id Master-AI --moderator`
+  - Regular AI: `--id Assistant-AI` (no extra flag needed)
+
+### ✅ Tests
+- Added session resource tests for role verification (Moderator/Regular).
+- All 17 unit tests passing.
+
 ## [v0.1.6] - 2025-12-29
 
 ### 🔒 Concurrency Safety
@@ -16,9 +27,6 @@ All notable changes to this project will be documented in this file.
   - `gatewayCompatibility`: Gateway version compatibility string
   - `api_versions`: Feature-level API versions
   - `feature_tier`: Capability tier declaration (`"free"` | `"pro"` | `"enterprise"`)
-
-### ✅ Tests
-- All 13 unit tests passing.
 
 ## [v0.1.5] - 2025-12-29
 

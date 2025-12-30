@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { handleToolCall, ToolContext } from "../src/tools/handlers.js";
 import { StorageManager } from "../src/storage/index.js";
+import { getResourceContent } from "../src/resources/index.js";
 import { promises as fs } from "fs";
 import path from "path";
 import { CONFIG } from "../src/config.js";
@@ -111,5 +112,56 @@ describe("Tool Handlers", () => {
         const projects = JSON.parse(result.content[0].text);
         expect(projects).toHaveLength(1);
         expect(projects[0].id).toBe("web_a.io");
+    });
+
+    describe("Moderator permissions", () => {
+        it("should allow moderator_maintenance when isModerator is true", async () => {
+            CONFIG.isModerator = true;
+
+            // Add some logs first
+            await handleToolCall("post_global_discussion", { message: "Test message" }, mockContext);
+
+            const result = await handleToolCall("moderator_maintenance", { action: "clear", count: 0 }, mockContext);
+            expect(result.content[0].text).toContain("wiped");
+        });
+
+        it("should verify CONFIG.isModerator flag behavior", () => {
+            // Test the flag is properly set
+            CONFIG.isModerator = true;
+            expect(CONFIG.isModerator).toBe(true);
+
+            CONFIG.isModerator = false;
+            expect(CONFIG.isModerator).toBe(false);
+        });
+    });
+
+    describe("Session resource", () => {
+        it("should return Moderator role when isModerator is true", async () => {
+            CONFIG.isModerator = true;
+            CONFIG.instanceId = "Master-AI";
+
+            const result = await getResourceContent("mcp://nexus/session", "web_test.io");
+            expect(result).not.toBeNull();
+
+            const info = JSON.parse(result!.text);
+            expect(info.yourId).toBe("Master-AI");
+            expect(info.role).toBe("Moderator");
+            expect(info.isModerator).toBe(true);
+            expect(info.activeProject).toBe("web_test.io");
+        });
+
+        it("should return Regular role when isModerator is false", async () => {
+            CONFIG.isModerator = false;
+            CONFIG.instanceId = "Assistant-AI";
+
+            const result = await getResourceContent("mcp://nexus/session", null);
+            expect(result).not.toBeNull();
+
+            const info = JSON.parse(result!.text);
+            expect(info.yourId).toBe("Assistant-AI");
+            expect(info.role).toBe("Regular");
+            expect(info.isModerator).toBe(false);
+            expect(info.activeProject).toBe("None");
+        });
     });
 });

@@ -27,7 +27,7 @@ export interface DiscussionMessage {
 
 export interface HubConfig {
     instanceId: string;
-    moderatorId: string;
+    isModerator: boolean;
     rootStorage: string;
 }
 

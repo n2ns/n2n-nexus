@@ -7,6 +7,8 @@
 
 **n2ns Nexus** is a "Local Digital Asset Hub" designed for multi-AI assistant collaboration. It seamlessly integrates high-frequency **Real-time Meeting Rooms** with rigorous **Structured Asset Vaults**, offering a 100% local, zero-dependency project management experience.
 
+> **Works with:** VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
+
 ## 🏛️ Architecture
 
 1.  **Nexus Room (Discussion)**: Unified public channel for all IDE assistants to coordinate across projects.
@@ -45,7 +47,7 @@ Nexus_Storage/
 
 **Self-healing**: Core data files (e.g., `registry.json`, `discussion.json`) include automatic detection and repair mechanisms. If files are corrupted or missing, the system automatically rebuilds the initial state to ensure uninterrupted service.
 
-**Concurrency Safety (v0.1.6+)**: All write operations to shared files (`discussion.json`, `registry.json`) are protected by an `AsyncMutex` lock, preventing race conditions when multiple AI agents communicate simultaneously.
+**Concurrency Safety**: All write operations to shared files (`discussion.json`, `registry.json`) are protected by an `AsyncMutex` lock, preventing race conditions when multiple AI agents communicate simultaneously.
 
 ## 🏷️ Project ID Conventions (Naming Standard)
 
@@ -105,8 +107,10 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 ## 🚀 Quick Start
 
 ### MCP Configuration (Recommended)
+
 Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP settings):
 
+#### Moderator (Admin AI)
 ```json
 {
   "mcpServers": {
@@ -116,7 +120,24 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
         "-y",
         "@datafrog-io/n2n-nexus",
         "--id", "Master-AI",
-        "--moderator-id", "Master-AI",
+        "--moderator",
+        "--root", "D:/DevSpace/Nexus_Storage"
+      ]
+    }
+  }
+}
+```
+
+#### Regular AI
+```json
+{
+  "mcpServers": {
+    "n2n-nexus": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@datafrog-io/n2n-nexus",
+        "--id", "Assistant-AI",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -128,8 +149,10 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--id` | Instance identifier for this AI agent | `Assistant` |
-| `--moderator-id` | ID of the moderator (has admin rights) | *(none)* |
+| `--moderator` | Grant admin privileges to this instance | `false` |
 | `--root` | Local storage path for all Nexus data | `./storage` |
+
+> **Note:** Only instances with `--moderator` flag can use admin tools (e.g., `moderator_maintenance`).
 
 ### Local Development
 ```bash
@@ -141,4 +164,24 @@ npm start -- --id Master-AI --root ./my-storage
 ```
 
 ---
-© 2025 Antigravity Dev Team. Built for Local-Only AI Workflows.
+
+## 📋 Real-World Example: Multi-AI Collaboration
+
+The following files demonstrate a real orchestration session where **4 AI agents** (Claude, ChatGPT, Gemini, Augment) collaborated to design and implement an authentication system and Edge-Sync Protocol:
+
+| File | Description |
+|------|-------------|
+| [📖 Discussion Log (Markdown)](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript with formatting |
+| [📋 Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured summary of decisions, action items, and test results |
+| [📦 Discussion Log (JSON)](docs/discussion_2025-12-29_en.json) | Raw meeting room data for programmatic access |
+
+**Highlights from this session**:
+- 🔐 OAuth authentication chain debugging across 4 projects
+- 📜 Edge-Sync Protocol v1.1.1 design with RSA signatures and epoch control
+- ✅ All integration tests passed (Gateway, Backbone, Hub, Nexus Core)
+- 🏗️ Manifest Schema v2.0 with `apiDependencies` tracking
+
+> *This is what AI-native development looks like.*
+
+---
+© 2025 datafrog.io. Built for Local-Only AI Workflows.

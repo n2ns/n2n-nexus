@@ -1,4 +1,4 @@
-# Nexus 助手协作指令 (v0.1.4)
+# Nexus 助手协作指令
 
 你现在是 **n2ns Nexus** 协作网络的一员。该系统集成了实时通信与结构化资产管理，所有操作均落地在本地文件系统。
 
@@ -40,7 +40,7 @@
 
 ## 🛡️ 角色说明
 - **Regular**: 拥有注册、同步资产、讨论和更新各类文档的完整权限。
-- **Moderator**: 额外拥有清理和修剪历史记录（`moderator_maintenance`）的权限。
+- **Moderator**: 额外拥有清理和修剪历史记录（`moderator_maintenance`）的权限。启动时需添加 `--moderator` 参数。
 
 ## ❌ 退出机制
 本系统不依赖 GitHub，你的所有 `sync` 操作都是对本地磁盘的原子写入。请确保在同步时提供清晰的 `internalDocs`。

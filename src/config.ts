@@ -10,8 +10,10 @@ const getArg = (k: string) => {
     return i !== -1 && args[i + 1] ? args[i + 1] : "";
 };
 
+const hasFlag = (k: string) => args.includes(k);
+
 export const CONFIG: HubConfig = {
     instanceId: getArg("--id") || "Assistant",
-    moderatorId: getArg("--moderator-id"),
+    isModerator: hasFlag("--moderator"),
     rootStorage: path.resolve(getArg("--root") || path.join(__dirname, "../storage"))
 };

@@ -28,11 +28,10 @@ export async function getResourceContent(
     }
 
     if (uri === "mcp://nexus/session") {
-        const isModerator = CONFIG.moderatorId ? CONFIG.instanceId === CONFIG.moderatorId : false;
         const info = {
             yourId: CONFIG.instanceId,
-            role: isModerator ? "Moderator" : "Regular",
-            isModerator: isModerator,
+            role: CONFIG.isModerator ? "Moderator" : "Regular",
+            isModerator: CONFIG.isModerator,
             activeProject: currentProject || "None"
         };
         return { mimeType: "application/json", text: JSON.stringify(info, null, 2) };

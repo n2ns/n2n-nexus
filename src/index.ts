@@ -28,7 +28,7 @@ class NexusServer {
 
     constructor() {
         this.server = new Server(
-            { name: "n2n-nexus", version: "0.1.5" },
+            { name: "n2n-nexus", version: "0.1.7" },
             { capabilities: { resources: {}, tools: {}, prompts: {} } }
         );
         this.setupHandlers();
@@ -38,7 +38,7 @@ class NexusServer {
      * Validates moderator permissions for admin tools.
      */
     private checkModerator(toolName: string) {
-        if (CONFIG.moderatorId && CONFIG.instanceId !== CONFIG.moderatorId) {
+        if (!CONFIG.isModerator) {
             throw new McpError(ErrorCode.InvalidRequest, `Forbidden: ${toolName} requires Moderator rights.`);
         }
     }

@@ -1,6 +1,6 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "description": "Unified Project Asset & Collaboration Hub (MCP Server) designed for AI agent coordination, featuring structured metadata, real-time messaging, and dependency topology.",
     "main": "build/index.js",
     "type": "module",
@@ -21,7 +21,7 @@
         "local-first",
         "collaboration"
     ],
-    "author": "Antigravity Dev Team",
+    "author": "datafrog.io",
     "license": "Apache-2.0",
     "repository": {
         "type": "git",

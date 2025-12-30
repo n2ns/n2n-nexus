@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 
 import { CONFIG } from "../config.js";
 import { StorageManager } from "../storage/index.js";
-import { ProjectManifest } from "../types.js";
+import { ProjectManifest, DiscussionMessage } from "../types.js";
 
 export interface ToolContext {
     currentProject: string | null;
@@ -52,7 +52,7 @@ export async function handleToolCall(
             return handleReadProject(toolArgs as { projectId: string; include?: string });
 
         case "post_global_discussion":
-            return handlePostDiscussion(toolArgs as { message: string; category?: any }, ctx);
+            return handlePostDiscussion(toolArgs as { message: string; category?: DiscussionMessage["category"] }, ctx);
 
         case "read_recent_discussion":
             return handleReadRecentDiscussion(toolArgs as { count?: number });
@@ -112,7 +112,8 @@ async function handleSyncProjectAssets(
     const m = args.manifest;
     const requiredFields = ["id", "name", "description", "techStack", "relations", "lastUpdated", "repositoryUrl", "localPath", "endpoints", "apiSpec"];
     for (const field of requiredFields) {
-        if ((m as any)[field] === undefined || (m as any)[field] === null) {
+        const value = (m as unknown as Record<string, unknown>)[field];
+        if (value === undefined || value === null) {
             throw new McpError(ErrorCode.InvalidParams, `Project manifest incomplete. Missing field: ${field}`);
         }
     }
@@ -234,7 +235,7 @@ async function handleGetTopology() {
     return { content: [{ type: "text", text: JSON.stringify(topo, null, 2) }] };
 }
 
-async function handlePostDiscussion(args: { message: string; category?: any }, ctx: ToolContext) {
+async function handlePostDiscussion(args: { message: string; category?: DiscussionMessage["category"] }, ctx: ToolContext) {
     if (!args?.message) throw new McpError(ErrorCode.InvalidParams, "Message content cannot be empty.");
     await StorageManager.addGlobalLog(`${CONFIG.instanceId}@${ctx.currentProject || "Global"}`, args.message, args.category);
     
@@ -250,7 +251,7 @@ async function handleReadRecentDiscussion(args: { count?: number }) {
     return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
 }
 
-async function handleUpdateStrategy(args: { content: string }, ctx: ToolContext) {
+async function handleUpdateStrategy(args: { content: string }, _ctx: ToolContext) {
     if (!args?.content) throw new McpError(ErrorCode.InvalidParams, "Strategy content cannot be empty.");
     await fs.writeFile(StorageManager.globalBlueprint, args.content);
     await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Updated Coordination Strategy.`);

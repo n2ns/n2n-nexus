@@ -7,6 +7,8 @@
 
 **n2ns Nexus** 是一个专为多 AI 助手协同设计的“本地数字化资产中心”。它将高频的**实时会议室**与严谨的**结构化资产库**完美融合，提供 100% 本地化、零外部依赖的项目管理体验。
 
+> **支持的 IDE：** VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
+
 ## 🏛️ 系统架构 (Architecture)
 
 1.  **Nexus Room (讨论区)**: 所有 IDE 助手的统一公域频道，用于跨项目协调。
@@ -80,8 +82,10 @@ Nexus_Storage/
 ## 🚀 快速启动
 
 ### MCP 配置（推荐）
+
 在你的 MCP 配置文件中（如 `claude_desktop_config.json` 或 Cursor MCP 设置）添加：
 
+#### 主持者（管理员 AI）
 ```json
 {
   "mcpServers": {
@@ -91,7 +95,24 @@ Nexus_Storage/
         "-y",
         "@datafrog-io/n2n-nexus",
         "--id", "Master-AI",
-        "--moderator-id", "Master-AI",
+        "--moderator",
+        "--root", "D:/DevSpace/Nexus_Storage"
+      ]
+    }
+  }
+}
+```
+
+#### 普通 AI
+```json
+{
+  "mcpServers": {
+    "n2n-nexus": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@datafrog-io/n2n-nexus",
+        "--id", "Assistant-AI",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -103,8 +124,10 @@ Nexus_Storage/
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--id` | 当前 AI 助手的实例标识符 | `Assistant` |
-| `--moderator-id` | 管理员 ID（拥有维护权限） | *(无)* |
+| `--moderator` | 授予此实例管理员权限 | `false` |
 | `--root` | 本地数据存储路径 | `./storage` |
+
+> **注意：** 仅带有 `--moderator` 标志的实例可使用管理员工具（如 `moderator_maintenance`）。
 
 ### 本地开发
 ```bash
@@ -116,4 +139,4 @@ npm start -- --id Master-AI --root ./my-storage
 ```
 
 ---
-© 2025 Antigravity Dev Team. Built for Local-Only AI Workflows.
+© 2025 datafrog.io. Built for Local-Only AI Workflows.
