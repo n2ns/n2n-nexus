@@ -69,6 +69,7 @@ Nexus_Storage/
 
 ### D. 管理员 (Moderator Only)
 - `moderator_maintenance`: 清理或修剪系统日志。
+- `moderator_delete_project`: 彻底删除项目及其所有资产。
 
 ## 📄 资源 URI (Resources)
 
@@ -127,7 +128,7 @@ Nexus_Storage/
 | `--moderator` | 授予此实例管理员权限 | `false` |
 | `--root` | 本地数据存储路径 | `./storage` |
 
-> **注意：** 仅带有 `--moderator` 标志的实例可使用管理员工具（如 `moderator_maintenance`）。
+> **注意：** 仅带有 `--moderator` 标志的实例可使用管理员工具（如 `moderator_maintenance` 和 `moderator_delete_project`）。
 
 ### 本地开发
 ```bash

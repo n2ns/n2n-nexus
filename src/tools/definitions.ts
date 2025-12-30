@@ -78,7 +78,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "upload_project_asset",
-        description: "Upload a file. Both fileName and base64Content are MANDATORY.",
+        description: "Upload a binary file (images, PDFs, etc.) to the current project's asset folder. Requires active session (call register_session_context first). Returns the relative path of the saved file.",
         inputSchema: {
             type: "object",
             properties: {
@@ -90,7 +90,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "get_global_topology",
-        description: "Retrieve complete project relationship graph. Use this to understand current IDs and their connections.",
+        description: "Retrieve complete project relationship graph. Returns { nodes: [{ id, name }], edges: [{ from, to, type }] }. Use this to visualize dependencies.",
         inputSchema: { type: "object", properties: {} }
     },
     {
@@ -116,7 +116,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "post_global_discussion",
-        description: "Join the 'Nexus Meeting Room' to collaborate with other AI agents. Use this for initiating meetings, making cross-project proposals, or announcing key decisions. Every message is shared across all assistants in real-time.",
+        description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",
         inputSchema: {
             type: "object",
             properties: {
@@ -124,7 +124,7 @@ export const TOOL_DEFINITIONS = [
                 category: { 
                     type: "string", 
                     enum: ["MEETING_START", "PROPOSAL", "DECISION", "UPDATE", "CHAT"],
-                    description: "The nature of this message. Use MEETING_START to call for a synchronous discussion."
+                    description: "The nature of this message. DECISION messages are auto-extracted into meeting decisions[]."
                 }
             },
             required: ["message"]
@@ -132,11 +132,12 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "read_recent_discussion",
-        description: "Quickly 'listen' to the last few messages in the Nexus Room to catch up on the context of the current meeting or collaboration.",
+        description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global discussion log.",
         inputSchema: {
             type: "object",
             properties: {
-                count: { type: "number", description: "Number of recent messages to retrieve (defaults to 10).", default: 10 }
+                count: { type: "number", description: "Number of recent messages to retrieve (defaults to 10).", default: 10 },
+                meetingId: { type: "string", description: "Optional: Read from a specific meeting instead of the active one." }
             }
         }
     },
@@ -204,7 +205,7 @@ export const TOOL_DEFINITIONS = [
     },
     {
         name: "moderator_maintenance",
-        description: "[ADMIN ONLY] Prune or clear logs. Both action and count are MANDATORY.",
+        description: "[ADMIN ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
         inputSchema: {
             type: "object",
             properties: {
@@ -215,14 +216,73 @@ export const TOOL_DEFINITIONS = [
         }
     },
     {
-        name: "delete_project",
-        description: "[ADMIN ONLY] Completely remove a project, its manifest, and all its assets from Nexus.",
+        name: "moderator_delete_project",
+        description: "[ADMIN ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Irreversible.",
         inputSchema: {
             type: "object",
             properties: {
                 projectId: { type: "string", description: "The ID of the project to destroy." }
             },
             required: ["projectId"]
+        }
+    },
+    // --- Meeting Management Tools (Phase 1) ---
+    {
+        name: "start_meeting",
+        description: "Start a new meeting session. Creates a dedicated file for the meeting. Returns the meeting ID and details.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                topic: { type: "string", description: "The topic/agenda for this meeting (e.g., 'Architecture Review', 'Sprint Planning')." }
+            },
+            required: ["topic"]
+        }
+    },
+    {
+        name: "end_meeting",
+        description: "End an active meeting. Locks the session for further messages. Returns suggested sync targets based on participants.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                meetingId: { type: "string", description: "The ID of the meeting to end. If omitted, ends the current active meeting." },
+                summary: { type: "string", description: "Optional summary of the meeting conclusions." }
+            }
+        }
+    },
+    {
+        name: "list_meetings",
+        description: "List all meetings with optional status filter. Returns meeting metadata without full message history.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                status: { 
+                    type: "string", 
+                    enum: ["active", "closed", "archived"],
+                    description: "Filter by meeting status. Omit to list all."
+                }
+            }
+        }
+    },
+    {
+        name: "read_meeting",
+        description: "Read the full content of a specific meeting including all messages and decisions.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                meetingId: { type: "string", description: "The ID of the meeting to read." }
+            },
+            required: ["meetingId"]
+        }
+    },
+    {
+        name: "archive_meeting",
+        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                meetingId: { type: "string", description: "The ID of the closed meeting to archive." }
+            },
+            required: ["meetingId"]
         }
     }
 ];

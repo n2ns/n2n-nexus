@@ -1,0 +1,17 @@
+{
+  "id": "20251230183904-json-test-awiz",
+  "topic": "JSON Test",
+  "status": "active",
+  "startTime": "2025-12-30T18:39:04.315Z",
+  "participants": [
+    "Agent@Test"
+  ],
+  "messages": [
+    {
+      "timestamp": "2025-12-30T18:39:04.317Z",
+      "from": "Agent@Test",
+      "text": "Hello JSON"
+    }
+  ],
+  "decisions": []
+}

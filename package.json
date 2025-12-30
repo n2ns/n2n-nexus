@@ -1,6 +1,6 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "description": "Unified Project Asset & Collaboration Hub (MCP Server) designed for AI agent coordination, featuring structured metadata, real-time messaging, and dependency topology.",
     "main": "build/index.js",
     "type": "module",
@@ -10,6 +10,8 @@
     "files": [
         "build",
         "README.md",
+        "README_zh.md",
+        "docs",
         "LICENSE"
     ],
     "keywords": [
@@ -43,10 +45,12 @@
         "prepublishOnly": "npm run build"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "1.25.1"
+        "@modelcontextprotocol/sdk": "1.25.1",
+        "better-sqlite3": "^12.5.0"
     },
     "devDependencies": {
         "@eslint/js": "^9.16.0",
+        "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^22.0.0",
         "eslint": "^9.16.0",
         "typescript": "^5.7.2",

@@ -94,6 +94,7 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 
 ### D. Admin (Moderator Only)
 - `moderator_maintenance`: Prune or clear system logs.
+- `moderator_delete_project`: Completely remove a project and its assets.
 
 ## 📄 Resources (URI)
 

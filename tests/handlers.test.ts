@@ -5,6 +5,7 @@ import { getResourceContent } from "../src/resources/index.js";
 import { promises as fs } from "fs";
 import path from "path";
 import { CONFIG } from "../src/config.js";
+import { closeDatabase } from "../src/storage/sqlite.js";
 
 const TEST_ROOT = path.join(process.cwd(), "test-storage-handlers");
 CONFIG.rootStorage = TEST_ROOT;
@@ -13,9 +14,19 @@ describe("Tool Handlers", () => {
     let mockContext: ToolContext;
 
     beforeEach(async () => {
+        // Ensure clean state - wait a bit for any pending file operations
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
         try {
             await fs.rm(TEST_ROOT, { recursive: true, force: true });
         } catch {}
+        
+        // Create root directory first, then subdirectories
+        await fs.mkdir(TEST_ROOT, { recursive: true });
+        await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
+        await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
+        await fs.mkdir(path.join(TEST_ROOT, "archives"), { recursive: true });
+        
         await StorageManager.init();
 
         mockContext = {
@@ -23,6 +34,13 @@ describe("Tool Handlers", () => {
             setCurrentProject: vi.fn((id) => { mockContext.currentProject = id; }),
             notifyResourceUpdate: vi.fn(),
         };
+    });
+
+    afterEach(async () => {
+        // Clean up locks
+        closeDatabase();
+        // Short delay to ensure file handles are released by OS
+        await new Promise(resolve => setTimeout(resolve, 50));
     });
 
     it("should register session context", async () => {
@@ -92,10 +110,14 @@ describe("Tool Handlers", () => {
 
         expect(await StorageManager.getProjectManifest("web_to-delete.io")).not.toBeNull();
 
-        await handleToolCall("delete_project", { projectId: "web_to-delete.io" }, mockContext);
+        // Set moderator to true for this test since moderator_delete_project requires it
+        CONFIG.isModerator = true;
+        await handleToolCall("moderator_delete_project", { projectId: "web_to-delete.io" }, mockContext);
 
         expect(await StorageManager.getProjectManifest("web_to-delete.io")).toBeNull();
         expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://hub/registry");
+        // Reset for other tests
+        CONFIG.isModerator = false;
     });
 
     it("should list projects", async () => {

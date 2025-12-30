@@ -6,7 +6,7 @@
 
 ### 1. 启动即签到与角色发现
 在任何任务开始前，你**必须**了解自己的身份：
-- **查看身份**：读取 `mcp://nexus/session`。你会看到自己的 `yourId`、所属 `role`（Moderator 或 Regular）以及当前的 `activeProject`。
+- **查看身份与状态**：读取 `mcp://nexus/session` 查看个人标识，读取 `mcp://nexus/status` 查看系统版本、存储模式（SQLite/JSON）及活跃会议数。
 - **声明位置**：调用 `register_session_context(projectId)`。这会让 Nexus 知道你现在负责哪个项目，并解锁该项目的写权限。
 
 ### 2. 信息归档与项目管理 (Project Hub)
@@ -33,14 +33,34 @@
 - `post_global_discussion`：任何跨项目的冲突或依赖，必须在全局频道通报。
 - `update_global_strategy`：在达成共识后，更新最高层级的战略蓝图 (`Master Plan`)。
 
-### 5. 视角切换 (Discovery)
+### 5. 会议管理 (Meeting Management) 🆕
+当需要结构化的跨 Agent 讨论时，使用会议功能：
+
+*   **发起会议**:
+    *   `start_meeting(topic)`: 创建独立的会议文件，返回 `meetingId`。所有后续消息将自动路由到此会议。
+
+*   **参与讨论**:
+    *   `post_global_discussion`: 消息会自动关联到当前活跃会议（无需手动指定 `meetingId`）。
+
+*   **结束会议**:
+    *   `end_meeting(meetingId?, summary?)`: 锁定会议，禁止后续写入。返回 `suggestedSyncTargets`（基于参与者推断的项目列表）。
+
+*   **查阅历史**:
+    *   `list_meetings(status?)`: 查看 `active`、`closed` 或 `archived` 状态的会议列表。
+    *   **快速查阅**：直接读取 `mcp://nexus/active-meeting` 资源，获取当前默认活跃会议的完整 transcript。
+    *   `read_meeting(meetingId)`: 读取指定会议内容，包括 `messages` 和 `decisions`。
+
+*   **归档**:
+    *   `archive_meeting(meetingId)`: 将已关闭的会议归档，仅供只读查阅。
+
+### 6. 视角切换 (Discovery)
 - 读取 `mcp://hub/registry`：了解公司目前有哪些其他项目。
 - 调用 `get_global_topology`：可视化项目间的依赖关系，避免重复造轮子。
 - 调用 `read_project`：查阅其他项目的 API 定义 (`include: "api"`) 或技术文档 (`include: "docs"`)，以便对接。
 
 ## 🛡️ 角色说明
 - **Regular**: 拥有注册、同步资产、讨论和更新各类文档的完整权限。
-- **Moderator**: 额外拥有清理和修剪历史记录（`moderator_maintenance`）的权限。启动时需添加 `--moderator` 参数。
+- **Moderator**: 额外拥有清理历史记录（`moderator_maintenance`）及物理删除项目资产（`moderator_delete_project`）的权限。启动时需添加 `--moderator` 参数。
 
 ## ❌ 退出机制
 本系统不依赖 GitHub，你的所有 `sync` 操作都是对本地磁盘的原子写入。请确保在同步时提供清晰的 `internalDocs`。

@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 
 import { CONFIG } from "../config.js";
 import { StorageManager } from "../storage/index.js";
+import { UnifiedMeetingStore } from "../storage/store.js";
 
 /**
  * Resource content providers for MCP ReadResourceRequestSchema
@@ -37,6 +38,31 @@ export async function getResourceContent(
         return { mimeType: "application/json", text: JSON.stringify(info, null, 2) };
     }
 
+    if (uri === "mcp://nexus/status") {
+        const state = await UnifiedMeetingStore.getState();
+        const storageInfo = await UnifiedMeetingStore.getStorageInfo();
+        const status = {
+            status: "online",
+            version: "0.1.8",
+            ...storageInfo,
+            active_meetings_count: state.activeMeetings.length,
+            default_meeting: state.defaultMeetingId
+        };
+        return { mimeType: "application/json", text: JSON.stringify(status, null, 2) };
+    }
+
+    if (uri === "mcp://nexus/active-meeting") {
+        const active = await UnifiedMeetingStore.getActiveMeeting();
+        if (active) return { mimeType: "application/json", text: JSON.stringify(active, null, 2) };
+        return { mimeType: "application/json", text: JSON.stringify({ message: "No active meeting" }, null, 2) };
+    }
+
+    if (uri.startsWith("mcp://nexus/meetings/")) {
+        const meetingId = uri.substring("mcp://nexus/meetings/".length);
+        const mtg = await UnifiedMeetingStore.getMeeting(meetingId);
+        if (mtg) return { mimeType: "application/json", text: JSON.stringify(mtg, null, 2) };
+    }
+
     // Dynamic Project Resources (Handles Namespaces)
     if (uri.startsWith("mcp://hub/projects/")) {
         if (uri.endsWith("/manifest")) {
@@ -67,6 +93,8 @@ export async function listResources() {
             { uri: "mcp://hub/registry", name: "Global Project Registry", description: "Consolidated index of all local projects." },
             { uri: "mcp://docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination." },
             { uri: "mcp://nexus/session", name: "Current Session Info", description: "Your identity and role in this Nexus instance." },
+            { uri: "mcp://nexus/status", name: "System Status & Storage Mode", description: "Backend storage mode (sqlite/json) and active meeting counts." },
+            { uri: "mcp://nexus/active-meeting", name: "Current Active Meeting", description: "Full transcript and participants of the current default meeting." },
             ...projectIds.map(id => {
                 const prefix = id.split("_")[0];
                 const typeLabel = {
@@ -83,7 +111,8 @@ export async function listResources() {
             })
         ],
         resourceTemplates: [
-            { uriTemplate: "mcp://hub/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." }
+            { uriTemplate: "mcp://hub/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." },
+            { uriTemplate: "mcp://nexus/meetings/{meetingId}", name: "Meeting Insights", description: "Full transcript and decisions for a specific meeting." }
         ]
     };
 }

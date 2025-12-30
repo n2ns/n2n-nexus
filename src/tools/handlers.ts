@@ -3,7 +3,8 @@ import { promises as fs } from "fs";
 
 import { CONFIG } from "../config.js";
 import { StorageManager } from "../storage/index.js";
-import { ProjectManifest, DiscussionMessage } from "../types.js";
+import { UnifiedMeetingStore } from "../storage/store.js";
+import { ProjectManifest, DiscussionMessage, MeetingSession } from "../types.js";
 
 export interface ToolContext {
     currentProject: string | null;
@@ -16,10 +17,10 @@ export interface ToolContext {
  */
 function validateProjectId(id: string) {
     if (!id) throw new McpError(ErrorCode.InvalidParams, "Project ID cannot be empty.");
-    
+
     const validPrefixes = ["web_", "api_", "chrome_", "vscode_", "mcp_", "android_", "ios_", "flutter_", "desktop_", "lib_", "bot_", "infra_", "doc_"];
     const hasPrefix = validPrefixes.some(p => id.startsWith(p));
-    
+
     if (!hasPrefix || id.includes("..") || id.startsWith("/") || id.endsWith("/")) {
         throw new McpError(ErrorCode.InvalidParams, "Project ID must follow the standard '[prefix]_[technical-name]' format and cannot contain '..' or slashes.");
     }
@@ -78,11 +79,27 @@ export async function handleToolCall(
         case "list_projects":
             return handleListProjects();
 
-        case "delete_project":
+        case "moderator_delete_project":
             return handleRemoveProject(toolArgs as { projectId: string }, ctx);
 
         case "moderator_maintenance":
             return handleModeratorMaintenance(toolArgs as { action: "prune" | "clear"; count: number }, ctx);
+
+        // --- Meeting Tools ---
+        case "start_meeting":
+            return handleStartMeeting(toolArgs as { topic: string }, ctx);
+
+        case "end_meeting":
+            return handleEndMeeting(toolArgs as { meetingId?: string; summary?: string }, ctx);
+
+        case "list_meetings":
+            return handleListMeetings(toolArgs as { status?: MeetingSession["status"] });
+
+        case "read_meeting":
+            return handleReadMeeting(toolArgs as { meetingId: string });
+
+        case "archive_meeting":
+            return handleArchiveMeeting(toolArgs as { meetingId: string });
 
         default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -219,7 +236,7 @@ async function handleRenameProject(args: { oldId: string; newId: string }, ctx: 
     }
     validateProjectId(args.newId);
     const updatedCount = await StorageManager.renameProject(args.oldId, args.newId);
-    
+
     // Notify all affected project resources and registry
     ctx.notifyResourceUpdate("mcp://hub/registry");
     ctx.notifyResourceUpdate(`mcp://hub/projects/${args.newId}/manifest`);
@@ -237,25 +254,88 @@ async function handleGetTopology() {
 
 async function handlePostDiscussion(args: { message: string; category?: DiscussionMessage["category"] }, ctx: ToolContext) {
     if (!args?.message) throw new McpError(ErrorCode.InvalidParams, "Message content cannot be empty.");
-    await StorageManager.addGlobalLog(`${CONFIG.instanceId}@${ctx.currentProject || "Global"}`, args.message, args.category);
-    
-    // Notify chat resource update
-    ctx.notifyResourceUpdate("mcp://chat/global");
 
-    return { content: [{ type: "text", text: `Message broadcasted to Nexus Room${args.category ? ` [${args.category}]` : ""}.` }] };
+    const from = `${CONFIG.instanceId}@${ctx.currentProject || "Global"}`;
+    const message: DiscussionMessage = {
+        timestamp: new Date().toISOString(),
+        from,
+        text: args.message,
+        category: args.category
+    };
+
+    // Check for active meeting - auto-route if exists
+    const activeMeeting = await UnifiedMeetingStore.getActiveMeeting();
+
+    if (activeMeeting) {
+        // Route to active meeting
+        await UnifiedMeetingStore.addMessage(activeMeeting.id, message);
+        ctx.notifyResourceUpdate(`mcp://meetings/${activeMeeting.id}`);
+        ctx.notifyResourceUpdate("mcp://chat/global");
+
+        return {
+            content: [{
+                type: "text",
+                text: `Message posted to active meeting '${activeMeeting.topic}' (${activeMeeting.id})${args.category ? ` [${args.category}]` : ""}.`
+            }]
+        };
+    } else {
+        // Fallback to global discussion (backward compatibility)
+        await StorageManager.addGlobalLog(from, args.message, args.category);
+        ctx.notifyResourceUpdate("mcp://chat/global");
+
+        return {
+            content: [{
+                type: "text",
+                text: `Message broadcasted to Nexus Room (no active meeting)${args.category ? ` [${args.category}]` : ""}.`
+            }]
+        };
+    }
 }
 
-async function handleReadRecentDiscussion(args: { count?: number }) {
+async function handleReadRecentDiscussion(args: { count?: number; meetingId?: string }) {
     const count = args?.count || 10;
+
+    // If meetingId specified, read from that meeting
+    if (args?.meetingId) {
+        const messages = await UnifiedMeetingStore.getRecentMessages(count, args.meetingId);
+        return { content: [{ type: "text", text: JSON.stringify(messages, null, 2) }] };
+    }
+
+    // Check for active meeting first
+    const activeMeeting = await UnifiedMeetingStore.getActiveMeeting();
+    if (activeMeeting) {
+        const messages = await UnifiedMeetingStore.getRecentMessages(count, activeMeeting.id);
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    source: "meeting",
+                    meetingId: activeMeeting.id,
+                    topic: activeMeeting.topic,
+                    messages
+                }, null, 2)
+            }]
+        };
+    }
+
+    // Fallback to global logs
     const logs = await StorageManager.getRecentLogs(count);
-    return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                source: "global",
+                messages: logs
+            }, null, 2)
+        }]
+    };
 }
 
 async function handleUpdateStrategy(args: { content: string }, _ctx: ToolContext) {
     if (!args?.content) throw new McpError(ErrorCode.InvalidParams, "Strategy content cannot be empty.");
     await fs.writeFile(StorageManager.globalBlueprint, args.content);
     await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Updated Coordination Strategy.`);
-    
+
     // Notify strategy update
     return { content: [{ type: "text", text: "Strategy updated." }] };
 }
@@ -323,3 +403,88 @@ async function handleModeratorMaintenance(args: { action: "prune" | "clear"; cou
         }
     }
 }
+
+// --- Meeting Handlers ---
+
+async function handleStartMeeting(args: { topic: string }, ctx: ToolContext) {
+    if (!args?.topic) throw new McpError(ErrorCode.InvalidParams, "Topic is required to start a meeting.");
+    const initiator = ctx.currentProject ? `${CONFIG.instanceId}@${ctx.currentProject}` : `${CONFIG.instanceId}@Global`;
+    const meeting = await UnifiedMeetingStore.startMeeting(args.topic, initiator);
+
+    // Notify updates
+    ctx.notifyResourceUpdate("mcp://nexus/status");
+    ctx.notifyResourceUpdate("mcp://chat/global");
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: `Meeting started (Topic: '${args.topic}').`,
+                meetingId: meeting.id,
+                topic: args.topic,
+                status: meeting.status,
+                startTime: meeting.startTime
+            }, null, 2)
+        }]
+    };
+}
+
+async function handleEndMeeting(args: { meetingId?: string; summary?: string }, ctx: ToolContext) {
+    let targetId = args.meetingId;
+    if (!targetId) {
+        const active = await UnifiedMeetingStore.getActiveMeeting();
+        if (!active) throw new McpError(ErrorCode.InvalidRequest, "No active meeting found to end. Please specify meetingId.");
+        targetId = active.id;
+    }
+
+    const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary);
+
+    ctx.notifyResourceUpdate("mcp://nexus/status");
+    ctx.notifyResourceUpdate("mcp://chat/global");
+
+    const suggestionText = suggestedSyncTargets.length > 0
+        ? `\nSuggested sync targets: ${suggestedSyncTargets.join(", ")}`
+        : "";
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: `Meeting '${meeting.topic}' closed.`,
+                meetingId: meeting.id,
+                topic: meeting.topic,
+                status: meeting.status,
+                decisionsCount: meeting.decisions.length,
+                suggestedSyncTargets
+            }, null, 2)
+        }]
+    };
+}
+
+async function handleListMeetings(args: { status?: MeetingSession["status"] }) {
+    const meetings = await UnifiedMeetingStore.listMeetings(args.status);
+    return { content: [{ type: "text", text: JSON.stringify(meetings, null, 2) }] };
+}
+
+async function handleReadMeeting(args: { meetingId: string }) {
+    if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
+    const meeting = await UnifiedMeetingStore.getMeeting(args.meetingId);
+    if (!meeting) throw new McpError(ErrorCode.InvalidRequest, `Meeting '${args.meetingId}' not found.`);
+    return { content: [{ type: "text", text: JSON.stringify(meeting, null, 2) }] };
+}
+
+async function handleArchiveMeeting(args: { meetingId: string }) {
+    if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
+    await UnifiedMeetingStore.archiveMeeting(args.meetingId);
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: `Meeting '${args.meetingId}' archived.`,
+                meetingId: args.meetingId,
+                status: "archived"
+            }, null, 2)
+        }]
+    };
+}
+

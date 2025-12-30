@@ -2,6 +2,40 @@
 
 本项目的所有重要变更都将记录在此文件中。
 
+## [v0.1.8] - 2025-12-30
+
+### 🎯 会议架构 (Phase 1 & 2)
+- **混合存储后端**: 自动选择 **SQLite** (优先) 或 **JSON Fallback**。
+- **SQLite 引擎**: 基于 `better-sqlite3` 并启用 **WAL 模式**，支持高并发和多进程安全访问。
+- **新生命周期实体**: `MeetingSession` 取代单体日志，实现结构化会议管理。
+- **生命周期工具**:
+  - `start_meeting(topic)`: 创建独立会议，具备防碰撞 ID 生成逻辑。
+  - `end_meeting(meetingId?, summary?)`: 关闭会议并自动汇总决策。
+  - `archive_meeting(meetingId)`: 将关闭的会议移至历史存档数据层。
+  - `list_meetings(status?)`: 按状态筛选浏览会议。
+  - `read_meeting(meetingId)`: 详细读取历史记录、参会者和决策。
+
+### 🏗️ API 与存储优化
+- **结构化 JSON 响应**: 会议工具现在返回机器可读的 JSON，方便 Agent 集成。
+- **智能自动路由**: 全局讨论消息将自动路由至当前活跃的会议。
+- **ID 生成增强**: 为非 ASCII 主题 (如中文) 增加 Base64 回退和随机后缀，确保 ID 唯一性。
+- **并发控制**: 提取通用的 `AsyncMutex` 工具类，优化 SQLite 原生锁支持。
+- **状态报告**: `mcp://nexus/status` 现在报告 `storage_mode` 和 `is_degraded` (降级) 标志。
+
+### 🧪 质量保障
+- **全方位测试套件**: 新增 24+ 项集成与压力测试 (100% 通过)。
+- **并发压力测试**: 验证在高频消息并发情况下的数据完整性。
+- **回退验证**: 确认系统在缺失原生模块时能稳定回退至 JSON 模式。
+
+### 🛡️ 安全与权限 (Security)
+- **工具权限加固**: 将 `delete_project` 重命名为 `moderator_delete_project`，并强制执行管理员身份验证，防止未授权删除项目。
+- **错误信息脱敏**: 进一步优化了错误处理器，确保不向 AI 暴露本地绝对路径。
+
+### 📄 资源与文档 (Resources & Docs)
+- **新资源接口**: 增加了 `mcp://nexus/active-meeting` 资源，支持一键读取当前会议的完整 transcript 和决策。
+- **README 补全**: 在中英文文档中同步更新了管理工具 (`Admin`) 章节，增加了新增工具的用法说明。
+- **开发指南**: 更新了 `ASSISTANT_GUIDE.md`，提供了会议管理和同步的最佳实践。
+
 ## [v0.1.7] - 2025-12-30
 
 ### ⚙️ CLI 简化

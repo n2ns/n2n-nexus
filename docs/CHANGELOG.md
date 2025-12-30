@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.8] - 2025-12-30
+
+### 🎯 Meeting Architecture (Phase 1 & 2)
+- **Hybrid Storage Backend**: Automatic selection between **SQLite** (preferred) and **JSON Fallback**.
+- **SQLite Engine**: Powered by `better-sqlite3` with **WAL mode** for high-concurrency and multi-process safety.
+- **New Lifecycle Entity**: `MeetingSession` replaces monolithic chat logs with discrete sessions.
+- **Lifecycle Tools**:
+  - `start_meeting(topic)`: Creates dedicated session with unique ID and random entropy.
+  - `end_meeting(meetingId?, summary?)`: Closes meeting, collects decisions.
+  - `archive_meeting(meetingId)`: Moves sessions to historical archives.
+  - `list_meetings(status?)`: Filtered discovery of sessions.
+  - `read_meeting(meetingId)`: Detailed retrieval of history, participants, and decisions.
+
+### 🏗️ API & Storage Improvements
+- **Structured JSON Responses**: Meeting tools now return machine-readable JSON for better agent integration.
+- **Smart Auto-Routing**: Global discussion messages are automatically routed to active meetings.
+- **ID Generation**: Robust slug generation with Base64 fallback for non-ASCII topics (Chinese/Unicode).
+- **Concurrency Control**: Shared `AsyncMutex` utility and native SQLite locking.
+- **Status Reporting**: `mcp://nexus/status` now reports `storage_mode` and `is_degraded` flags.
+
+### 🧪 Quality Assurance
+- **Comprehensive Test Suite**: Added 24+ integration and stress tests (100% Green).
+- **Concurrency Stress Tests**: Validated data integrity under rapid message bursts.
+- **Fallback Verification**: Confirmed system stability when native modules are unavailable.
+
+### 🛡️ Security
+- **Hardened Project Deletion**: Renamed `delete_project` to `moderator_delete_project` and enforced explicit moderator validation to prevent unauthorized project destruction.
+- **Path Sanitization**: Enhanced error handling to strip absolute local file paths from MCP error messages.
+
+### 📄 Resources & Documentation
+- **New Resource**: Added `mcp://nexus/active-meeting` for instant access to the current meeting transcript and decisions.
+- **Improved Tooling UX**: Documented return value structures and administrative requirements in tool definitions.
+- **Manuals**: Updated `ASSISTANT_GUIDE.md` and both README versions with new admin tool documentation and Phase 2 best practices.
+
 ## [v0.1.7] - 2025-12-30
 
 ### ⚙️ CLI Simplification

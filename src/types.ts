@@ -25,6 +25,26 @@ export interface DiscussionMessage {
     category?: "MEETING_START" | "PROPOSAL" | "DECISION" | "UPDATE" | "CHAT";
 }
 
+// Meeting Architecture Types (Phase 1)
+export type MeetingStatus = "active" | "closed" | "archived";
+
+export interface MeetingSession {
+    id: string;                     // Format: YYYYMMDD-HHmmss-[topic-slug]
+    topic: string;
+    status: MeetingStatus;
+    startTime: string;
+    endTime?: string;
+    participants: string[];         // List of Agent IDs who posted
+    messages: DiscussionMessage[];
+    decisions: string[];            // Extracted DECISION messages (per Daisy's request)
+    summary?: string;               // Optional summary on close
+}
+
+export interface MeetingState {
+    activeMeetings: string[];       // Stack of active meeting IDs
+    defaultMeetingId: string | null; // Most recent active meeting (for auto-routing)
+}
+
 export interface HubConfig {
     instanceId: string;
     isModerator: boolean;

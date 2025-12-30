@@ -28,7 +28,7 @@ class NexusServer {
 
     constructor() {
         this.server = new Server(
-            { name: "n2n-nexus", version: "0.1.7" },
+            { name: "n2n-nexus", version: "0.1.8" },
             { capabilities: { resources: {}, tools: {}, prompts: {} } }
         );
         this.setupHandlers();
