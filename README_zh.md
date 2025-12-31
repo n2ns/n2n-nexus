@@ -31,19 +31,21 @@ Nexus 将所有数据存储在本地文件系统中（默认路径可配置）�
 Nexus_Storage/
 ├── global/
 │   ├── blueprint.md       # Master Strategy
-│   ├── discussion.json    # Chat History
-│   ├── docs_index.json    # Global Docs Metadata
-│   └── docs/              # Global Markdown Docs
+│   ├── discussion.json    # 全局聊天历史 (fallback)
+│   ├── docs_index.json    # 全局文档索引
+│   └── docs/              # 全局 Markdown 文档
 │       ├── coding-standards.md
 │       └── deployment-flow.md
 ├── projects/
-│   ├── my-app/
-│   │   ├── manifest.json  # Project Metadata
-│   │   ├── internal_blueprint.md
-│   │   └── assets/        # Binary Assets
-│   └── ...
-├── registry.json          # Global Project Index
-└── archives/              # (Reserved for backups)
+│   └── {project-id}/
+│       ├── manifest.json          # 项目元数据
+│       ├── internal_blueprint.md  # 技术实现文档
+│       └── assets/                # 二进制资产 (图片、PDF)
+├── meetings/              # 会议文件 (JSON 回退模式)
+│   └── {meeting-id}.json
+├── registry.json          # 全局项目索引
+├── archives/              # 归档备份 (保留)
+└── nexus.db               # SQLite 数据库 (会议、任务、状态)
 ```
 
 **自我修复 (Self-healing)**: 核心数据文件（如 `registry.json`, `discussion.json`）具备自动检测与修复机制。如果文件损坏或意外丢失，系统会自动重建初始状态，确保服务不中断。

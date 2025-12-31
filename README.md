@@ -31,19 +31,21 @@ Nexus stores all data in the local file system (customizable path), ensuring com
 Nexus_Storage/
 ├── global/
 │   ├── blueprint.md       # Master Strategy
-│   ├── discussion.json    # Chat History
-│   ├── docs_index.json    # Global Docs Metadata
+│   ├── discussion.json    # Global Chat History (fallback)
+│   ├── docs_index.json    # Global Docs Index
 │   └── docs/              # Global Markdown Docs
 │       ├── coding-standards.md
 │       └── deployment-flow.md
 ├── projects/
-│   ├── my-app/
-│   │   ├── manifest.json  # Project Metadata
-│   │   ├── internal_blueprint.md
-│   │   └── assets/        # Binary Assets
-│   └── ...
+│   └── {project-id}/
+│       ├── manifest.json          # Project Metadata
+│       ├── internal_blueprint.md  # Technical Implementation Docs
+│       └── assets/                # Binary Assets (images, PDFs)
+├── meetings/              # Meeting files (JSON fallback mode)
+│   └── {meeting-id}.json
 ├── registry.json          # Global Project Index
-└── archives/              # (Reserved for backups)
+├── archives/              # Reserved for backups
+└── nexus.db               # SQLite Database (meetings, tasks, state)
 ```
 
 **Self-healing**: Core data files (e.g., `registry.json`, `discussion.json`) include automatic detection and repair mechanisms. If files are corrupted or missing, the system automatically rebuilds the initial state to ensure uninterrupted service.
