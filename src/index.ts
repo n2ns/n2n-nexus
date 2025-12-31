@@ -12,10 +12,19 @@ import {
     McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { readFileSync } from "fs";
+import { join } from "path";
+import { fileURLToPath } from "url";
+
 import { CONFIG } from "./config.js";
 import { StorageManager } from "./storage/index.js";
 import { TOOL_DEFINITIONS, handleToolCall } from "./tools/index.js";
 import { listResources, getResourceContent } from "./resources/index.js";
+import { sanitizeErrorMessage } from "./utils/error.js";
+import { checkModeratorPermission } from "./utils/auth.js";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
 
 /**
  * n2ns Nexus: Unified Project Asset & Collaboration Hub
@@ -28,29 +37,10 @@ class NexusServer {
 
     constructor() {
         this.server = new Server(
-            { name: "n2n-nexus", version: "0.1.9" },
+            { name: "n2n-nexus", version: pkg.version },
             { capabilities: { resources: {}, tools: {}, prompts: {} } }
         );
         this.setupHandlers();
-    }
-
-    /**
-     * Validates moderator permissions for admin tools.
-     */
-    private checkModerator(toolName: string) {
-        if (!CONFIG.isModerator) {
-            throw new McpError(ErrorCode.InvalidRequest, `Forbidden: ${toolName} requires Moderator rights.`);
-        }
-    }
-
-    /**
-     * Strips internal file paths from error messages to prevent path exposure to AI.
-     */
-    private sanitizeErrorMessage(msg: string): string {
-        let sanitized = msg.replace(/[A-Za-z]:\\[^\s:]+/g, "[internal-path]");
-        sanitized = sanitized.replace(/\/[^\s:]+\/[^\s:]*/g, "[internal-path]");
-        sanitized = sanitized.replace(/\.\.[\\/][^\s]*/g, "[internal-path]");
-        return sanitized;
     }
 
     private setupHandlers() {
@@ -60,7 +50,7 @@ class NexusServer {
                 return await listResources();
             } catch (error: unknown) {
                 const msg = error instanceof Error ? error.message : String(error);
-                throw new McpError(ErrorCode.InternalError, `Nexus Registry Error: ${this.sanitizeErrorMessage(msg)}`);
+                throw new McpError(ErrorCode.InternalError, `Nexus Registry Error: ${sanitizeErrorMessage(msg)}`);
             }
         });
 
@@ -77,7 +67,7 @@ class NexusServer {
             } catch (error: unknown) {
                 if (error instanceof McpError) throw error;
                 const msg = error instanceof Error ? error.message : String(error);
-                throw new McpError(ErrorCode.InternalError, `Nexus Resource Error: ${this.sanitizeErrorMessage(msg)}`);
+                throw new McpError(ErrorCode.InternalError, `Nexus Resource Error: ${sanitizeErrorMessage(msg)}`);
             }
         });
 
@@ -91,7 +81,7 @@ class NexusServer {
             const { name, arguments: toolArgs } = request.params;
 
             try {
-                if (name.startsWith("moderator_")) this.checkModerator(name);
+                if (name.startsWith("moderator_")) checkModeratorPermission(name);
 
                 const result = await handleToolCall(
                     name,
@@ -110,7 +100,7 @@ class NexusServer {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 return {
                     isError: true,
-                    content: [{ type: "text", text: `Nexus Error: ${this.sanitizeErrorMessage(errorMessage)}` }]
+                    content: [{ type: "text", text: `Nexus Error: ${sanitizeErrorMessage(errorMessage)}` }]
                 };
             }
         });
@@ -172,7 +162,7 @@ class NexusServer {
                 const msg = `Nexus Session Terminated (IDE Closed).`;
                 await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, msg, "UPDATE");
                 console.error(`[Nexus:${CONFIG.instanceId}] Goodbye!`);
-            } catch (e) {
+            } catch {
                 // Ignore if storage is already cleaned up
             }
             process.exit(0);

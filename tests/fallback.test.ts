@@ -5,7 +5,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { CONFIG } from "../src/config.js";
 
-const TEST_ROOT = path.join(process.cwd(), "test-fallback");
+const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-fallback");
 CONFIG.rootStorage = TEST_ROOT;
 
 // We need to reset the lazy-loaded store in store.ts for this test

@@ -2,16 +2,23 @@
 
 本项目的所有重要变更都将记录在此文件中。
 
-## [v0.1.9] - 2025-12-30
+## [v0.2.0] - 2025-12-31
 
-### 🛡️ 协同与权限强化
-- **会议权限控制**: 实现了 **Initiator-only** 停机策略。只有会议发起者或系统管理员 (Moderator) 才能执行 `end_meeting` 和 `archive_meeting`。
-- **自动在线感知**: 实现了会话生命周期日志。AI 实例启动及关闭（IDE 关闭）时会自动发送 `[ONLINE/OFFLINE]` 状态报文，提升多 Agent 协作透明度。
-- **语义名统一**: 完成了工具命名的零别名集成。全面转向 `send_message` 和 `read_messages` 以获得更好的语义理解。
+### 🚀 任务原语系统 (Phase 2 & 3)
+- **深度异步化**: 关键阻塞操作（项目更名 `rename_project`、资产删除 `moderator_delete_project`）已迁移至异步 Task 模式，支持级联背景更新。
+- **执行溯源**: 所有任务均支持 `source_meeting_id` 字段，可直接追溯至最初的会议决策。
+- **进度追踪**: 增加了 `progress` (0.0-1.0) 进度播报机制及结构化结果 URI (`result_uri`)。
+- **生命周期工具**: 新增 `create_task`, `get_task`, `list_tasks`, `update_task` 与 `cancel_task`。
 
-### 🌐 资源命名空间隔离 (MCP 2025)
-- **统一 Authority**: 所有 MCP 资源 URI 已迁移至 `mcp://nexus/` 权威标识符下，防止与其他 MCP Server 发生命名冲突。
-- **状态资源**: 暴露了 `mcp://nexus/status` 和 `mcp://nexus/active-meeting` (当前活跃会议实录) 资源。
+### 🛡️ 安全加固与类型化
+- **深度防御 (Defense-in-Depth)**: 在 `handleRemoveProject` 和 `handleModeratorMaintenance` 内部实现了二次权限校验，提升系统隔离安全性。
+- **会议管理权限**: `end_meeting` 与 `archive_meeting` 现在严格限制为 **Moderator 专属**。
+- **Zod 校验引擎**: 全量迁移工具定义至 Zod 架构，支持正则校验和路径穿透防护。
+- **工具链现代化**: 升级至 **TypeScript 5.9.3**, **Vitest 4.0.16** 与 **ESLint 9.39.2**。
+
+### ✂️ 架构清理 (Code Diet)
+- **工具大清洗**: 删除了 6 个冗余读取工具（`read_project` 等），全面转向 **Resource-First** (MCP 资源优先) 模式。
+- **原生 Zod 4 支持**: 彻底移除了 `zod-to-json-schema` 依赖，采用 Zod 4 原生的 `toJSONSchema()` 生成逻辑。
 
 ## [v0.1.9] - 2025-12-30
 

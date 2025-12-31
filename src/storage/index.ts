@@ -30,6 +30,14 @@ export class StorageManager {
         if (!await this.exists(this.globalBlueprint)) {
             await fs.writeFile(this.globalBlueprint, "# Global Coordination Blueprint\n\nShared meeting space.");
         }
+        
+        // Initialize Phase 2 Tasks table (SQLite) - uses dynamic import to avoid circular dependency
+        try {
+            const { initTasksTable } = await import("./tasks.js");
+            initTasksTable();
+        } catch {
+            // SQLite may not be available or database not ready - will be initialized on first use
+        }
     }
 
     /**

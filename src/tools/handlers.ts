@@ -4,7 +4,12 @@ import { promises as fs } from "fs";
 import { CONFIG } from "../config.js";
 import { StorageManager } from "../storage/index.js";
 import { UnifiedMeetingStore } from "../storage/store.js";
-import { ProjectManifest, DiscussionMessage, MeetingSession } from "../types.js";
+import {
+    createTask, getTask, listTasks, updateTask, cancelTask,
+    TaskStatus
+} from "../storage/tasks.js";
+import { ProjectManifest, DiscussionMessage } from "../types.js";
+import { TOOL_REGISTRY } from "./schemas.js";
 
 export interface ToolContext {
     currentProject: string | null;
@@ -12,19 +17,6 @@ export interface ToolContext {
     notifyResourceUpdate: (uri: string) => void;
 }
 
-/**
- * Validation helper for Project IDs.
- */
-function validateProjectId(id: string) {
-    if (!id) throw new McpError(ErrorCode.InvalidParams, "Project ID cannot be empty.");
-
-    const validPrefixes = ["web_", "api_", "chrome_", "vscode_", "mcp_", "android_", "ios_", "flutter_", "desktop_", "lib_", "bot_", "infra_", "doc_"];
-    const hasPrefix = validPrefixes.some(p => id.startsWith(p));
-
-    if (!hasPrefix || id.includes("..") || id.startsWith("/") || id.endsWith("/")) {
-        throw new McpError(ErrorCode.InvalidParams, "Project ID must follow the standard '[prefix]_[technical-name]' format and cannot contain '..' or slashes.");
-    }
-}
 
 /**
  * Handles all tool executions
@@ -36,70 +28,86 @@ export async function handleToolCall(
 ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
     await StorageManager.init();
 
+    // --- Phase 1.5: Schema Validation ---
+    const toolEntry = TOOL_REGISTRY[name];
+    if (!toolEntry) {
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let validatedArgs: any;
+    try {
+        validatedArgs = toolEntry.schema.parse(toolArgs);
+    } catch (e: unknown) {
+        const error = e as Error;
+        throw new McpError(ErrorCode.InvalidParams, `Schema validation failed: ${error.message}`);
+    }
+
     switch (name) {
         case "register_session_context":
-            return handleRegisterSession(toolArgs as { projectId: string }, ctx);
+            return handleRegisterSession(validatedArgs, ctx);
 
         case "sync_project_assets":
-            return handleSyncProjectAssets(toolArgs as { manifest: ProjectManifest; internalDocs: string }, ctx);
+            return handleSyncProjectAssets(validatedArgs, ctx);
 
         case "upload_project_asset":
-            return handleUploadAsset(toolArgs as { fileName: string; base64Content: string }, ctx);
+            return handleUploadAsset(validatedArgs, ctx);
 
         case "get_global_topology":
             return handleGetTopology();
 
-        case "read_project":
-            return handleReadProject(toolArgs as { projectId: string; include?: string });
-
         case "send_message":
-            return handleSendMessage(toolArgs as { message: string; category?: DiscussionMessage["category"] }, ctx);
+            return handleSendMessage(validatedArgs, ctx);
 
         case "read_messages":
-            return handleReadMessages(toolArgs as { count?: number; meetingId?: string });
+            return handleReadMessages(validatedArgs);
 
         case "update_global_strategy":
-            return handleUpdateStrategy(toolArgs as { content: string }, ctx);
+            return handleUpdateStrategy(validatedArgs, ctx);
 
         case "sync_global_doc":
-            return handleSyncGlobalDoc(toolArgs as { docId: string; title: string; content: string });
-
-        case "list_global_docs":
-            return handleListGlobalDocs();
-
-        case "read_global_doc":
-            return handleReadGlobalDoc(toolArgs as { docId: string });
+            return handleSyncGlobalDoc(validatedArgs);
 
         case "update_project":
-            return handleUpdateProject(toolArgs as { projectId: string; patch: Partial<ProjectManifest> });
+            return handleUpdateProject(validatedArgs);
 
         case "rename_project":
-            return handleRenameProject(toolArgs as { oldId: string; newId: string }, ctx);
-
-        case "list_projects":
-            return handleListProjects();
+            return handleRenameProject(validatedArgs, ctx);
 
         case "moderator_delete_project":
-            return handleRemoveProject(toolArgs as { projectId: string }, ctx);
+            return handleRemoveProject(validatedArgs, ctx);
 
         case "moderator_maintenance":
-            return handleModeratorMaintenance(toolArgs as { action: "prune" | "clear"; count: number }, ctx);
+            return handleModeratorMaintenance(validatedArgs, ctx);
 
         // --- Meeting Tools ---
         case "start_meeting":
-            return handleStartMeeting(toolArgs as { topic: string }, ctx);
+            return handleStartMeeting(validatedArgs, ctx);
 
         case "end_meeting":
-            return handleEndMeeting(toolArgs as { meetingId?: string; summary?: string }, ctx);
-
-        case "list_meetings":
-            return handleListMeetings(toolArgs as { status?: MeetingSession["status"] });
-
-        case "read_meeting":
-            return handleReadMeeting(toolArgs as { meetingId: string });
+            return handleEndMeeting(validatedArgs, ctx);
 
         case "archive_meeting":
-            return handleArchiveMeeting(toolArgs as { meetingId: string }, ctx);
+            return handleArchiveMeeting(validatedArgs, ctx);
+
+        case "reopen_meeting":
+            return handleReopenMeeting(validatedArgs, ctx);
+
+        // --- Phase 2: Task Management ---
+        case "create_task":
+            return handleCreateTask(validatedArgs);
+
+        case "get_task":
+            return handleGetTask(validatedArgs);
+
+        case "list_tasks":
+            return handleListTasks(validatedArgs);
+
+        case "update_task":
+            return handleUpdateTask(validatedArgs);
+
+        case "cancel_task":
+            return handleCancelTask(validatedArgs);
 
         default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -109,49 +117,93 @@ export async function handleToolCall(
 // --- Session Handlers ---
 
 function handleRegisterSession(args: { projectId: string }, ctx: ToolContext) {
-    if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: projectId");
-    validateProjectId(args.projectId);
+    // projectId already validated by Zod schema with refine()
     ctx.setCurrentProject(args.projectId);
     return { content: [{ type: "text", text: `Active Nexus Context: ${args.projectId}` }] };
 }
 
 // --- Project Asset Handlers ---
 
+/**
+ * ASYNC TRIAL: sync_project_assets now uses the Task primitive for non-blocking operation.
+ * Returns a taskId immediately; actual sync happens in background.
+ */
 async function handleSyncProjectAssets(
     args: { manifest: ProjectManifest; internalDocs: string },
     ctx: ToolContext
 ) {
     if (!ctx.currentProject) throw new McpError(ErrorCode.InvalidRequest, "Session not registered. Call register_session_context first.");
-    if (!args?.manifest || !args?.internalDocs) {
-        throw new McpError(ErrorCode.InvalidParams, "Both 'manifest' and 'internalDocs' are mandatory.");
-    }
 
+    // All field validation is now handled by Zod schema (SyncProjectAssetsSchema)
     const m = args.manifest;
-    const requiredFields = ["id", "name", "description", "techStack", "relations", "lastUpdated", "repositoryUrl", "localPath", "endpoints", "apiSpec"];
-    for (const field of requiredFields) {
-        const value = (m as unknown as Record<string, unknown>)[field];
-        if (value === undefined || value === null) {
-            throw new McpError(ErrorCode.InvalidParams, `Project manifest incomplete. Missing field: ${field}`);
-        }
-    }
 
-    validateProjectId(m.id);
-
+    // Validate localPath exists BEFORE creating task (fail-fast)
     if (!await StorageManager.exists(m.localPath)) {
         throw new McpError(ErrorCode.InvalidParams, `localPath does not exist: '${m.localPath}'. Please provide a valid directory path.`);
     }
 
-    await StorageManager.saveProjectManifest(m);
-    await StorageManager.saveProjectDocs(ctx.currentProject, args.internalDocs);
-    await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}@${ctx.currentProject}] Asset Sync: Full sync of manifest and docs.`);
+    // Create background task with metadata
+    const task = createTask({
+        metadata: {
+            operation: "sync_project_assets",
+            projectId: m.id,
+            manifestName: m.name,
+            initiator: CONFIG.instanceId
+        }
+    });
 
-    // Notify updates
-    ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/manifest`);
-    ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/internal-docs`);
-    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
-    ctx.notifyResourceUpdate("mcp://nexus/chat/global");
+    // Execute sync in background (non-blocking)
+    setImmediate(async () => {
+        try {
+            // Update task to running
+            updateTask(task.id, { status: "running", progress: 0.1 });
 
-    return { content: [{ type: "text", text: "Project assets synchronized (Manifest + Docs)." }] };
+            // Step 1: Save manifest (40%)
+            await StorageManager.saveProjectManifest(m);
+            updateTask(task.id, { progress: 0.4 });
+
+            // Step 2: Save docs (70%)
+            await StorageManager.saveProjectDocs(ctx.currentProject!, args.internalDocs);
+            updateTask(task.id, { progress: 0.7 });
+
+            // Step 3: Log and notify (90%)
+            await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}@${ctx.currentProject}] Asset Sync: Full sync of manifest and docs.`);
+            updateTask(task.id, { progress: 0.9 });
+
+            // Step 4: Notify resource updates
+            ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/manifest`);
+            ctx.notifyResourceUpdate(`mcp://nexus/projects/${m.id}/internal-docs`);
+            ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+            ctx.notifyResourceUpdate("mcp://nexus/chat/global");
+
+            // Complete
+            updateTask(task.id, {
+                status: "completed",
+                progress: 1.0,
+                result_uri: `mcp://nexus/projects/${m.id}/manifest`
+            });
+
+        } catch (error) {
+            // Mark failed with error message
+            updateTask(task.id, {
+                status: "failed",
+                error_message: error instanceof Error ? error.message : String(error)
+            });
+        }
+    });
+
+    // Return immediately with task info (non-blocking response)
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Sync task created. Use get_task to poll for completion.",
+                task_id: task.id,
+                status: "pending",
+                poll_hint: "Call get_task with this task_id to check progress."
+            }, null, 2)
+        }]
+    };
 }
 
 async function handleUploadAsset(args: { fileName: string; base64Content: string }, ctx: ToolContext) {
@@ -164,56 +216,6 @@ async function handleUploadAsset(args: { fileName: string; base64Content: string
     return { content: [{ type: "text", text: `Asset '${args.fileName}' saved to project '${ctx.currentProject}'.` }] };
 }
 
-async function handleReadProject(args: { projectId: string; include?: string }) {
-    if (!args?.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "'projectId' is required.");
-    }
-    const include = args.include || "summary";
-    const manifest = await StorageManager.getProjectManifest(args.projectId);
-    if (!manifest) throw new McpError(ErrorCode.InvalidRequest, `Project '${args.projectId}' not found.`);
-
-    let result: Record<string, unknown> = { projectId: args.projectId };
-
-    switch (include) {
-        case "manifest":
-            result = { projectId: args.projectId, manifest };
-            break;
-        case "docs": {
-            const docs = await StorageManager.getProjectDocs(args.projectId);
-            result = { projectId: args.projectId, docs: docs || "(No documentation)" };
-            break;
-        }
-        case "repo":
-            result = { projectId: args.projectId, repositoryUrl: manifest.repositoryUrl };
-            break;
-        case "endpoints":
-            result = { projectId: args.projectId, endpoints: manifest.endpoints };
-            break;
-        case "api":
-            result = { projectId: args.projectId, apiSpec: manifest.apiSpec };
-            break;
-        case "relations":
-            result = { projectId: args.projectId, relations: manifest.relations };
-            break;
-        case "summary":
-            result = {
-                projectId: args.projectId,
-                name: manifest.name,
-                description: manifest.description,
-                techStack: manifest.techStack,
-                repositoryUrl: manifest.repositoryUrl
-            };
-            break;
-        case "all": {
-            const docs = await StorageManager.getProjectDocs(args.projectId);
-            result = { projectId: args.projectId, manifest, docs: docs || "(No documentation)" };
-            break;
-        }
-        default:
-            throw new McpError(ErrorCode.InvalidParams, `Invalid 'include' value: ${include}`);
-    }
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-}
 
 async function handleUpdateProject(args: { projectId: string; patch: Partial<ProjectManifest> }) {
     if (!args?.projectId || !args?.patch) {
@@ -230,19 +232,62 @@ async function handleUpdateProject(args: { projectId: string; patch: Partial<Pro
     return { content: [{ type: "text", text: `Project '${args.projectId}' updated. Changed fields: ${changedFields}.` }] };
 }
 
+/**
+ * ASYNC: rename_project now returns a taskId.
+ */
 async function handleRenameProject(args: { oldId: string; newId: string }, ctx: ToolContext) {
-    if (!args?.oldId || !args?.newId) {
-        throw new McpError(ErrorCode.InvalidParams, "Both 'oldId' and 'newId' are required.");
-    }
-    validateProjectId(args.newId);
-    const updatedCount = await StorageManager.renameProject(args.oldId, args.newId);
+    // Validate project exists before creating task
+    const exists = await StorageManager.getProjectManifest(args.oldId);
+    if (!exists) throw new McpError(ErrorCode.InvalidRequest, `Project '${args.oldId}' not found.`);
 
-    // Notify all affected project resources and registry
-    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
-    ctx.notifyResourceUpdate(`mcp://nexus/projects/${args.newId}/manifest`);
-    ctx.notifyResourceUpdate("mcp://get_global_topology"); // Topology changed
+    // Create background task
+    const task = createTask({
+        metadata: {
+            operation: "rename_project",
+            oldId: args.oldId,
+            newId: args.newId,
+            initiator: CONFIG.instanceId
+        }
+    });
 
-    return { content: [{ type: "text", text: `Project renamed: '${args.oldId}' → '${args.newId}'. Cascading updates: ${updatedCount} project(s).` }] };
+    // Background execution
+    setImmediate(async () => {
+        try {
+            updateTask(task.id, { status: "running", progress: 0.2 });
+
+            const updatedCount = await StorageManager.renameProject(args.oldId, args.newId);
+            updateTask(task.id, { progress: 0.8 });
+
+            // Notify all affected project resources and registry
+            ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+            ctx.notifyResourceUpdate(`mcp://nexus/projects/${args.newId}/manifest`);
+            ctx.notifyResourceUpdate("mcp://get_global_topology");
+
+            updateTask(task.id, {
+                status: "completed",
+                progress: 1.0,
+                result_uri: `mcp://nexus/projects/${args.newId}/manifest`
+            });
+
+            await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Task Completed: Project renamed '${args.oldId}' -> '${args.newId}'. Handled ${updatedCount} cascading updates.`);
+        } catch (error) {
+            updateTask(task.id, {
+                status: "failed",
+                error_message: error instanceof Error ? error.message : String(error)
+            });
+        }
+    });
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Rename task created.",
+                task_id: task.id,
+                status: "pending"
+            }, null, 2)
+        }]
+    };
 }
 
 // --- Global Handlers ---
@@ -340,12 +385,60 @@ async function handleUpdateStrategy(args: { content: string }, _ctx: ToolContext
     return { content: [{ type: "text", text: "Strategy updated." }] };
 }
 
+/**
+ * ASYNC: moderator_delete_project now returns a taskId.
+ */
 async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext) {
+    // Defense-in-Depth: Explicit moderator check
+    if (!CONFIG.isModerator) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can delete projects.");
+    }
     if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "projectId is required.");
-    await StorageManager.deleteProject(args.projectId);
-    ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
-    ctx.notifyResourceUpdate("mcp://nexus/get_global_topology");
-    return { content: [{ type: "text", text: `Project '${args.projectId}' removed from Nexus.` }] };
+
+    // Validate project exists
+    const exists = await StorageManager.getProjectManifest(args.projectId);
+    if (!exists) throw new McpError(ErrorCode.InvalidRequest, `Project '${args.projectId}' not found.`);
+
+    // Create background task
+    const task = createTask({
+        metadata: {
+            operation: "moderator_delete_project",
+            projectId: args.projectId,
+            initiator: CONFIG.instanceId
+        }
+    });
+
+    // Background execution
+    setImmediate(async () => {
+        try {
+            updateTask(task.id, { status: "running", progress: 0.1 });
+
+            await StorageManager.deleteProject(args.projectId);
+            updateTask(task.id, { progress: 0.9 });
+
+            ctx.notifyResourceUpdate("mcp://nexus/hub/registry");
+            ctx.notifyResourceUpdate("mcp://nexus/get_global_topology");
+
+            updateTask(task.id, { status: "completed", progress: 1.0 });
+            await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Task Completed: Project '${args.projectId}' deleted by moderator.`);
+        } catch (error) {
+            updateTask(task.id, {
+                status: "failed",
+                error_message: error instanceof Error ? error.message : String(error)
+            });
+        }
+    });
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Delete task created.",
+                task_id: task.id,
+                status: "pending"
+            }, null, 2)
+        }]
+    };
 }
 
 async function handleSyncGlobalDoc(args: { docId: string; title: string; content: string }) {
@@ -357,34 +450,14 @@ async function handleSyncGlobalDoc(args: { docId: string; title: string; content
     return { content: [{ type: "text", text: `Global document '${args.docId}' synchronized.` }] };
 }
 
-async function handleListGlobalDocs() {
-    const index = await StorageManager.listGlobalDocs();
-    return { content: [{ type: "text", text: JSON.stringify(index, null, 2) }] };
-}
-
-async function handleReadGlobalDoc(args: { docId: string }) {
-    if (!args?.docId) throw new McpError(ErrorCode.InvalidParams, "docId is required.");
-    const content = await StorageManager.getGlobalDoc(args.docId);
-    if (!content) throw new McpError(ErrorCode.InvalidRequest, `Global document '${args.docId}' not found.`);
-    return { content: [{ type: "text", text: content }] };
-}
-
-// --- Admin Handlers ---
-
-async function handleListProjects() {
-    const registry = await StorageManager.listRegistry();
-    const projects = Object.entries(registry.projects).map(([id, p]) => ({
-        id,
-        name: p.name,
-        summary: p.summary,
-        lastActive: p.lastActive
-    }));
-    return { content: [{ type: "text", text: JSON.stringify(projects, null, 2) }] };
-}
 
 // --- Admin Handlers ---
 
 async function handleModeratorMaintenance(args: { action: "prune" | "clear"; count: number }, ctx: ToolContext) {
+    // Defense-in-Depth: Explicit moderator check
+    if (!CONFIG.isModerator) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can perform maintenance.");
+    }
     if (!args.action || args.count === undefined) {
         throw new McpError(ErrorCode.InvalidParams, "Both 'action' and 'count' are mandatory for maintenance.");
     }
@@ -436,19 +509,15 @@ async function handleEndMeeting(args: { meetingId?: string; summary?: string }, 
         if (!active) throw new McpError(ErrorCode.InvalidRequest, "No active meeting found to end. Please specify meetingId.");
         targetId = active.id;
     }
-    const callerId = ctx.currentProject ? `${CONFIG.instanceId}@${ctx.currentProject}` : `${CONFIG.instanceId}@Global`;
-    
-    // Moderators can end any meeting, others are checked by initiator
-    const effectiveCallerId = CONFIG.isModerator ? undefined : callerId;
+    // STRICT: Only moderators can end meetings
+    if (!CONFIG.isModerator) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can end meetings.");
+    }
 
-    const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary, effectiveCallerId);
+    const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary, undefined);
 
     ctx.notifyResourceUpdate("mcp://nexus/status");
     ctx.notifyResourceUpdate("mcp://nexus/chat/global");
-
-    const suggestionText = suggestedSyncTargets.length > 0
-        ? `\nSuggested sync targets: ${suggestedSyncTargets.join(", ")}`
-        : "";
 
     return {
         content: [{
@@ -465,24 +534,16 @@ async function handleEndMeeting(args: { meetingId?: string; summary?: string }, 
     };
 }
 
-async function handleListMeetings(args: { status?: MeetingSession["status"] }) {
-    const meetings = await UnifiedMeetingStore.listMeetings(args.status);
-    return { content: [{ type: "text", text: JSON.stringify(meetings, null, 2) }] };
-}
 
-async function handleReadMeeting(args: { meetingId: string }) {
+async function handleArchiveMeeting(args: { meetingId: string }, _ctx: ToolContext) {
     if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
-    const meeting = await UnifiedMeetingStore.getMeeting(args.meetingId);
-    if (!meeting) throw new McpError(ErrorCode.InvalidRequest, `Meeting '${args.meetingId}' not found.`);
-    return { content: [{ type: "text", text: JSON.stringify(meeting, null, 2) }] };
-}
 
-async function handleArchiveMeeting(args: { meetingId: string }, ctx: ToolContext) {
-    if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
-    const callerId = ctx.currentProject ? `${CONFIG.instanceId}@${ctx.currentProject}` : `${CONFIG.instanceId}@Global`;
-    const effectiveCallerId = CONFIG.isModerator ? undefined : callerId;
-    
-    await UnifiedMeetingStore.archiveMeeting(args.meetingId, effectiveCallerId);
+    // STRICT: Only moderators can archive meetings
+    if (!CONFIG.isModerator) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can archive meetings.");
+    }
+
+    await UnifiedMeetingStore.archiveMeeting(args.meetingId, undefined);
     return {
         content: [{
             type: "text",
@@ -495,3 +556,124 @@ async function handleArchiveMeeting(args: { meetingId: string }, ctx: ToolContex
     };
 }
 
+async function handleReopenMeeting(args: { meetingId: string }, ctx: ToolContext) {
+    if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
+
+    const meeting = await UnifiedMeetingStore.reopenMeeting(args.meetingId, undefined);
+
+    ctx.notifyResourceUpdate("mcp://nexus/status");
+    ctx.notifyResourceUpdate("mcp://nexus/chat/global");
+    ctx.notifyResourceUpdate(`mcp://nexus/meetings/${meeting.id}`);
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: `Meeting '${meeting.topic}' reopened.`,
+                meetingId: meeting.id,
+                topic: meeting.topic,
+                status: meeting.status
+            }, null, 2)
+        }]
+    };
+}
+
+// --- Phase 2: Task Handlers ---
+// Note: Tasks table is initialized globally in StorageManager.init()
+
+function handleCreateTask(args: { source_meeting_id?: string; metadata?: Record<string, unknown>; ttl?: number }) {
+    const task = createTask({
+        source_meeting_id: args.source_meeting_id,
+        metadata: args.metadata,
+        ttl: args.ttl
+    });
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Task created successfully.",
+                task_id: task.id,
+                status: task.status,
+                source_meeting_id: task.source_meeting_id
+            }, null, 2)
+        }]
+    };
+}
+
+function handleGetTask(args: { taskId: string }) {
+    const task = getTask(args.taskId);
+    if (!task) {
+        throw new McpError(ErrorCode.InvalidRequest, `Task '${args.taskId}' not found.`);
+    }
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify(task, null, 2)
+        }]
+    };
+}
+
+function handleListTasks(args: { status?: TaskStatus; limit?: number }) {
+    const tasks = listTasks(args.status, args.limit || 50);
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                count: tasks.length,
+                tasks: tasks.map(t => ({
+                    id: t.id,
+                    status: t.status,
+                    progress: t.progress,
+                    source_meeting_id: t.source_meeting_id,
+                    created_at: t.created_at
+                }))
+            }, null, 2)
+        }]
+    };
+}
+
+function handleUpdateTask(args: { taskId: string; status?: TaskStatus; progress?: number; result_uri?: string; error_message?: string }) {
+    const existing = getTask(args.taskId);
+    if (!existing) {
+        throw new McpError(ErrorCode.InvalidRequest, `Task '${args.taskId}' not found.`);
+    }
+
+    const updated = updateTask(args.taskId, {
+        status: args.status,
+        progress: args.progress,
+        result_uri: args.result_uri,
+        error_message: args.error_message
+    });
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Task updated.",
+                task_id: updated!.id,
+                status: updated!.status,
+                progress: updated!.progress
+            }, null, 2)
+        }]
+    };
+}
+
+function handleCancelTask(args: { taskId: string }) {
+    const success = cancelTask(args.taskId);
+    if (!success) {
+        throw new McpError(ErrorCode.InvalidRequest, `Cannot cancel task '${args.taskId}'. Task not found or already completed.`);
+    }
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                message: "Task cancelled.",
+                task_id: args.taskId,
+                status: "cancelled"
+            }, null, 2)
+        }]
+    };
+}

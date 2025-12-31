@@ -219,6 +219,31 @@ export class SqliteMeetingStore {
     }
 
     /**
+     * Reopen a closed or archived meeting
+     */
+    static reopenMeeting(meetingId: string, _callerId?: string): MeetingSession {
+        const db = getDatabase();
+        
+        const meeting = this.getMeeting(meetingId);
+        if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
+        if (meeting.status === "active") throw new Error(`Meeting '${meetingId}' is already active.`);
+
+        // Update status to active
+        const stmt = db.prepare("UPDATE meetings SET status = 'active', closed_at = NULL WHERE id = ?");
+        stmt.run(meetingId);
+
+        // Update state
+        const activeMeetings = this.getActiveMeetingIds();
+        if (!activeMeetings.includes(meetingId)) {
+            activeMeetings.push(meetingId);
+            this.updateState("active_meetings", JSON.stringify(activeMeetings));
+        }
+        this.updateState("default_meeting", meetingId);
+
+        return this.getMeeting(meetingId)!;
+    }
+
+    /**
      * List meetings with optional status filter
      */
     static listMeetings(status?: MeetingStatus): Array<{

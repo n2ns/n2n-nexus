@@ -6,7 +6,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { CONFIG } from "../src/config.js";
 
-const TEST_ROOT = path.join(process.cwd(), "test-permissions");
+const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-permissions");
 CONFIG.rootStorage = TEST_ROOT;
 
 describe("Meeting Permission Tests", () => {
@@ -47,14 +47,19 @@ describe("Meeting Permission Tests", () => {
         await new Promise(resolve => setTimeout(resolve, 50));
     });
 
-    it("should allow initiator to end their meeting", async () => {
+    it("should deny initiator from ending their meeting if not moderator", async () => {
         // AI A starts meeting
         const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
         const meetingId = JSON.parse(startResult.content[0].text).meetingId;
 
-        // AI A ends meeting -> Success
-        const endResult = await handleToolCall("end_meeting", { meetingId }, mockContextA);
-        expect(JSON.parse(endResult.content[0].text).status).toBe("closed");
+        // AI A ends meeting -> Failure (Strict Moderator check)
+        try {
+            await handleToolCall("end_meeting", { meetingId }, mockContextA);
+            throw new Error("Should have failed");
+        } catch (e: any) {
+            expect(e.message).toContain("Permission denied");
+            expect(e.message).toContain("Only moderators");
+        }
     });
 
     it("should deny other agents from ending a meeting they didn't start", async () => {
@@ -62,13 +67,13 @@ describe("Meeting Permission Tests", () => {
         const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
         const meetingId = JSON.parse(startResult.content[0].text).meetingId;
 
-        // AI B tries to end meeting A -> Failure
+        // AI B tries to end meeting A -> Failure (Strict Moderator check)
         try {
             await handleToolCall("end_meeting", { meetingId }, mockContextB);
             throw new Error("Should have failed");
         } catch (e: any) {
             expect(e.message).toContain("Permission denied");
-            expect(e.message).toContain("Only initiator");
+            expect(e.message).toContain("Only moderators");
         }
     });
 
@@ -87,24 +92,34 @@ describe("Meeting Permission Tests", () => {
         CONFIG.isModerator = false;
     });
 
-    it("should deny other agents from archiving a meeting they didn't start", async () => {
+    it("should enforce moderator-only for archive and reopen", async () => {
         // AI A starts meeting
         const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
         const meetingId = JSON.parse(startResult.content[0].text).meetingId;
 
-        // AI A ends meeting
-        await handleToolCall("end_meeting", { meetingId }, mockContextA);
+        // End as moderator
+        CONFIG.isModerator = true;
+        await handleToolCall("end_meeting", { meetingId }, mockContextB);
+        CONFIG.isModerator = false;
 
-        // AI B tries to archive meeting A -> Failure
+        // Try to archive as initiator (AI A) -> Failure
         try {
-            await handleToolCall("archive_meeting", { meetingId }, mockContextB);
+            await handleToolCall("archive_meeting", { meetingId }, mockContextA);
             throw new Error("Should have failed");
         } catch (e: any) {
             expect(e.message).toContain("Permission denied");
         }
 
-        // AI A archives -> Success
-        const arcResult = await handleToolCall("archive_meeting", { meetingId }, mockContextA);
-        expect(JSON.parse(arcResult.content[0].text).status).toBe("archived");
+        // Try to reopen as initiator (AI A) -> Success (Relaxed per user request)
+        const reopenResult = await handleToolCall("reopen_meeting", { meetingId }, mockContextA);
+        expect(JSON.parse(reopenResult.content[0].text).status).toBe("active");
+
+        // Archive as moderator -> Success
+        CONFIG.isModerator = true;
+        await handleToolCall("end_meeting", { meetingId }, mockContextB);
+        const archiveResult = await handleToolCall("archive_meeting", { meetingId }, mockContextB);
+        expect(JSON.parse(archiveResult.content[0].text).status).toBe("archived");
+        
+        CONFIG.isModerator = false;
     });
 });

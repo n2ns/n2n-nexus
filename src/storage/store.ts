@@ -91,6 +91,14 @@ export const UnifiedMeetingStore = {
     },
 
     /**
+     * Reopen a meeting
+     */
+    async reopenMeeting(meetingId: string, callerId?: string): Promise<MeetingSession> {
+        const { store } = await getStore();
+        return store.reopenMeeting(meetingId, callerId);
+    },
+
+    /**
      * List meetings
      */
     async listMeetings(status?: MeetingStatus): Promise<Array<{

@@ -1,13 +1,14 @@
 # n2ns Nexus 🚀
 
 [![npm version](https://img.shields.io/npm/v/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
-[![npm downloads](https://img.shields.io/npm/dm/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![npm downloads](https://img.shields.io/npm/dt/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-purple)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
 
 **n2ns Nexus** is a "Local Digital Asset Hub" designed for multi-AI assistant collaboration. It seamlessly integrates high-frequency **Real-time Meeting Rooms** with rigorous **Structured Asset Vaults**, offering a 100% local, zero-dependency project management experience.
 
-> **Works with:** VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
+> **Works with:** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
 
 ## 🏛️ Architecture
 
@@ -78,30 +79,35 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 - `mcp://nexus/session`: View current identity, role (Moderator/Regular), and active project.
 
 ### B. Project Asset Management
-- `sync_project_assets`: **[Core]** Submit full Project Manifest and Internal Docs.
+- `sync_project_assets`: **[Core/ASYNC]** Submit full Project Manifest and Internal Docs. Returns `taskId`.
     - **Manifest**: Includes ID, Tech Stack, **Relations**, Repo URL, Local Path, API Spec, etc.
     - **Schema v2.0 Fields**: `apiDependencies`, `gatewayCompatibility`, `api_versions`, `feature_tier` (free/pro/enterprise).
 - `update_project`: Partially update Manifest fields (e.g., endpoints or description only).
-- `rename_project`: Rename Project ID with automatic cascading updates to all dependency references.
+- `rename_project`: **[ASYNC]** Rename Project ID with automatic cascading updates to all dependency references. Returns `taskId`.
 - `upload_project_asset`: Upload binary/text files (Base64) to the project vault.
-- `read_project`: Read specific data slices (Summary, Manifest, Docs, API, Relations, etc.).
-- `list_projects`: List all registered projects in the Hub.
+- **Read Operations**: Use Resources (e.g., `mcp://nexus/projects/{id}/manifest`) for all read-only access.
 
 ### C. Global Collaboration
 - `send_message`: Post a message to the team (Auto-routes to active meeting).
 - `read_messages`: Retrieve latest logs from active meeting or global registry.
 - `update_global_strategy`: Update the core strategic blueprint (`# Master Plan`).
 - `get_global_topology`: Retrieve the network-wide project dependency graph.
-- `sync_global_doc` / `list_global_docs` / `read_global_doc`: Manage global common documents.
+- `sync_global_doc`: Create or update a shared cross-project document.
 
 ### D. Meeting Management
 - `start_meeting`: Start a new tactical session for focused collaboration.
-- `end_meeting`: Conclude a meeting, lock history (Initiator/Moderator only).
-- `list_meetings`: Browse active, closed, or archived session history.
-- `read_meeting`: Deep-dive into specific meeting transcripts and decisions.
-- `archive_meeting`: Move closed meetings to cold storage (Initiator/Moderator only).
+- `reopen_meeting`: Reactivate a `closed` or `archived` session to continue discussion.
+- `end_meeting`: Conclude a meeting, lock history (**Moderator only**).
+- `archive_meeting`: Move closed meetings to cold storage (**Moderator only**).
 
-### E. Admin (Moderator Only)
+### E. Task Management (Phase 2 - ASYNC)
+- `create_task`: Create a new background task. Link to meeting for traceability.
+- `get_task`: Poll status, progress (0.0-1.0), and results of a task.
+- `list_tasks`: Query all tasks with status filtering.
+- `update_task`: Update progress or result (typically for workers).
+- `cancel_task`: Cancel a pending or running task.
+
+### F. Admin (Moderator Only)
 - `moderator_maintenance`: Prune or clear system logs.
 - `moderator_delete_project`: Completely remove a project and its assets.
 

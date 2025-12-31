@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
+import { createRequire } from "module";
 import { CONFIG } from "../config.js";
 
 let db: Database.Database | null = null;
@@ -77,7 +78,7 @@ export function initDatabase(): Database.Database {
     
     // Migration: Add initiator column if it doesn't exist (Upgrade from v0.1.7)
     try {
-        const columns = db.prepare("PRAGMA table_info(meetings)").all() as any[];
+        const columns = db.prepare("PRAGMA table_info(meetings)").all() as Record<string, unknown>[];
         const hasInitiator = columns.some(c => c.name === "initiator");
         if (!hasInitiator) {
             console.error("[Nexus] Migrating database: Adding 'initiator' column to 'meetings' table.");
@@ -118,10 +119,8 @@ export function closeDatabase(): void {
     }
 }
 
-/**
- * Check if SQLite is available
- */
 export function isSqliteAvailable(): boolean {
+    const require = createRequire(import.meta.url);
     try {
         // Try to load better-sqlite3
         require("better-sqlite3");

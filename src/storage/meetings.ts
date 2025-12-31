@@ -221,6 +221,32 @@ export class MeetingStore {
     }
 
     /**
+     * Reopen a closed or archived meeting
+     */
+    static async reopenMeeting(meetingId: string, _callerId?: string): Promise<MeetingSession> {
+        return this.stateLock.withLock(async () => {
+            const meeting = await this.getMeeting(meetingId);
+            if (!meeting) throw new Error(`Meeting '${meetingId}' not found.`);
+            if (meeting.status === "active") throw new Error(`Meeting '${meetingId}' is already active.`);
+
+            // Update status to active
+            meeting.status = "active";
+            meeting.endTime = undefined;
+            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");
+
+            // Update state
+            const state = await this.loadStateSafe();
+            if (!state.activeMeetings.includes(meetingId)) {
+                state.activeMeetings.push(meetingId);
+            }
+            state.defaultMeetingId = meetingId;
+            await this.saveState(state);
+
+            return meeting;
+        });
+    }
+
+    /**
      * List all meetings with optional status filter
      */
     static async listMeetings(status?: MeetingSession["status"]): Promise<Array<{ id: string; topic: string; status: MeetingSession["status"]; startTime: string; participantCount: number }>> {

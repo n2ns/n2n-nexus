@@ -6,17 +6,21 @@ import path from "path";
 import { CONFIG } from "../src/config.js";
 
 // Mock fs and CONFIG if needed, or use a temp test directory
-const TEST_ROOT = path.join(process.cwd(), "test-storage");
+const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-storage");
 CONFIG.rootStorage = TEST_ROOT;
 
 describe("StorageManager", () => {
     beforeEach(async () => {
-        // Clean up and re-init
+        // Clean up and re-init with proper delay for filesystem sync
+        await new Promise(resolve => setTimeout(resolve, 50));
         try {
             await fs.rm(TEST_ROOT, { recursive: true, force: true });
         } catch {
             // Ignore clean up errors
         }
+        await new Promise(resolve => setTimeout(resolve, 50));
+        // Create root directory first to avoid race condition
+        await fs.mkdir(TEST_ROOT, { recursive: true });
         await StorageManager.init();
     });
 

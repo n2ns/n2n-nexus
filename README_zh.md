@@ -1,13 +1,14 @@
 # n2ns Nexus 🚀
 
 [![npm version](https://img.shields.io/npm/v/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
-[![npm downloads](https://img.shields.io/npm/dm/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![npm downloads](https://img.shields.io/npm/dt/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-purple)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
 
 **n2ns Nexus** 是一个专为多 AI 助手协同设计的“本地数字化资产中心”。它将高频的**实时会议室**与严谨的**结构化资产库**完美融合，提供 100% 本地化、零外部依赖的项目管理体验。
 
-> **支持的 IDE：** VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
+> **支持的 IDE：** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
 
 ## 🏛️ 系统架构 (Architecture)
 
@@ -54,29 +55,34 @@ Nexus_Storage/
 - `mcp://nexus/session`: 查看当前身份、角色（Moderator/Regular）及活动项目。
 
 ### B. 项目资产管理 (Project Assets)
-- `sync_project_assets`: **[核心]** 提交完整的项目 Manifest 和内部技术文档。
+- `sync_project_assets`: **[核心/异步]** 提交完整的项目 Manifest 和内部技术文档。返回 `taskId`。
     - **Manifest**: 包含 ID、技术栈、**依赖关系 (Relations)**、仓库地址、本地路径、API Spec 等。
 - `update_project`: 部分更新 Manifest 字段（如仅更新 endpoints 或 description）。
-- `rename_project`: 重命名项目 ID，自动级联更新所有相关项目的依赖引用。
+- `rename_project`: **[异步]** 重命名项目 ID，自动级联更新所有相关项目的依赖引用。返回 `taskId`。
 - `upload_project_asset`: 上传二进制/文本文件（Base64）到项目库。
-- `read_project`: 按 ID 读取项目详细数据（Manifest、文档、API 等）。
-- `list_projects`: 列出 Hub 中所有已注册的项目。
+- **读取操作**: 全部转为资源访问模式 (例如：`mcp://nexus/projects/${id}/manifest`)。
 
 ### C. 全局协作 (Global Collaboration)
 - `send_message`: 发送消息（如果有活跃会议，将自动路由至会议）。
 - `read_messages`: 读取团队消息（自动选取活跃会议或全局日志）。
 - `update_global_strategy`: 更新核心战略蓝图（`# Master Plan`）。
 - `get_global_topology`: 获取全网项目依赖拓扑图。
-- `sync_global_doc` / `list_global_docs` / `read_global_doc`: 管理全局公共文档。
+- `sync_global_doc`: 创建或更新全局共享文档。
 
 ### D. 会议管理 (Tactical Meetings)
 - `start_meeting`: 开启新的战术讨论会议。
-- `end_meeting`: 结束会议，锁定历史（仅限发起者/管理员）。
-- `list_meetings`: 浏览活跃、关闭或已归档的会议历史。
-- `read_meeting`: 查看特定会议的完整记录和决策。
-- `archive_meeting`: 将已结束的会议移至存档（仅限发起者/管理员）。
+- `reopen_meeting`: 重新开启已“关闭”或“归档”的会议。
+- `end_meeting`: 结束会议，锁定历史记录 (**仅限管理员 Moderator**)。
+- `archive_meeting`: 将已结束的会议移至存档 (**仅限管理员 Moderator**)。
 
-### E. 管理员工具 (仅限 Moderator)
+### E. 任务管理 (Phase 2 - 异步)
+- `create_task`: 创建新的后台任务。关联会议以实现溯源。
+- `get_task`: 轮询任务状态、进度 (0.0-1.0) 和结果。
+- `list_tasks`: 查询所有任务，支持状态过滤。
+- `update_task`: 更新任务进度或结果（通常供 Worker 调用）。
+- `cancel_task`: 取消待处理或运行中的任务。
+
+### F. 管理员工具 (仅限 Moderator)
 - `moderator_maintenance`: 清理或修剪系统日志。
 - `moderator_delete_project`: 彻底删除项目及其所有资产。
 

@@ -2,27 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.0] - 2025-12-31
+
+### 🚀 Task Primitive System (Phase 2 & 3)
+- **Async Deepening**: Critical blocking operations (`rename_project`, `moderator_delete_project`) migrated to the Task primitive with background cascading updates.
+- **Traceability**: All tasks now support `source_meeting_id` to link execution back to meeting decisions.
+- **Progressive UI**: Added `progress` tracking (0.0-1.0) and `result_uri` for structured task output.
+- **Lifecycle Tools**: Added `create_task`, `get_task`, `list_tasks`, `update_task`, and `cancel_task`.
+
+### 🛡️ Type Safety & Security
+- **Defense-in-Depth**: Implemented secondary permission gates inside `handleRemoveProject` and `handleModeratorMaintenance` for maximum project isolation.
+- **Meeting Hardening**: `end_meeting` and `archive_meeting` are now strictly **Moderator-only**.
+- **Zod integration**: All tool definitions migrated to strictly-typed Zod schemas with regex path-traversal protection.
+- **Infrastructure**: Modernized toolchain to **TypeScript 5.9.3**, **Vitest 4.0.16**, and **ESLint 9.39.2**.
+
+### ✂️ Code Diet (Architectural Cleanliness)
+- **The Great Purge**: Removed 6 redundant tools (`list_projects`, `read_project`, `list_global_docs`, `read_global_doc`, `list_meetings`, `read_meeting`) in favor of Resource URIs.
+- **Native Zod 4 Schemas**: Removed `zod-to-json-schema` dependency; now using native Zod 4 `toJSONSchema()` generation.
+
 ## [v0.1.9] - 2025-12-30
 
 ### 🛡️ Collaboration & Security
-- **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`. Only the meeting creator or a system moderator can conclude a session.
-- **Session Presence Awareness**: Automated `[ONLINE/OFFLINE]` status messages in the global log when an IDE session starts or terminates, improving visibility for concurrent agents.
-- **Clean Tool Naming**: Finalized the transition to `send_message` and `read_messages`, removing all deprecated discussion tool aliases.
+- **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`.
+- **Session Presence Awareness**: Automated `[ONLINE/OFFLINE]` status messages in global logs.
+- **Clean Tool Naming**: Finalized transition to `send_message` and `read_messages`.
 
 ### 🌐 Resource Namespacing (MCP 2025 Standard)
-- **Unified Authority**: All core resource URIs migrated to `mcp://nexus/` to ensure naming isolation in multi-server environments.
-- **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting` for instant tactical context without tool calls.
-
-## [v0.1.9] - 2025-12-30
-
-### 🛡️ Collaboration & Security
-- **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`. Only the meeting creator or a system moderator can conclude a session.
-- **Session Presence Awareness**: Automated `[ONLINE/OFFLINE]` status messages in the global log when an IDE session starts or terminates, improving visibility for concurrent agents.
-- **Clean Tool Naming**: Finalized the transition to `send_message` and `read_messages`, removing all deprecated discussion tool aliases.
-
-### 🌐 Resource Namespacing (MCP 2025 Standard)
-- **Unified Authority**: All core resource URIs migrated to `mcp://nexus/` to ensure naming isolation in multi-server environments.
-- **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting` for instant tactical context without tool calls.
+- **Unified Authority**: All core resource URIs migrated to `mcp://nexus/`.
+- **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting`.
 
 ## [v0.1.8] - 2025-12-30
 

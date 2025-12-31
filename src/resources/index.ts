@@ -43,7 +43,7 @@ export async function getResourceContent(
         const storageInfo = await UnifiedMeetingStore.getStorageInfo();
         const status = {
             status: "online",
-            version: "0.1.8",
+            version: "0.2.0",
             ...storageInfo,
             active_meetings_count: state.activeMeetings.length,
             default_meeting: state.defaultMeetingId
@@ -57,10 +57,30 @@ export async function getResourceContent(
         return { mimeType: "application/json", text: JSON.stringify({ message: "No active meeting" }, null, 2) };
     }
 
+    if (uri === "mcp://nexus/meetings/list") {
+        const meetings = await UnifiedMeetingStore.listMeetings();
+        return { mimeType: "application/json", text: JSON.stringify(meetings, null, 2) };
+    }
+
+    if (uri === "mcp://nexus/docs/list") {
+        const docs = await StorageManager.listGlobalDocs();
+        return { mimeType: "application/json", text: JSON.stringify(docs, null, 2) };
+    }
+
     if (uri.startsWith("mcp://nexus/meetings/")) {
         const meetingId = uri.substring("mcp://nexus/meetings/".length);
         const mtg = await UnifiedMeetingStore.getMeeting(meetingId);
         if (mtg) return { mimeType: "application/json", text: JSON.stringify(mtg, null, 2) };
+    }
+
+    if (uri.startsWith("mcp://nexus/docs/")) {
+        const docId = uri.substring("mcp://nexus/docs/".length);
+        if (docId === "global-strategy") {
+            const text = await fs.readFile(StorageManager.globalBlueprint, "utf-8");
+            return { mimeType: "text/markdown", text };
+        }
+        const text = await StorageManager.getGlobalDoc(docId);
+        if (text) return { mimeType: "text/markdown", text };
     }
 
     // Dynamic Project Resources (Handles Namespaces)
@@ -91,7 +111,9 @@ export async function listResources() {
         resources: [
             { uri: "mcp://nexus/chat/global", name: "Global Collaboration History", description: "Real-time discussion stream." },
             { uri: "mcp://nexus/hub/registry", name: "Global Project Registry", description: "Consolidated index of all local projects." },
-            { uri: "mcp://nexus/docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination." },
+            { uri: "mcp://nexus/docs/list", name: "Global Documentation Index", description: "List of all shared cross-project documents." },
+            { uri: "mcp://nexus/docs/global-strategy", name: "Master Strategy Blueprint", description: "Top-level cross-project coordination document." },
+            { uri: "mcp://nexus/meetings/list", name: "Meeting Registry", description: "Consolidated list of active and closed meetings." },
             { uri: "mcp://nexus/session", name: "Current Session Info", description: "Your identity and role in this Nexus instance." },
             { uri: "mcp://nexus/status", name: "System Status & Storage Mode", description: "Backend storage mode (sqlite/json) and active meeting counts." },
             { uri: "mcp://nexus/active-meeting", name: "Current Active Meeting", description: "Full transcript and participants of the current default meeting." },
@@ -112,6 +134,7 @@ export async function listResources() {
         ],
         resourceTemplates: [
             { uriTemplate: "mcp://nexus/projects/{projectId}/internal-docs", name: "Internal Project Docs", description: "Markdown-based detailed implementation plans." },
+            { uriTemplate: "mcp://nexus/docs/{docId}", name: "Specific Global Doc", description: "Read a specific document from the global index." },
             { uriTemplate: "mcp://nexus/meetings/{meetingId}", name: "Meeting Insights", description: "Full transcript and decisions for a specific meeting." }
         ]
     };
