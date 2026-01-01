@@ -50,4 +50,71 @@
 - [ ] **Streaming Progress**: Support periodic task progress notifications via MCP resources.
 
 ---
-*Last updated: 2025-12-31 by Nexus AI Assistant.*
+
+## 📅 2026-01-01: Token Economy Deep Optimization
+
+**Problem**: Claude Desktop context window explodes when loading n2n-nexus MCP server.
+
+### Root Cause Analysis
+
+1. **Zod `toJSONSchema()` Bloat**: 
+   - Each tool's `inputSchema` included redundant `$schema` declarations
+   - `ProjectIdSchema` was inlined (expanded) in every usage instead of using `$ref`
+   - Generated schemas contained verbose `additionalProperties: false` on every object
+
+2. **Tool Description Verbosity**:
+   - Original descriptions averaged 80+ chars per tool
+   - Total tool definitions: ~10,241 chars (~2,560 tokens)
+
+3. **Internal Tool Exposure**:
+   - `update_task` (marked `[INTERNAL]`) was still exposed in `ListTools`
+
+### Optimization Results (DONE)
+
+- [x] **Hand-Crafted Tool Definitions**: Replaced `zod.toJSONSchema()` with minimal `definitions.ts`
+- [x] **Concise Descriptions**: Reduced average description length by 50%
+- [x] **Hidden Internal Tools**: `update_task` excluded from public `TOOL_DEFINITIONS`
+- [x] **Removed $schema Spam**: Eliminated per-tool `$schema` declarations
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Tool Definitions Size | 10,241 chars | 5,237 chars | **-49%** |
+| Approx Tokens | ~2,560 | ~1,310 | **-1,250 tokens** |
+| Public Tools | 21 | 20 | (hidden `update_task`) |
+
+### Incremental Message Reading (DONE)
+
+- [x] **Read Cursors Table**: `read_cursors` tracks each IDE's last read message ID per meeting
+- [x] **Auto-Increment**: `read_messages` automatically returns only unread messages
+- [x] **Zero Config**: No `afterId` parameter needed - cursor managed server-side by `instanceId`
+- [x] **Response Format**: Returns `{ newMessages: N, messages: [...] }` for easy verification
+
+**Flow**:
+```
+IDE-A (first call):  read_messages() → returns all messages, sets cursor
+IDE-B sends message: "Hello from B"
+IDE-A (second call): read_messages() → returns only "Hello from B" (1 new message)
+```
+
+### Context7-Style Progressive Loading (DONE)
+
+**`get_global_topology` Optimization:**
+- [x] **List Mode (Default)**: Returns summary `{ totalProjects, totalEdges, projects: [{id, name}] }`
+- [x] **Focused Mode**: `get_global_topology(projectId)` returns detailed subgraph for that project
+- [x] **Token Savings**: AI reads list first, then queries specific project as needed
+
+**`listResources` Optimization:**
+- [x] **Static Resources**: Fixed 8 core resources (chat, registry, docs, meetings, etc.)
+- [x] **Template-Based Projects**: No longer lists each project dynamically
+- [x] **O(1) Scaling**: Resource list size is constant regardless of project count
+- [x] **Discovery Flow**: AI reads `registry` → constructs URI from template
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| 0 projects | 8 resources | 8 resources + 4 templates |
+| 20 projects | 28 resources | 8 resources + 4 templates (fixed) |
+| 50 projects | 58 resources | 8 resources + 4 templates (fixed) |
+
+---
+*Last updated: 2026-01-01 by Antigravity AI.*
+

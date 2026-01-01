@@ -121,11 +121,17 @@ export const UnifiedMeetingStore = {
     },
 
     /**
-     * Get recent messages
+     * Get recent messages (incremental for SQLite with instanceId)
      */
-    async getRecentMessages(count?: number, meetingId?: string): Promise<DiscussionMessage[]> {
-        const { store } = await getStore();
-        return store.getRecentMessages(count || 10, meetingId);
+    async getRecentMessages(count?: number, meetingId?: string, instanceId?: string): Promise<DiscussionMessage[]> {
+        const { type, store } = await getStore();
+        if (type === "sqlite") {
+            // SQLite supports incremental reads with cursor tracking
+            return (store as typeof SqliteStore)!.getRecentMessages(count || 10, meetingId, instanceId);
+        } else {
+            // JSON fallback - no incremental support
+            return store.getRecentMessages(count || 10, meetingId);
+        }
     },
 
     /**

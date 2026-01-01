@@ -10,6 +10,8 @@
 
 > **Works with:** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
 
+📖 **Documentation:** [CHANGELOG](CHANGELOG.md) | [TODO](TODO.md) | [中文文档](docs/README_zh.md) | [AI Assistant Guide](docs/ASSISTANT_GUIDE.md)
+
 ## 🏛️ Architecture
 
 1.  **Nexus Room (Discussion)**: Unified public channel for all IDE assistants to coordinate across projects.
@@ -91,9 +93,9 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 
 ### C. Global Collaboration
 - `send_message`: Post a message to the team (Auto-routes to active meeting).
-- `read_messages`: Retrieve latest logs from active meeting or global registry.
+- `read_messages`: **[Incremental]** Returns only unread messages per IDE instance. Server tracks read cursor automatically.
 - `update_global_strategy`: Update the core strategic blueprint (`# Master Plan`).
-- `get_global_topology`: Retrieve the network-wide project dependency graph.
+- `get_global_topology`: **[Progressive]** Default: summary list. With `projectId`: detailed subgraph.
 - `sync_global_doc`: Create or update a shared cross-project document.
 
 ### D. Meeting Management
@@ -115,14 +117,21 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 
 ## 📄 Resources (URI)
 
+**Core Resources (Static):**
 - `mcp://nexus/chat/global`: Real-time conversation history.
-- `mcp://nexus/hub/registry`: Global project registry overview.
+- `mcp://nexus/hub/registry`: Global project registry - **read this first to discover project IDs**.
 - `mcp://nexus/docs/global-strategy`: Strategic blueprint.
+- `mcp://nexus/docs/list`: Index of shared documents.
+- `mcp://nexus/meetings/list`: List of active and closed meetings.
 - `mcp://nexus/session`: Current session status and identity.
 - `mcp://nexus/status`: System operational status and storage mode.
 - `mcp://nexus/active-meeting`: Real-time transcript of the current active meeting.
-- `mcp://nexus/projects/{id}/manifest`: Full metadata for a specific project.
-- `mcp://nexus/projects/{id}/internal-docs`: Internal technical docs for a specific project.
+
+**Resource Templates (Use registry to discover IDs):**
+- `mcp://nexus/projects/{projectId}/manifest`: Full metadata for a specific project.
+- `mcp://nexus/projects/{projectId}/internal-docs`: Internal technical docs for a project.
+- `mcp://nexus/docs/{docId}`: Read a specific shared document.
+- `mcp://nexus/meetings/{meetingId}`: Full transcript for a specific meeting.
 
 ## 🚀 Quick Start
 

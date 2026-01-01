@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.1] - 2026-01-01
+
+### 🚀 Token Economy Deep Optimization
+
+This release focuses on reducing context window consumption when AI loads the MCP server.
+
+#### Tool Definition Optimization (-49% Token Reduction)
+- **Hand-Crafted Schemas**: Replaced `Zod.toJSONSchema()` with manually optimized `definitions.ts`.
+- **Removed $schema Spam**: Eliminated redundant `$schema` declarations per tool (~50 chars saved per tool).
+- **Concise Descriptions**: Reduced average description length by 50%.
+- **Hidden Internal Tools**: `update_task` (marked `[INTERNAL]`) excluded from public `ListTools`.
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Tool Definitions | 10,241 chars | 5,237 chars | **-49%** |
+| Approx Tokens | ~2,560 | ~1,310 | **-1,250 tokens** |
+
+#### Incremental Message Reading
+- **Read Cursors Table**: New `read_cursors` SQLite table tracks each IDE's last read message ID per meeting.
+- **Auto-Increment**: `read_messages` automatically returns only unread messages based on `instanceId`.
+- **Zero Config**: No `afterId` parameter needed - cursor managed entirely server-side.
+- **Response Enhancement**: Returns `{ newMessages: N, messages: [...] }` for easy verification.
+
+#### Context7-Style Progressive Loading
+- **`get_global_topology` Upgrade**:
+  - **Default (List Mode)**: Returns lightweight summary `{ totalProjects, totalEdges, projects: [{id, name}] }`.
+  - **Focused Mode**: Pass `projectId` to get detailed subgraph for that specific project.
+- **`listResources` Optimization**:
+  - **O(1) Scaling**: Resource list size is now constant regardless of project count.
+  - **Static Resources**: Fixed 8 core resources (chat, registry, docs, meetings, etc.).
+  - **Template-Based Projects**: Individual projects no longer dynamically listed; use templates instead.
+  - **Discovery Flow**: AI reads `hub/registry` → discovers project IDs → constructs URI from template.
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| 0 projects | 8 resources | 8 resources + 4 templates |
+| 20 projects | 28 resources | 8 resources + 4 templates (fixed) |
+| 50 projects | 58 resources | 8 resources + 4 templates (fixed) |
+
+#### Documentation
+- Updated `README.md` with new tool behaviors (`[Incremental]`, `[Progressive]`).
+- Updated `ASSISTANT_GUIDE.md` to v0.2.1 with "渐进式发现，增量读取" principle.
+- Reorganized Resources section with Core Resources + Resource Templates structure.
+
 ## [v0.2.0] - 2025-12-31
 
 ### 🚀 Task Primitive System (Phase 2 & 3)

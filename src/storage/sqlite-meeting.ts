@@ -293,23 +293,56 @@ export class SqliteMeetingStore {
     }
 
     /**
-     * Get recent messages from a meeting
+     * Get recent messages from a meeting (incremental read based on instance cursor)
+     * Automatically returns only unread messages for the current instance.
      */
-    static getRecentMessages(count: number = 10, meetingId?: string): DiscussionMessage[] {
+    static getRecentMessages(count: number = 10, meetingId?: string, instanceId?: string): DiscussionMessage[] {
         const db = getDatabase();
         
         const targetId = meetingId || this.getState("default_meeting");
         if (!targetId) return [];
 
-        const stmt = db.prepare(`
-            SELECT sender as "from", text, category, timestamp
-            FROM messages WHERE meeting_id = ?
-            ORDER BY timestamp DESC LIMIT ?
+        // If no instanceId provided, fall back to returning all recent messages
+        if (!instanceId) {
+            const stmt = db.prepare(`
+                SELECT id, sender as "from", text, category, timestamp
+                FROM messages WHERE meeting_id = ?
+                ORDER BY id DESC LIMIT ?
+            `);
+            const messages = stmt.all(targetId, count) as (DiscussionMessage & { id: number })[];
+            return messages.reverse();
+        }
+
+        // Get cursor for this instance + meeting
+        const cursorStmt = db.prepare(`
+            SELECT last_read_id FROM read_cursors 
+            WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?
         `);
-        const messages = stmt.all(targetId, count) as DiscussionMessage[];
-        
-        // Reverse to get chronological order
-        return messages.reverse();
+        const cursorRow = cursorStmt.get(instanceId, targetId) as { last_read_id: number } | undefined;
+        const lastReadId = cursorRow?.last_read_id || 0;
+
+        // Fetch unread messages (id > lastReadId)
+        const stmt = db.prepare(`
+            SELECT id, sender as "from", text, category, timestamp
+            FROM messages 
+            WHERE meeting_id = ? AND id > ?
+            ORDER BY id ASC
+            LIMIT ?
+        `);
+        const messages = stmt.all(targetId, lastReadId, count) as (DiscussionMessage & { id: number })[];
+
+        // Update cursor if we got messages
+        if (messages.length > 0) {
+            const maxId = messages[messages.length - 1].id;
+            const now = new Date().toISOString();
+            const updateStmt = db.prepare(`
+                INSERT OR REPLACE INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at)
+                VALUES (?, 'meeting', ?, ?, ?)
+            `);
+            updateStmt.run(instanceId, targetId, maxId, now);
+        }
+
+        return messages;
     }
 
     /**

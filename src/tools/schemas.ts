@@ -68,8 +68,12 @@ export const UploadAssetSchema = z.object({
 });
 
 /**
- * 4. get_global_topology (No arguments)
+ * 4. get_global_topology
  */
+export const TopologySchema = z.object({
+    projectId: ProjectIdSchema.optional().describe("Focus on specific project's subgraph. Omit for summary list.")
+});
+
 export const EmptySchema = z.object({});
 
 
@@ -229,8 +233,8 @@ export const TOOL_REGISTRY: Record<string, { description: string; schema: z.ZodT
         schema: UploadAssetSchema
     },
     get_global_topology: {
-        description: "Retrieve complete project relationship graph. Returns { nodes: [{ id, name }], edges: [{ from, to, type }] }. Use this to visualize dependencies.",
-        schema: EmptySchema
+        description: "Project topology. Default: list summary. With projectId: detailed subgraph.",
+        schema: TopologySchema
     },
     send_message: {
         description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",

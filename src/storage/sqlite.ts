@@ -52,6 +52,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_meeting ON messages(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_decisions_meeting ON decisions(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
+
+-- Read cursors table (tracks each IDE's last read message per context)
+CREATE TABLE IF NOT EXISTS read_cursors (
+    instance_id TEXT NOT NULL,
+    context_type TEXT NOT NULL CHECK(context_type IN ('meeting', 'global')),
+    context_id TEXT,
+    last_read_id INTEGER DEFAULT 0,
+    updated_at TEXT,
+    PRIMARY KEY (instance_id, context_type, context_id)
+);
 `;
 
 /**

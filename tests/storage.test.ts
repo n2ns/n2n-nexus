@@ -80,7 +80,7 @@ describe("StorageManager", () => {
         expect(retrieved).toBe(doc);
     });
 
-    it("should calculate global topology", async () => {
+    it("should calculate global topology (list mode and focused mode)", async () => {
         // Create Project A
         await StorageManager.saveProjectManifest({
             id: "prj-a", name: "A", description: "D", techStack: [],
@@ -101,10 +101,19 @@ describe("StorageManager", () => {
             apiSpec: []
         });
 
-        const topo = await StorageManager.calculateTopology();
-        expect(topo.nodes).toHaveLength(2);
-        expect(topo.edges).toHaveLength(1);
-        expect(topo.edges[0]).toMatchObject({ from: "prj-a", to: "prj-b", type: "dependency" });
+        // Test list mode (default)
+        const listResult = await StorageManager.calculateTopology();
+        expect(listResult.mode).toBe("list");
+        expect(listResult.summary.totalProjects).toBe(2);
+        expect(listResult.summary.totalEdges).toBe(1);
+        expect(listResult.projects).toHaveLength(2);
+
+        // Test focused mode
+        const focusedResult = await StorageManager.calculateTopology("prj-a");
+        expect(focusedResult.mode).toBe("focused");
+        expect(focusedResult.nodes).toHaveLength(2); // prj-a + prj-b
+        expect(focusedResult.edges).toHaveLength(1);
+        expect(focusedResult.edges[0]).toMatchObject({ from: "prj-a", to: "prj-b", type: "dependency" });
     });
 
     it("should delete project correctly", async () => {

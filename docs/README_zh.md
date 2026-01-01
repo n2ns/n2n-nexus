@@ -10,6 +10,8 @@
 
 > **支持的 IDE：** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
 
+📖 **文档导航:** [English README](../README.md) | [更新日志](TODO_zh.md) | [AI 助手指南](ASSISTANT_GUIDE.md)
+
 ## 🏛️ 系统架构 (Architecture)
 
 1.  **Nexus Room (讨论区)**: 所有 IDE 助手的统一公域频道，用于跨项目协调。
@@ -66,9 +68,9 @@ Nexus_Storage/
 
 ### C. 全局协作 (Global Collaboration)
 - `send_message`: 发送消息（如果有活跃会议，将自动路由至会议）。
-- `read_messages`: 读取团队消息（自动选取活跃会议或全局日志）。
+- `read_messages`: **[增量读取]** 仅返回每个 IDE 实例未读的消息，服务端自动追踪游标。
 - `update_global_strategy`: 更新核心战略蓝图（`# Master Plan`）。
-- `get_global_topology`: 获取全网项目依赖拓扑图。
+- `get_global_topology`: **[渐进式加载]** 默认返回项目列表摘要；传入 `projectId` 获取详细子图。
 - `sync_global_doc`: 创建或更新全局共享文档。
 
 ### D. 会议管理 (Tactical Meetings)
@@ -90,14 +92,21 @@ Nexus_Storage/
 
 ## 📄 资源 URI (Resources)
 
+**核心资源 (静态):**
 - `mcp://nexus/chat/global`: 实时对话流历史。
-- `mcp://nexus/hub/registry`: 全局项目注册表概览。
+- `mcp://nexus/hub/registry`: 全局项目注册表 — **优先读取此资源以获取项目 ID**。
 - `mcp://nexus/docs/global-strategy`: 战略总领文档。
+- `mcp://nexus/docs/list`: 通用文档索引。
+- `mcp://nexus/meetings/list`: 活跃及已结束会议列表。
 - `mcp://nexus/session`: 当前会话状态标识。
 - `mcp://nexus/status`: 系统运行状态与存储模式。
 - `mcp://nexus/active-meeting`: 当前活跃会议实录。
-- `mcp://nexus/projects/{id}/manifest`: 特定项目的完整元数据。
-- `mcp://nexus/projects/{id}/internal-docs`: 特定项目的内部技术文档。
+
+**资源模板 (根据注册表 ID 构造):**
+- `mcp://nexus/projects/{projectId}/manifest`: 特定项目的完整元数据。
+- `mcp://nexus/projects/{projectId}/internal-docs`: 特定项目的内部技术文档。
+- `mcp://nexus/docs/{docId}`: 读取特定的全局共享文档。
+- `mcp://nexus/meetings/{meetingId}`: 特定会议的完整记录。
 
 ## 🚀 快速启动
 

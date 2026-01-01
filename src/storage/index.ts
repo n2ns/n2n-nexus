@@ -106,21 +106,84 @@ export class StorageManager {
         return path.join("projects", id, "assets", fileName);
     }
 
-    static async calculateTopology() {
+    /**
+     * Calculate project dependency topology.
+     * 
+     * Context7-style progressive loading:
+     * - Default: Returns summary (project list + stats) - lightweight
+     * - With projectId: Returns detailed subgraph for that project
+     */
+    static async calculateTopology(projectId?: string) {
         const registry = await this.listRegistry();
         const projectIds = Object.keys(registry.projects);
-        const nodes: Array<{ id: string; name: string; type: string }> = [];
-        const edges: Array<{ from: string; to: string; type: string }> = [];
 
+        // Collect manifests
+        const manifests = new Map<string, ProjectManifest>();
+        let totalEdges = 0;
         for (const id of projectIds) {
             const manifest = await this.getProjectManifest(id);
-            if (!manifest) continue;
-            nodes.push({ id, name: manifest.name, type: "project" });
-            (manifest.relations || []).forEach(rel => {
-                edges.push({ from: id, to: rel.targetId, type: rel.type });
-            });
+            if (manifest) {
+                manifests.set(id, manifest);
+                totalEdges += (manifest.relations || []).length;
+            }
         }
-        return { nodes, edges };
+
+        // === FOCUSED MODE: Return detailed subgraph ===
+        if (projectId) {
+            const targetManifest = manifests.get(projectId);
+            if (!targetManifest) {
+                return { mode: "focused", projectId, error: "Project not found", nodes: [], edges: [] };
+            }
+
+            const nodes: Array<{ id: string; name: string }> = [];
+            const edges: Array<{ from: string; to: string; type: string }> = [];
+
+            // Add target node
+            nodes.push({ id: projectId, name: targetManifest.name });
+
+            // Outgoing relations
+            const connectedIds = new Set<string>();
+            (targetManifest.relations || []).forEach(rel => {
+                edges.push({ from: projectId, to: rel.targetId, type: rel.type });
+                connectedIds.add(rel.targetId);
+            });
+
+            // Incoming relations
+            for (const [id, manifest] of manifests) {
+                if (id === projectId) continue;
+                (manifest.relations || []).forEach(rel => {
+                    if (rel.targetId === projectId) {
+                        edges.push({ from: id, to: projectId, type: rel.type });
+                        connectedIds.add(id);
+                    }
+                });
+            }
+
+            // Add connected nodes
+            for (const id of connectedIds) {
+                const m = manifests.get(id);
+                if (m) nodes.push({ id, name: m.name });
+            }
+
+            return { mode: "focused", projectId, nodes, edges };
+        }
+
+        // === LIST MODE: Return lightweight summary ===
+        const projects = Array.from(manifests.entries()).map(([id, m]) => ({
+            id,
+            name: m.name,
+            relationsCount: (m.relations || []).length
+        }));
+
+        return {
+            mode: "list",
+            summary: {
+                totalProjects: projects.length,
+                totalEdges,
+                hint: "Call with projectId to get detailed subgraph"
+            },
+            projects
+        };
     }
 
     // --- Discussion & Log Management ---

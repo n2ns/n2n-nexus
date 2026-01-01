@@ -54,7 +54,7 @@ export async function handleToolCall(
             return handleUploadAsset(validatedArgs, ctx);
 
         case "get_global_topology":
-            return handleGetTopology();
+            return handleGetTopology(validatedArgs);
 
         case "send_message":
             return handleSendMessage(validatedArgs, ctx);
@@ -292,8 +292,8 @@ async function handleRenameProject(args: { oldId: string; newId: string }, ctx: 
 
 // --- Global Handlers ---
 
-async function handleGetTopology() {
-    const topo = await StorageManager.calculateTopology();
+async function handleGetTopology(args: { projectId?: string }) {
+    const topo = await StorageManager.calculateTopology(args?.projectId);
     return { content: [{ type: "text", text: JSON.stringify(topo, null, 2) }] };
 }
 
@@ -340,16 +340,26 @@ async function handleSendMessage(args: { message: string; category?: DiscussionM
 async function handleReadMessages(args: { count?: number; meetingId?: string }) {
     const count = args?.count || 10;
 
-    // If meetingId specified, read from that meeting
+    // If meetingId specified, read from that meeting (with incremental cursor)
     if (args?.meetingId) {
-        const messages = await UnifiedMeetingStore.getRecentMessages(count, args.meetingId);
-        return { content: [{ type: "text", text: JSON.stringify(messages, null, 2) }] };
+        const messages = await UnifiedMeetingStore.getRecentMessages(count, args.meetingId, CONFIG.instanceId);
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    source: "meeting",
+                    meetingId: args.meetingId,
+                    newMessages: messages.length,
+                    messages
+                }, null, 2)
+            }]
+        };
     }
 
     // Check for active meeting first
     const activeMeeting = await UnifiedMeetingStore.getActiveMeeting();
     if (activeMeeting) {
-        const messages = await UnifiedMeetingStore.getRecentMessages(count, activeMeeting.id);
+        const messages = await UnifiedMeetingStore.getRecentMessages(count, activeMeeting.id, CONFIG.instanceId);
         return {
             content: [{
                 type: "text",
@@ -357,13 +367,14 @@ async function handleReadMessages(args: { count?: number; meetingId?: string }) 
                     source: "meeting",
                     meetingId: activeMeeting.id,
                     topic: activeMeeting.topic,
+                    newMessages: messages.length,
                     messages
                 }, null, 2)
             }]
         };
     }
 
-    // Fallback to global logs
+    // Fallback to global logs (no incremental support for global yet)
     const logs = await StorageManager.getRecentLogs(count);
     return {
         content: [{
