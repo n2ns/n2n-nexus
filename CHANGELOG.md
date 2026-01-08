@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-01-08
+### Fixed
+- **Critical**: Recursive stack overflow in Guest proxy reconnection logic.
+- **Critical**: Server crash when fallback port binding fails (now retries with backoff).
+- **Performance**: Optimized port scanning with batch concurrency (56s -> 3s scan time).
+- **Config**: Expanded port range to 5688-5800 (113 ports).
+
 ## [v0.3.0] - 2026-01-08
 
 ### 🌐 Global Hub Architecture (Zero-Config Multi-IDE Collaboration)

@@ -1,7 +1,7 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.3.0",
-    "description": "Unified Project Asset & Collaboration Hub (MCP Server) designed for AI agent coordination, featuring structured metadata, real-time messaging, and dependency topology.",
+    "version": "0.3.1",
+    "description": "Modular MCP Server for multi-AI assistant coordination",
     "main": "build/index.js",
     "type": "module",
     "bin": {
