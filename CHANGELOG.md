@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-01-08
+### Security & Stability
+- **Security**: Fixed potential URL parameter injection in Guest proxy connection URL.
+- **Stability**: Refactored host election fallback loop from async recursion to `while(true)` to prevent long-term stack overflow.
+- **Refactor**: Improved code structure in `config.ts` for better maintainability.
+
 ## [0.3.1] - 2026-01-08
 ### Fixed
-- **Critical**: Recursive stack overflow in Guest proxy reconnection logic.
+- **Critical**: Recursive stack overflow in Guest proxy reconnection logic (partial fix).
 - **Critical**: Server crash when fallback port binding fails (now retries with backoff).
 - **Performance**: Optimized port scanning with batch concurrency (56s -> 3s scan time).
 - **Config**: Expanded port range to 5688-5800 (113 ports).

@@ -264,7 +264,7 @@ class NexusServer {
                         const req = http.request({
                             hostname: "127.0.0.1",
                             port: CONFIG.port,
-                            path: `/mcp?sessionId=${sessionId}&id=${guestId}`,
+                            path: `/mcp?sessionId=${sessionId}&id=${encodeURIComponent(guestId)}`,
                             method: "POST",
                             headers: { "Content-Type": "application/json" }
                         });
@@ -276,7 +276,7 @@ class NexusServer {
                 };
                 process.stdin.on("data", stdioHandler);
 
-                http.get(`http://127.0.0.1:${CONFIG.port}/mcp?id=${guestId}`, (res) => {
+                http.get(`http://127.0.0.1:${CONFIG.port}/mcp?id=${encodeURIComponent(guestId)}`, (res) => {
                     retryCount = 0; // Reset on successful connection
                     let buffer = "";
                     res.on("data", (chunk) => {

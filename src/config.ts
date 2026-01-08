@@ -116,77 +116,82 @@ async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?
  * 3. If not found, try to become Host
  * 4. If bind fails, wait and re-probe (give winner time to start)
  */
-async function isHostAutoElection(root: string, retryCount: number = 0): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
+async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
     const startPort = 5688;
     const endPort = 5800;
+    let retryCount = 0;
 
-    // Phase 1: Probe-First - Check if any Host already exists (Concurrent Batch Scan)
-    const BATCH_SIZE = 20;
-    for (let batchStart = startPort; batchStart <= endPort; batchStart += BATCH_SIZE) {
-        const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPort);
-        const promises = [];
-        for (let port = batchStart; port <= batchEnd; port++) {
-            promises.push(probeHost(port).then(res => ({ port, ...res })));
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+
+        // Phase 1: Probe-First - Check if any Host already exists (Concurrent Batch Scan)
+        const BATCH_SIZE = 20;
+        for (let batchStart = startPort; batchStart <= endPort; batchStart += BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPort);
+            const promises = [];
+            for (let port = batchStart; port <= batchEnd; port++) {
+                promises.push(probeHost(port).then(res => ({ port, ...res })));
+            }
+
+            const results = await Promise.all(promises);
+            const found = results.find(r => r.isNexus);
+            if (found) {
+                return { isHost: false, port: found.port, rootStorage: found.rootStorage };
+            }
         }
 
-        const results = await Promise.all(promises);
-        const found = results.find(r => r.isNexus);
-        if (found) {
-            return { isHost: false, port: found.port, rootStorage: found.rootStorage };
+        // Phase 2: No Host found, attempt to become Host
+        for (let port = startPort; port <= endPort; port++) {
+            const result = await new Promise<{ isHost: boolean; server?: http.Server }>((resolve) => {
+                const server = http.createServer((req, res) => {
+                    if (req.url === "/hello") {
+                        res.writeHead(200, { "Content-Type": "application/json" });
+                        res.end(JSON.stringify({
+                            service: "n2n-nexus",
+                            role: "host",
+                            version: pkg.version,
+                            rootStorage: root
+                        }));
+                        return;
+                    }
+                    res.writeHead(404);
+                    res.end();
+                });
+
+                server.on("error", (err: any) => {
+                    if (err.code === "EADDRINUSE") {
+                        resolve({ isHost: false });
+                    } else {
+                        resolve({ isHost: false });
+                    }
+                });
+
+                server.listen(port, "127.0.0.1", () => {
+                    resolve({ isHost: true, server });
+                });
+            });
+
+            if (result.isHost) {
+                return { isHost: true, port, server: result.server };
+            }
+
+            // Phase 3: Bind failed - another Guest won. Wait then join winner.
+            await new Promise(r => setTimeout(r, 10000)); // Give winner 10s to start /hello
+            const probe = await probeHost(port);
+            if (probe.isNexus) {
+                return { isHost: false, port, rootStorage: probe.rootStorage };
+            }
+            // If still not Nexus, try next port (occupied by non-Nexus service)
         }
+
+        // Fallback: All ports occupied - progressive backoff retry
+        // First 5 attempts: 1 minute interval, then 2 minute interval
+        const waitTime = retryCount < 5 ? 60000 : 120000;
+        const intervalStr = retryCount < 5 ? "1 minute" : "2 minutes";
+        console.error(`[Nexus] All ports ${startPort}-${endPort} occupied. Retry #${retryCount + 1} in ${intervalStr}...`);
+        await new Promise(r => setTimeout(r, waitTime));
+        retryCount++;
     }
-
-    // Phase 2: No Host found, attempt to become Host
-    for (let port = startPort; port <= endPort; port++) {
-        const result = await new Promise<{ isHost: boolean; server?: http.Server }>((resolve) => {
-            const server = http.createServer((req, res) => {
-                if (req.url === "/hello") {
-                    res.writeHead(200, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({
-                        service: "n2n-nexus",
-                        role: "host",
-                        version: pkg.version,
-                        rootStorage: root
-                    }));
-                    return;
-                }
-                res.writeHead(404);
-                res.end();
-            });
-
-            server.on("error", (err: any) => {
-                if (err.code === "EADDRINUSE") {
-                    resolve({ isHost: false });
-                } else {
-                    resolve({ isHost: false });
-                }
-            });
-
-            server.listen(port, "127.0.0.1", () => {
-                resolve({ isHost: true, server });
-            });
-        });
-
-        if (result.isHost) {
-            return { isHost: true, port, server: result.server };
-        }
-
-        // Phase 3: Bind failed - another Guest won. Wait then join winner.
-        await new Promise(r => setTimeout(r, 10000)); // Give winner 10s to start /hello
-        const probe = await probeHost(port);
-        if (probe.isNexus) {
-            return { isHost: false, port, rootStorage: probe.rootStorage };
-        }
-        // If still not Nexus, try next port (occupied by non-Nexus service)
-    }
-
-    // Fallback: All ports occupied - progressive backoff retry
-    // First 5 attempts: 1 minute interval, then 2 minute interval
-    const waitTime = retryCount < 5 ? 60000 : 120000;
-    const intervalStr = retryCount < 5 ? "1 minute" : "2 minutes";
-    console.error(`[Nexus] All ports ${startPort}-${endPort} occupied. Retry #${retryCount + 1} in ${intervalStr}...`);
-    await new Promise(r => setTimeout(r, waitTime));
-    return isHostAutoElection(root, retryCount + 1);
 }
 
 /**
