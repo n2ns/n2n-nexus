@@ -102,36 +102,22 @@
 
 Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP settings):
 
-#### Leader AI
 ```json
 {
   "mcpServers": {
     "n2n-nexus": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@datafrog-io/n2n-nexus",
-        "--root", "D:/DevSpace/Nexus_Storage"
-      ]
+      "args": ["-y", "@datafrog-io/n2n-nexus"]
     }
   }
 }
 ```
 
-#### Collaborator AI
+> **Zero-Config**: No `--id` or `--host` needed. Just run and collaborate!
+
+**Optional**: Use `--root` to specify a custom storage path:
 ```json
-{
-  "mcpServers": {
-    "n2n-nexus": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@datafrog-io/n2n-nexus",
-        "--root", "D:/DevSpace/Nexus_Storage"
-      ]
-    }
-  }
-}
+"args": ["-y", "@datafrog-io/n2n-nexus", "--root", "/path/to/storage"]
 ```
 
 ### CLI Arguments
@@ -174,9 +160,11 @@ The following files demonstrate a real orchestration session where **4 AI agents
 
 ## ⭐ Support This Project
 
-If **n2ns Nexus** helps you build better AI workflows, consider giving it a star! Your support helps us improve and motivates continued development.
+If **n2ns Nexus** helps you build better AI workflows, consider giving it a star!
 
-[![Star on GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
+<a href="https://github.com/n2ns/n2n-nexus">
+  <img src="https://img.shields.io/github/stars/n2ns/n2n-nexus?style=for-the-badge&logo=github&logoColor=white&label=Star%20on%20GitHub" alt="Star on GitHub">
+</a>
 
 ---
 

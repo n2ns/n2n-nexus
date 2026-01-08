@@ -102,36 +102,22 @@
 
 在你的 MCP 配置文件中（如 `claude_desktop_config.json` 或 Cursor MCP 设置）添加：
 
-#### 主导 AI
 ```json
 {
   "mcpServers": {
     "n2n-nexus": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@datafrog-io/n2n-nexus",
-        "--root", "D:/DevSpace/Nexus_Storage"
-      ]
+      "args": ["-y", "@datafrog-io/n2n-nexus"]
     }
   }
 }
 ```
 
-#### 协同 AI (Guest)
+> **零配置**: 无需 `--id` 或 `--host`。直接运行即可协作！
+
+**可选**: 使用 `--root` 指定自定义存储路径：
 ```json
-{
-  "mcpServers": {
-    "n2n-nexus": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@datafrog-io/n2n-nexus",
-        "--root", "D:/DevSpace/Nexus_Storage"
-      ]
-    }
-  }
-}
+"args": ["-y", "@datafrog-io/n2n-nexus", "--root", "/path/to/storage"]
 ```
 
 ### 命令行参数
@@ -173,9 +159,11 @@ npm start -- --root ./my-storage
 
 ## ⭐ 支持本项目
 
-如果 **n2ns Nexus** 帮助您构建了更好的 AI 工作流，考虑给我们一个 Star 吧！您的支持是我们持续改进的动力。
+如果 **n2ns Nexus** 帮助您构建了更好的 AI 工作流，考虑给我们一个 Star 吧！
 
-[![Star on GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
+<a href="https://github.com/n2ns/n2n-nexus">
+  <img src="https://img.shields.io/github/stars/n2ns/n2n-nexus?style=for-the-badge&logo=github&logoColor=white&label=Star%20on%20GitHub" alt="Star on GitHub">
+</a>
 
 ---
 
