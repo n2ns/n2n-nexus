@@ -17,7 +17,7 @@
 
 ### A. Session & Context
 - `register_session_context`: Declare the project ID currently active in the IDE to unlock write permissions.
-- `mcp://nexus/session`: View current identity, role (Moderator/Regular), and active project.
+- `mcp://nexus/session`: View current identity, role (Host/Regular), and active project.
 
 ### B. Project Asset Management
 - `sync_project_assets`: **[Core/ASYNC]** Submit full Project Manifest and Internal Docs. Returns `taskId`.
@@ -38,8 +38,8 @@
 ### D. Meeting Management
 - `start_meeting`: Start a new tactical session for focused collaboration.
 - `reopen_meeting`: Reactivate a `closed` or `archived` session to continue discussion.
-- `end_meeting`: Conclude a meeting, lock history (**Moderator only**).
-- `archive_meeting`: Move closed meetings to cold storage (**Moderator only**).
+- `end_meeting`: Conclude a meeting, lock history (**Host only**).
+- `archive_meeting`: Move closed meetings to cold storage (**Host only**).
 
 ### E. Task Management (Phase 2 - ASYNC)
 - `create_task`: Create a new background task. Link to meeting for traceability.
@@ -48,9 +48,9 @@
 - `update_task`: Update progress or result (typically for workers).
 - `cancel_task`: Cancel a pending or running task.
 
-### F. Admin (Moderator Only)
-- `moderator_maintenance`: Prune or clear system logs.
-- `moderator_delete_project`: Completely remove a project and its assets.
+### F. Host (Host Only)
+- `host_maintenance`: Prune or clear system logs.
+- `host_delete_project`: Completely remove a project and its assets.
 
 ## 📄 Resources (URI)
 
@@ -70,13 +70,39 @@
 - `mcp://nexus/docs/{docId}`: Read a specific shared document.
 - `mcp://nexus/meetings/{meetingId}`: Full transcript for a specific meeting.
 
+## 🌐 Global Hub Architecture
+
+**v0.3.0** introduces a fully automatic, zero-configuration collaboration architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Global Nexus Hub                         │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐     │
+│  │ Cursor  │   │ VS Code │   │ Claude  │   │ Zed     │     │
+│  │ (Guest) │   │ (Guest) │   │ (Host)  │   │ (Guest) │     │
+│  └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘     │
+│       │             │             │             │           │
+│       └─────────────┴──────┬──────┴─────────────┘           │
+│                            │ SSE                            │
+│                    ┌───────▼───────┐                        │
+│                    │   Port 5688   │                        │
+│                    │ (Auto-Elected)│                        │
+│                    └───────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Zero Config**: Just run `npx @datafrog-io/n2n-nexus` - no `--id` or `--host` required.
+- **Auto Election**: First instance binds port 5688 and becomes Host; others join as Guests.
+- **Cross-Project Sync**: All IDEs share the same Hub, enabling real-time cross-project meetings.
+- **Hot Failover**: If Host disconnects, a Guest automatically promotes within 10 seconds.
+
 ## 🚀 Quick Start
 
 ### MCP Configuration (Recommended)
 
 Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP settings):
 
-#### Moderator (Admin AI)
+#### Leader AI
 ```json
 {
   "mcpServers": {
@@ -85,8 +111,6 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
       "args": [
         "-y",
         "@datafrog-io/n2n-nexus",
-        "--id", "Master-AI",
-        "--moderator",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -94,7 +118,7 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
 }
 ```
 
-#### Regular AI
+#### Collaborator AI
 ```json
 {
   "mcpServers": {
@@ -103,7 +127,6 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
       "args": [
         "-y",
         "@datafrog-io/n2n-nexus",
-        "--id", "Assistant-AI",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -114,11 +137,9 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
 ### CLI Arguments
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--id` | Instance identifier for this AI agent | `Assistant` |
-| `--moderator` | Grant admin privileges to this instance | `false` |
 | `--root` | Local storage path for all Nexus data | `./storage` |
 
-> **Note:** Only instances with `--moderator` flag can use admin tools (e.g., `moderator_maintenance`).
+> **Note:** Host identity and Instance ID are determined automatically based on the project folder name and startup order.
 
 ### Local Development
 ```bash
@@ -126,7 +147,7 @@ git clone https://github.com/n2ns/n2n-nexus.git
 cd n2n-nexus
 npm install
 npm run build
-npm start -- --id Master-AI --root ./my-storage
+npm start -- --root ./my-storage
 ```
 
 ---
@@ -150,4 +171,13 @@ The following files demonstrate a real orchestration session where **4 AI agents
 > *This is what AI-native development looks like.*
 
 ---
-© 2025 datafrog.io. Built for Local-Only AI Workflows.
+
+## ⭐ Support This Project
+
+If **n2ns Nexus** helps you build better AI workflows, consider giving it a star! Your support helps us improve and motivates continued development.
+
+[![Star on GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
+
+---
+
+© 2026 datafrog.io. Built for Local-Only AI Workflows.

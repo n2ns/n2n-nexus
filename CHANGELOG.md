@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.3.0] - 2026-01-08
+
+### 🌐 Global Hub Architecture (Zero-Config Multi-IDE Collaboration)
+
+This release introduces a fully automatic Host election and Global Hub architecture, enabling seamless multi-IDE collaboration without any configuration.
+
+#### Automatic Host Election (Port-Based)
+- **Port Range 5688-5700**: First instance to bind becomes Host, others become Guests.
+- **Probe-First Strategy**: Guests scan for existing Host before attempting to bind, eliminating race conditions.
+- **Hello Handshake**: `/hello` endpoint validates Nexus identity, distinguishing from other services.
+- **10s Failover Window**: On bind failure, Guests wait 10 seconds then re-probe to join the winner.
+
+#### Global Hub (SSE-Based Communication)
+- **Single Hub Architecture**: All IDEs (regardless of project) connect to the same Host for cross-project collaboration.
+- **Stdio-to-SSE Proxy**: Guests transparently forward IDE traffic to Host via SSE.
+- **Multi-Session Routing**: Host maintains session map for concurrent Guest connections.
+- **Storage Path Inheritance**: Host broadcasts `rootStorage` path; Guests inherit it for seamless failover.
+
+#### Heartbeat & Watchdog (High Availability)
+- **Host Heartbeat**: Host sends `: ping` every 30 seconds to keep connections alive.
+- **Guest Watchdog**: Guests monitor activity; if silent for 60 seconds, trigger automatic re-election.
+- **Hot Failover**: Surviving Guests automatically promote to new Host using inherited storage path.
+
+#### Terminology Refactoring
+- **Moderator → Host**: All code, tests, and documentation updated.
+- **`isModerator` → `isHost`**: API and config properties renamed.
+- **`moderator_*` → `host_*`**: Tool names updated (e.g., `host_maintenance`).
+
+#### Zero-Config Experience
+- **`--id` Deprecated**: Instance ID now auto-derived from project folder name.
+- **`--host` Removed**: Host role determined automatically by port binding.
+- **Simplified CLI**: Just `npx @datafrog-io/n2n-nexus` to get started.
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Required CLI Args | 2-3 | 0-1 |
+| Manual Host Setup | Required | Automatic |
+| Multi-IDE Sync | File-based | SSE Real-time |
+| Failover Time | Manual restart | < 10 seconds |
+
+#### Test Coverage
+- New `election.test.ts` with 9 test cases covering probe, bind, and race scenarios.
+- All 55 tests passing.
+
 ## [v0.2.1] - 2026-01-01
 
 ### 🚀 Token Economy Deep Optimization

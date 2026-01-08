@@ -74,11 +74,11 @@ export async function handleToolCall(
         case "rename_project":
             return handleRenameProject(validatedArgs, ctx);
 
-        case "moderator_delete_project":
+        case "host_delete_project":
             return handleRemoveProject(validatedArgs, ctx);
 
-        case "moderator_maintenance":
-            return handleModeratorMaintenance(validatedArgs, ctx);
+        case "host_maintenance":
+            return handleHostMaintenance(validatedArgs, ctx);
 
         // --- Meeting Tools ---
         case "start_meeting":
@@ -397,12 +397,12 @@ async function handleUpdateStrategy(args: { content: string }, _ctx: ToolContext
 }
 
 /**
- * ASYNC: moderator_delete_project now returns a taskId.
+ * ASYNC: host_delete_project now returns a taskId.
  */
 async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext) {
-    // Defense-in-Depth: Explicit moderator check
-    if (!CONFIG.isModerator) {
-        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can delete projects.");
+    // Defense-in-Depth: Explicit host check
+    if (!CONFIG.isHost) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only hosts can delete projects.");
     }
     if (!args?.projectId) throw new McpError(ErrorCode.InvalidParams, "projectId is required.");
 
@@ -413,7 +413,7 @@ async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext
     // Create background task
     const task = createTask({
         metadata: {
-            operation: "moderator_delete_project",
+            operation: "host_delete_project",
             projectId: args.projectId,
             initiator: CONFIG.instanceId
         }
@@ -431,7 +431,7 @@ async function handleRemoveProject(args: { projectId: string }, ctx: ToolContext
             ctx.notifyResourceUpdate("mcp://nexus/get_global_topology");
 
             updateTask(task.id, { status: "completed", progress: 1.0 });
-            await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Task Completed: Project '${args.projectId}' deleted by moderator.`);
+            await StorageManager.addGlobalLog("SYSTEM", `[${CONFIG.instanceId}] Task Completed: Project '${args.projectId}' deleted by host.`);
         } catch (error) {
             updateTask(task.id, {
                 status: "failed",
@@ -464,10 +464,10 @@ async function handleSyncGlobalDoc(args: { docId: string; title: string; content
 
 // --- Admin Handlers ---
 
-async function handleModeratorMaintenance(args: { action: "prune" | "clear"; count: number }, ctx: ToolContext) {
-    // Defense-in-Depth: Explicit moderator check
-    if (!CONFIG.isModerator) {
-        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can perform maintenance.");
+async function handleHostMaintenance(args: { action: "prune" | "clear"; count: number }, ctx: ToolContext) {
+    // Defense-in-Depth: Explicit host check
+    if (!CONFIG.isHost) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only hosts can perform maintenance.");
     }
     if (!args.action || args.count === undefined) {
         throw new McpError(ErrorCode.InvalidParams, "Both 'action' and 'count' are mandatory for maintenance.");
@@ -520,9 +520,9 @@ async function handleEndMeeting(args: { meetingId?: string; summary?: string }, 
         if (!active) throw new McpError(ErrorCode.InvalidRequest, "No active meeting found to end. Please specify meetingId.");
         targetId = active.id;
     }
-    // STRICT: Only moderators can end meetings
-    if (!CONFIG.isModerator) {
-        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can end meetings.");
+    // STRICT: Only hosts can end meetings
+    if (!CONFIG.isHost) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only hosts can end meetings.");
     }
 
     const { meeting, suggestedSyncTargets } = await UnifiedMeetingStore.endMeeting(targetId, args.summary, undefined);
@@ -549,9 +549,9 @@ async function handleEndMeeting(args: { meetingId?: string; summary?: string }, 
 async function handleArchiveMeeting(args: { meetingId: string }, _ctx: ToolContext) {
     if (!args.meetingId) throw new McpError(ErrorCode.InvalidParams, "meetingId is required.");
 
-    // STRICT: Only moderators can archive meetings
-    if (!CONFIG.isModerator) {
-        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only moderators can archive meetings.");
+    // STRICT: Only hosts can archive meetings
+    if (!CONFIG.isHost) {
+        throw new McpError(ErrorCode.InvalidRequest, "Permission denied: Only hosts can archive meetings.");
     }
 
     await UnifiedMeetingStore.archiveMeeting(args.meetingId, undefined);

@@ -31,8 +31,8 @@ export async function getResourceContent(
     if (uri === "mcp://nexus/session") {
         const info = {
             yourId: CONFIG.instanceId,
-            role: CONFIG.isModerator ? "Moderator" : "Regular",
-            isModerator: CONFIG.isModerator,
+            role: CONFIG.isHost ? "Host" : "Regular",
+            isHost: CONFIG.isHost,
             activeProject: currentProject || "None"
         };
         return { mimeType: "application/json", text: JSON.stringify(info, null, 2) };

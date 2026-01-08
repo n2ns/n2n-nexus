@@ -18,7 +18,7 @@
 
 ### A. 会话与上下文 (Session)
 - `register_session_context`: 声明当前 IDE 工作的项目 ID，解锁写权限。
-- `mcp://nexus/session`: 查看当前身份、角色（Moderator/Regular）及活动项目。
+- `mcp://nexus/session`: 查看当前身份、角色（Host/Regular）及活动项目。
 
 ### B. 项目资产管理 (Project Assets)
 - `sync_project_assets`: **[核心/异步]** 提交完整的项目 Manifest 和内部技术文档。返回 `taskId`。
@@ -38,8 +38,8 @@
 ### D. 会议管理 (Tactical Meetings)
 - `start_meeting`: 开启新的战术讨论会议。
 - `reopen_meeting`: 重新开启已“关闭”或“归档”的会议。
-- `end_meeting`: 结束会议，锁定历史记录 (**仅限管理员 Moderator**)。
-- `archive_meeting`: 将已结束的会议移至存档 (**仅限管理员 Moderator**)。
+- `end_meeting`: 结束会议，锁定历史记录 (**仅限 Host**)。
+- `archive_meeting`: 将已结束的会议移至存档 (**仅限 Host**)。
 
 ### E. 任务管理 (Phase 2 - 异步)
 - `create_task`: 创建新的后台任务。关联会议以实现溯源。
@@ -48,9 +48,9 @@
 - `update_task`: 更新任务进度或结果（通常供 Worker 调用）。
 - `cancel_task`: 取消待处理或运行中的任务。
 
-### F. 管理员工具 (仅限 Moderator)
-- `moderator_maintenance`: 清理或修剪系统日志。
-- `moderator_delete_project`: 彻底删除项目及其所有资产。
+### F. 主持者工具 (仅限 Host)
+- `host_maintenance`: 清理或修剪系统日志。
+- `host_delete_project`: 彻底删除项目及其所有资产。
 
 ## 📄 资源 URI (Resources)
 
@@ -70,13 +70,39 @@
 - `mcp://nexus/docs/{docId}`: 读取特定的全局共享文档。
 - `mcp://nexus/meetings/{meetingId}`: 特定会议的完整记录。
 
+## 🌐 全局 Hub 架构
+
+**v0.3.0** 引入了全自动、零配置的协作架构：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    全局 Nexus Hub                           │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐     │
+│  │ Cursor  │   │ VS Code │   │ Claude  │   │ Zed     │     │
+│  │ (Guest) │   │ (Guest) │   │ (Host)  │   │ (Guest) │     │
+│  └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘     │
+│       │             │             │             │           │
+│       └─────────────┴──────┬──────┴─────────────┘           │
+│                            │ SSE                            │
+│                    ┌───────▼───────┐                        │
+│                    │   端口 5688   │                        │
+│                    │  (自动选举)   │                        │
+│                    └───────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **零配置**: 只需运行 `npx @datafrog-io/n2n-nexus` — 无需 `--id` 或 `--host`。
+- **自动选举**: 首个实例绑定 5688 端口成为 Host；其余自动加入为 Guest。
+- **跨项目同步**: 所有 IDE 共享同一个 Hub，实现实时跨项目会议。
+- **热故障转移**: 若 Host 断开，Guest 将在 10 秒内自动升迁。
+
 ## 🚀 快速启动
 
 ### MCP 配置（推荐）
 
 在你的 MCP 配置文件中（如 `claude_desktop_config.json` 或 Cursor MCP 设置）添加：
 
-#### 主持者（管理员 AI）
+#### 主导 AI
 ```json
 {
   "mcpServers": {
@@ -85,8 +111,6 @@
       "args": [
         "-y",
         "@datafrog-io/n2n-nexus",
-        "--id", "Master-AI",
-        "--moderator",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -94,7 +118,7 @@
 }
 ```
 
-#### 普通 AI
+#### 协同 AI (Guest)
 ```json
 {
   "mcpServers": {
@@ -103,7 +127,6 @@
       "args": [
         "-y",
         "@datafrog-io/n2n-nexus",
-        "--id", "Assistant-AI",
         "--root", "D:/DevSpace/Nexus_Storage"
       ]
     }
@@ -114,11 +137,9 @@
 ### 命令行参数
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--id` | 当前 AI 助手的实例标识符 | `Assistant` |
-| `--moderator` | 授予此实例管理员权限 | `false` |
 | `--root` | 本地数据存储路径 | `./storage` |
 
-> **注意：** 仅带有 `--moderator` 标志的实例可使用管理员工具（如 `moderator_maintenance` 和 `moderator_delete_project`）。
+> **注意：** 实例 ID（默认为当前项目文件夹名称）和 Host 身份将根据启动顺序自动生成。
 
 ### 本地开发
 ```bash
@@ -126,7 +147,7 @@ git clone https://github.com/n2ns/n2n-nexus.git
 cd n2n-nexus
 npm install
 npm run build
-npm start -- --id Master-AI --root ./my-storage
+npm start -- --root ./my-storage
 ```
 
 ---
@@ -149,4 +170,13 @@ npm start -- --id Master-AI --root ./my-storage
 > *这就是 AI 原生开发的协作方式。*
 
 ---
-© 2025 datafrog.io. Built for Local-Only AI Workflows.
+
+## ⭐ 支持本项目
+
+如果 **n2ns Nexus** 帮助您构建了更好的 AI 工作流，考虑给我们一个 Star 吧！您的支持是我们持续改进的动力。
+
+[![Star on GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
+
+---
+
+© 2026 datafrog.io. Built for Local-Only AI Workflows.

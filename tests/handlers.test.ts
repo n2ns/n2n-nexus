@@ -16,17 +16,17 @@ describe("Tool Handlers", () => {
     beforeEach(async () => {
         // Ensure clean state - wait a bit for any pending file operations
         await new Promise(resolve => setTimeout(resolve, 50));
-        
+
         try {
             await fs.rm(TEST_ROOT, { recursive: true, force: true });
-        } catch {}
-        
+        } catch { }
+
         // Create root directory first, then subdirectories
         await fs.mkdir(TEST_ROOT, { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "archives"), { recursive: true });
-        
+
         await StorageManager.init();
 
         mockContext = {
@@ -52,7 +52,7 @@ describe("Tool Handlers", () => {
 
     it("should handle global discussion with category", async () => {
         await handleToolCall("send_message", { message: "Meeting start", category: "MEETING_START" }, mockContext);
-        
+
         const logs = await StorageManager.getRecentLogs(1);
         expect(logs[0].text).toBe("Meeting start");
         expect(logs[0].category).toBe("MEETING_START");
@@ -80,13 +80,13 @@ describe("Tool Handlers", () => {
 
         const result = await handleToolCall("rename_project", { oldId: "web_old.io", newId: "web_new.io" }, mockContext);
         expect(result.content[0].text).toContain("Rename task created.");
-        
+
         // Wait for async task to complete
         await new Promise(resolve => setTimeout(resolve, 200));
-        
+
         expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
         expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/projects/web_new.io/manifest");
-        
+
         const oldExists = await StorageManager.getProjectManifest("web_old.io");
         const newManifest = await StorageManager.getProjectManifest("web_new.io");
         expect(oldExists).toBeNull();
@@ -94,8 +94,8 @@ describe("Tool Handlers", () => {
     });
 
     it("should delete project via tool", async () => {
-         await handleToolCall("register_session_context", { projectId: "web_to-delete.io" }, mockContext);
-         await handleToolCall("sync_project_assets", {
+        await handleToolCall("register_session_context", { projectId: "web_to-delete.io" }, mockContext);
+        await handleToolCall("sync_project_assets", {
             manifest: {
                 id: "web_to-delete.io",
                 name: "DeleteMe",
@@ -116,9 +116,9 @@ describe("Tool Handlers", () => {
 
         expect(await StorageManager.getProjectManifest("web_to-delete.io")).not.toBeNull();
 
-        // Set moderator to true for this test since moderator_delete_project requires it
-        CONFIG.isModerator = true;
-        await handleToolCall("moderator_delete_project", { projectId: "web_to-delete.io" }, mockContext);
+        // Set host to true for this test since host_delete_project requires it
+        CONFIG.isHost = true;
+        await handleToolCall("host_delete_project", { projectId: "web_to-delete.io" }, mockContext);
 
         // Wait for async task to complete
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -126,34 +126,34 @@ describe("Tool Handlers", () => {
         expect(await StorageManager.getProjectManifest("web_to-delete.io")).toBeNull();
         expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
         // Reset for other tests
-        CONFIG.isModerator = false;
+        CONFIG.isHost = false;
     });
 
 
-    describe("Moderator permissions", () => {
-        it("should allow moderator_maintenance when isModerator is true", async () => {
-            CONFIG.isModerator = true;
+    describe("Host permissions", () => {
+        it("should allow host_maintenance when isHost is true", async () => {
+            CONFIG.isHost = true;
 
             // Add some logs first
             await handleToolCall("send_message", { message: "Test message" }, mockContext);
 
-            const result = await handleToolCall("moderator_maintenance", { action: "clear", count: 0 }, mockContext);
+            const result = await handleToolCall("host_maintenance", { action: "clear", count: 0 }, mockContext);
             expect(result.content[0].text).toContain("wiped");
         });
 
-        it("should verify CONFIG.isModerator flag behavior", () => {
+        it("should verify CONFIG.isHost flag behavior", () => {
             // Test the flag is properly set
-            CONFIG.isModerator = true;
-            expect(CONFIG.isModerator).toBe(true);
+            CONFIG.isHost = true;
+            expect(CONFIG.isHost).toBe(true);
 
-            CONFIG.isModerator = false;
-            expect(CONFIG.isModerator).toBe(false);
+            CONFIG.isHost = false;
+            expect(CONFIG.isHost).toBe(false);
         });
     });
 
     describe("Session resource", () => {
-        it("should return Moderator role when isModerator is true", async () => {
-            CONFIG.isModerator = true;
+        it("should return Host role when isHost is true", async () => {
+            CONFIG.isHost = true;
             CONFIG.instanceId = "Master-AI";
 
             const result = await getResourceContent("mcp://nexus/session", "web_test.io");
@@ -161,13 +161,13 @@ describe("Tool Handlers", () => {
 
             const info = JSON.parse(result!.text);
             expect(info.yourId).toBe("Master-AI");
-            expect(info.role).toBe("Moderator");
-            expect(info.isModerator).toBe(true);
+            expect(info.role).toBe("Host");
+            expect(info.isHost).toBe(true);
             expect(info.activeProject).toBe("web_test.io");
         });
 
-        it("should return Regular role when isModerator is false", async () => {
-            CONFIG.isModerator = false;
+        it("should return Regular role when isHost is false", async () => {
+            CONFIG.isHost = false;
             CONFIG.instanceId = "Assistant-AI";
 
             const result = await getResourceContent("mcp://nexus/session", null);
@@ -176,7 +176,7 @@ describe("Tool Handlers", () => {
             const info = JSON.parse(result!.text);
             expect(info.yourId).toBe("Assistant-AI");
             expect(info.role).toBe("Regular");
-            expect(info.isModerator).toBe(false);
+            expect(info.isHost).toBe(false);
             expect(info.activeProject).toBe("None");
         });
     });

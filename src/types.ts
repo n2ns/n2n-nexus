@@ -48,8 +48,9 @@ export interface MeetingState {
 
 export interface HubConfig {
     instanceId: string;
-    isModerator: boolean;
+    isHost: boolean;
     rootStorage: string;
+    port: number;
 }
 
 export interface Registry {

@@ -11,3 +11,4 @@ yarn-error.log*
 test-storage/
 Nexus_Storage/
 tests/tmp/
+storage/

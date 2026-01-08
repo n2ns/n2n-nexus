@@ -47,15 +47,15 @@ Nexus 采用 **Context7 风格** 的渐进加载模式，最大化 Token 效率�
 ### 6. 战术会议 (Tactical Meetings)
 1. **发起**: `start_meeting(topic)`。
 2. **参与**: 发送 category 为 `DECISION` 的消息作为共识。
-3. **结束**: `end_meeting(summary?)`。锁定历史（**Moderator only**）。
-4. **归档**: `archive_meeting(meetingId)`（**Moderator only**）。
+3. **结束**: `end_meeting(summary?)`。锁定历史（**Host only**）。
+4. **归档**: `archive_meeting(meetingId)`（**Host only**）。
 5. **重开**: `reopen_meeting(meetingId)`。
 
 ---
 
 ## 🛡️ 角色说明
 - **Regular**: 拥有注册、同步、讨论和维护文档的完整权限。
-- **Moderator**: 额外拥有清理记录（`moderator_maintenance`）、结束/归档会议及物理删除（`moderator_delete_project`）的权限。
+- **Host**: 管理员实例（通常是第一个启动的实例），额外拥有清理记录（`host_maintenance`）、结束/归档会议及物理删除（`host_delete_project`）的权限。
 
 ## ❌ 退出机制
 本系统是对本地磁盘的原子写入。请确保同步时提供清晰的 `internalDocs`，以便其他 Assistant 能够无缝接手。

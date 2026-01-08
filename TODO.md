@@ -34,14 +34,14 @@
 - [x] **Async Migration**: `sync_project_assets` now returns taskId (non-blocking).
 
 #### Phase 2.5: Security Hardening (DONE)
-- [x] **ProjectIdSchema**: Applied to `read_project`, `update_project`, `rename_project.oldId`, `moderator_delete_project`.
+- [x] **ProjectIdSchema**: Applied to `read_project`, `update_project`, `rename_project.oldId`, `host_delete_project`.
 - [x] **FileNameSchema**: Added for `upload_project_asset.fileName` (path traversal protection).
 - [x] **Tool Tags**: `update_task` marked as `[INTERNAL]` to prevent misuse.
 
 #### Phase 3: Infrastructure & Security (DONE)
 - [x] **Resource Deprecation**: Removed 6 redundant read tools (`list_projects`, `read_project`, etc.) in favor of Resource URIs.
-- [x] **Async Migration (Deepening)**: `rename_project` and `moderator_delete_project` refactored to use Task primitive.
-- [x] **Meeting Management Enhancement**: Added `reopen_meeting` functionality (open to all participants) and strictly enforced Moderator-only permissions for `end_meeting` and `archive_meeting`.
+- [x] **Async Migration (Deepening)**: `rename_project` and `host_delete_project` refactored to use Task primitive.
+- [x] **Meeting Management Enhancement**: Added `reopen_meeting` functionality (open to all participants) and strictly enforced Host-only permissions for `end_meeting` and `archive_meeting`.
 - [x] **Version Bump**: Released v0.2.0 with Phase 2/3 features (2025-12-31).
 
 #### Phase 4: Future Roadmap (Backlog)

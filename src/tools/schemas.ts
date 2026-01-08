@@ -127,17 +127,17 @@ export const RenameProjectSchema = z.object({
 });
 
 /**
- * 15. moderator_maintenance
+ * 15. host_maintenance
  */
-export const ModeratorMaintenanceSchema = z.object({
+export const HostMaintenanceSchema = z.object({
     action: z.enum(["prune", "clear"]),
     count: z.number().int().min(0)
 });
 
 /**
- * 16. moderator_delete_project
+ * 16. host_delete_project
  */
-export const ModeratorDeleteSchema = z.object({
+export const HostDeleteSchema = z.object({
     projectId: ProjectIdSchema
 });
 
@@ -260,24 +260,24 @@ export const TOOL_REGISTRY: Record<string, { description: string; schema: z.ZodT
         description: "[ASYNC] Rename a project ID with automatic cascading updates to all relation references. Returns task ID.",
         schema: RenameProjectSchema
     },
-    moderator_maintenance: {
-        description: "[ADMIN ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
-        schema: ModeratorMaintenanceSchema
+    host_maintenance: {
+        description: "[HOST ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
+        schema: HostMaintenanceSchema
     },
-    moderator_delete_project: {
-        description: "[ASYNC][ADMIN ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Returns task ID. Irreversible.",
-        schema: ModeratorDeleteSchema
+    host_delete_project: {
+        description: "[ASYNC][HOST ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Returns task ID. Irreversible.",
+        schema: HostDeleteSchema
     },
     start_meeting: {
         description: "Start a new meeting session. Creates a dedicated file for the meeting. Returns the meeting ID and details.",
         schema: StartMeetingSchema
     },
     end_meeting: {
-        description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only moderator can end].",
+        description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only host can end].",
         schema: EndMeetingSchema
     },
     archive_meeting: {
-        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only moderator can archive].",
+        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only host can archive].",
         schema: ArchiveMeetingSchema
     },
     reopen_meeting: {

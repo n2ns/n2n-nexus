@@ -17,17 +17,17 @@ describe("Meeting Permission Tests", () => {
         await new Promise(resolve => setTimeout(resolve, 50));
         try {
             await fs.rm(TEST_ROOT, { recursive: true, force: true });
-        } catch {}
-        
+        } catch { }
+
         await fs.mkdir(TEST_ROOT, { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "meetings"), { recursive: true });
-        
+
         await StorageManager.init();
 
         CONFIG.instanceId = "Daisy-AI";
-        CONFIG.isModerator = false;
+        CONFIG.isHost = false;
 
         mockContextA = {
             currentProject: "web_project-a.io",
@@ -58,7 +58,7 @@ describe("Meeting Permission Tests", () => {
             throw new Error("Should have failed");
         } catch (e: any) {
             expect(e.message).toContain("Permission denied");
-            expect(e.message).toContain("Only moderators");
+            expect(e.message).toContain("Only hosts");
         }
     });
 
@@ -73,7 +73,7 @@ describe("Meeting Permission Tests", () => {
             throw new Error("Should have failed");
         } catch (e: any) {
             expect(e.message).toContain("Permission denied");
-            expect(e.message).toContain("Only moderators");
+            expect(e.message).toContain("Only hosts");
         }
     });
 
@@ -83,13 +83,13 @@ describe("Meeting Permission Tests", () => {
         const meetingId = JSON.parse(startResult.content[0].text).meetingId;
 
         // Elevate AI B to Moderator
-        CONFIG.isModerator = true;
-        
+        CONFIG.isHost = true;
+
         // AI B ends meeting A -> Success (Moderator bypass)
         const endResult = await handleToolCall("end_meeting", { meetingId }, mockContextB);
         expect(JSON.parse(endResult.content[0].text).status).toBe("closed");
-        
-        CONFIG.isModerator = false;
+
+        CONFIG.isHost = false;
     });
 
     it("should enforce moderator-only for archive and reopen", async () => {
@@ -98,9 +98,9 @@ describe("Meeting Permission Tests", () => {
         const meetingId = JSON.parse(startResult.content[0].text).meetingId;
 
         // End as moderator
-        CONFIG.isModerator = true;
+        CONFIG.isHost = true;
         await handleToolCall("end_meeting", { meetingId }, mockContextB);
-        CONFIG.isModerator = false;
+        CONFIG.isHost = false;
 
         // Try to archive as initiator (AI A) -> Failure
         try {
@@ -115,11 +115,11 @@ describe("Meeting Permission Tests", () => {
         expect(JSON.parse(reopenResult.content[0].text).status).toBe("active");
 
         // Archive as moderator -> Success
-        CONFIG.isModerator = true;
+        CONFIG.isHost = true;
         await handleToolCall("end_meeting", { meetingId }, mockContextB);
         const archiveResult = await handleToolCall("archive_meeting", { meetingId }, mockContextB);
         expect(JSON.parse(archiveResult.content[0].text).status).toBe("archived");
-        
-        CONFIG.isModerator = false;
+
+        CONFIG.isHost = false;
     });
 });

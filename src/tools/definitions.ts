@@ -181,7 +181,7 @@ const ALL_TOOLS: ToolDefinition[] = [
     },
     {
         name: "end_meeting",
-        description: "[Moderator] End active meeting. Locks history.",
+        description: "[Host] End active meeting. Locks history.",
         inputSchema: {
             type: "object",
             properties: {
@@ -192,7 +192,7 @@ const ALL_TOOLS: ToolDefinition[] = [
     },
     {
         name: "archive_meeting",
-        description: "[Moderator] Archive closed meeting. Read-only after.",
+        description: "[Host] Archive closed meeting. Read-only after.",
         inputSchema: {
             type: "object",
             properties: {
@@ -275,10 +275,10 @@ const ALL_TOOLS: ToolDefinition[] = [
         }
     },
 
-    // --- Admin (Moderator Only) ---
+    // --- Host (Host Only) ---
     {
-        name: "moderator_maintenance",
-        description: "[Moderator] Manage logs: 'prune' oldest N or 'clear' all.",
+        name: "host_maintenance",
+        description: "[Host] Manage logs: 'prune' oldest N or 'clear' all.",
         inputSchema: {
             type: "object",
             properties: {
@@ -289,8 +289,8 @@ const ALL_TOOLS: ToolDefinition[] = [
         }
     },
     {
-        name: "moderator_delete_project",
-        description: "[ASYNC][Moderator] Delete project. Irreversible. Returns taskId.",
+        name: "host_delete_project",
+        description: "[ASYNC][Host] Delete project. Irreversible. Returns taskId.",
         inputSchema: {
             type: "object",
             properties: {

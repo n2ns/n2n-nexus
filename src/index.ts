@@ -11,17 +11,19 @@ import {
     ErrorCode,
     McpError,
 } from "@modelcontextprotocol/sdk/types.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 import { readFileSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
+import http from "http";
 
-import { CONFIG } from "./config.js";
+import { CONFIG, hostServer } from "./config.js";
 import { StorageManager } from "./storage/index.js";
 import { TOOL_DEFINITIONS, handleToolCall } from "./tools/index.js";
 import { listResources, getResourceContent } from "./resources/index.js";
 import { sanitizeErrorMessage } from "./utils/error.js";
-import { checkModeratorPermission } from "./utils/auth.js";
+import { checkHostPermission } from "./utils/auth.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
@@ -34,6 +36,7 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8")
 class NexusServer {
     private server: Server;
     private currentProject: string | null = null;
+    private sseTransports = new Map<string, SSEServerTransport>();
 
     constructor() {
         this.server = new Server(
@@ -81,7 +84,7 @@ class NexusServer {
             const { name, arguments: toolArgs } = request.params;
 
             try {
-                if (name.startsWith("moderator_")) checkModeratorPermission(name);
+                if (name.startsWith("host_")) checkHostPermission(name);
 
                 const result = await handleToolCall(
                     name,
@@ -158,30 +161,144 @@ class NexusServer {
         const shutdown = async (signal: string) => {
             console.error(`\n[Nexus] Received ${signal}. Shutting down...`);
             try {
-                // Post-departure log
                 const msg = `Nexus Session Terminated (IDE Closed).`;
                 await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, msg, "UPDATE");
                 console.error(`[Nexus:${CONFIG.instanceId}] Goodbye!`);
-            } catch {
-                // Ignore if storage is already cleaned up
-            }
+            } catch { /* ignore */ }
             process.exit(0);
         };
 
         process.on("SIGINT", () => shutdown("SIGINT"));
         process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-        const transport = new StdioServerTransport();
-        await this.server.connect(transport);
-
-        // Announce presence
-        try {
+        if (CONFIG.isHost && hostServer) {
+            // --- HOST MODE: Central Hub ---
             await StorageManager.init();
-            const onlineMsg = `Nexus Session Active (IDE Opened). Role: ${CONFIG.isModerator ? "Moderator" : "Regular"}`;
+
+            hostServer.on("request", async (req, res) => {
+                const url = new URL(req.url || "", `http://${req.headers.host}`);
+
+                if (url.pathname === "/mcp") {
+                    const guestId = url.searchParams.get("id") || "UnknownGuest";
+                    if (req.method === "GET") {
+                        const transport = new SSEServerTransport("/mcp", res);
+                        this.sseTransports.set(transport.sessionId, transport);
+
+                        const msg = `Guest Joined: ${guestId}`;
+                        await StorageManager.addGlobalLog(`HOST:${CONFIG.instanceId}`, msg, "UPDATE");
+                        console.error(`[Nexus Hub] ${msg} (Session: ${transport.sessionId})`);
+
+                        // Heartbeat: keep connection alive
+                        const heartbeat = setInterval(() => {
+                            try { res.write(": ping\n\n"); } catch { clearInterval(heartbeat); }
+                        }, 30000);
+
+                        transport.onclose = () => {
+                            this.sseTransports.delete(transport.sessionId);
+                            clearInterval(heartbeat);
+                            console.error(`[Nexus Hub] Guest Left: ${guestId}`);
+                        };
+                        await this.server.connect(transport);
+                        return;
+                    } else if (req.method === "POST") {
+                        const sessionId = url.searchParams.get("sessionId");
+                        const transport = sessionId ? this.sseTransports.get(sessionId) : null;
+                        if (transport) {
+                            await transport.handlePostMessage(req, res);
+                        } else {
+                            res.writeHead(404).end("Session unknown");
+                        }
+                        return;
+                    }
+                }
+            });
+
+            // Support local stdio for the host's own IDE
+            const transport = new StdioServerTransport();
+            await this.server.connect(transport);
+
+            const onlineMsg = `Nexus Hub Active. Playing Host.`;
             await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, onlineMsg, "UPDATE");
-            console.error(`[Nexus:${CONFIG.instanceId}] ${onlineMsg}`);
-        } catch (e) {
-            console.error("[Nexus] Failed to post online message:", e);
+            console.error(`[Nexus:${CONFIG.instanceId}] ${onlineMsg} (Port: ${CONFIG.port})`);
+        } else {
+            // --- GUEST MODE: SSE Proxy ---
+            const guestId = CONFIG.instanceId;
+
+            // Random delay function to prevent thundering herd during re-election
+            const randomDelay = () => Math.floor(Math.random() * 3000);
+
+            const startProxy = () => {
+                // Clear any stale stdin listeners before starting
+                process.stdin.removeAllListeners("data");
+
+                console.error(`[Nexus:${guestId}] Global Hub detected at ${CONFIG.port}. Joining...`);
+                let sessionId: string | null = null;
+                let lastActivity = Date.now();
+
+                // Watchdog: trigger re-election if Host is silent for too long
+                const watchdog = setInterval(() => {
+                    if (Date.now() - lastActivity > 60000) {
+                        console.error("[Nexus Guest] Host stale. Triggering re-election...");
+                        cleanup();
+                        // Random delay to prevent all guests from racing for the port
+                        setTimeout(() => this.run(), randomDelay());
+                    }
+                }, 10000);
+
+                const cleanup = () => {
+                    clearInterval(watchdog);
+                    process.stdin.removeAllListeners("data");
+                };
+
+                const stdioHandler = (chunk: Buffer) => {
+                    if (!sessionId) return;
+                    try {
+                        const req = http.request({
+                            hostname: "127.0.0.1",
+                            port: CONFIG.port,
+                            path: `/mcp?sessionId=${sessionId}&id=${guestId}`,
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" }
+                        });
+                        // Handle request errors to prevent unhandled exceptions
+                        req.on("error", () => { /* suppress ECONNREFUSED etc. */ });
+                        req.write(chunk);
+                        req.end();
+                    } catch { /* suppress */ }
+                };
+                process.stdin.on("data", stdioHandler);
+
+                http.get(`http://127.0.0.1:${CONFIG.port}/mcp?id=${guestId}`, (res) => {
+                    let buffer = "";
+                    res.on("data", (chunk) => {
+                        lastActivity = Date.now();
+                        const str = chunk.toString();
+                        buffer += str;
+                        if (!sessionId && buffer.includes("event: endpoint")) {
+                            const match = buffer.match(/sessionId=([a-f0-9-]+)/);
+                            if (match) sessionId = match[1];
+                        }
+                        if (str.includes("event: message")) {
+                            const lines = str.split("\n");
+                            const dataLine = lines.find((l: string) => l.startsWith("data: "));
+                            if (dataLine) {
+                                try { process.stdout.write(dataLine.substring(6) + "\n"); } catch { }
+                            }
+                        }
+                    });
+                    res.on("end", () => {
+                        console.error("[Nexus Guest] Lost connection to Host. Re-electing...");
+                        cleanup();
+                        // Random delay for re-election
+                        setTimeout(() => this.run(), randomDelay());
+                    });
+                }).on("error", () => {
+                    console.error("[Nexus Guest] Proxy Receive Error. Retry with random delay...");
+                    cleanup();
+                    setTimeout(() => this.run(), 1000 + randomDelay());
+                });
+            };
+            startProxy();
         }
     }
 }

@@ -19,13 +19,13 @@ describe("Meeting Integration Tests", () => {
         await new Promise(resolve => setTimeout(resolve, 50));
         try {
             await fs.rm(TEST_ROOT, { recursive: true, force: true });
-        } catch {}
-        
+        } catch { }
+
         await fs.mkdir(TEST_ROOT, { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "meetings"), { recursive: true }); // For JSON fallback
-        
+
         await StorageManager.init();
 
         mockContext = {
@@ -52,30 +52,30 @@ describe("Meeting Integration Tests", () => {
         expect(meetingId).toMatch(/^\d{14}-[a-z0-9-]+-[a-z0-9]{4}$/);
 
         // 2. Post Discussion (Auto-routed to active meeting)
-        await handleToolCall("send_message", { 
-            message: "We should use SQLite", 
-            category: "PROPOSAL" 
+        await handleToolCall("send_message", {
+            message: "We should use SQLite",
+            category: "PROPOSAL"
         }, mockContext);
 
-        await handleToolCall("send_message", { 
-            message: "Agreed. Let's do it.", 
-            category: "DECISION" 
+        await handleToolCall("send_message", {
+            message: "Agreed. Let's do it.",
+            category: "DECISION"
         }, mockContext);
 
         // 3. Read Meeting and verify messages/decisions (via resource)
         const readResult = await getResourceContent(`mcp://nexus/meetings/${meetingId}`, mockContext.currentProject);
         const meeting = JSON.parse(readResult!.text);
-        
+
         expect(meeting.messages).toHaveLength(2);
         expect(meeting.messages[0].text).toBe("We should use SQLite");
         expect(meeting.decisions).toContain("Agreed. Let's do it.");
         expect(meeting.participants).toContain(`${CONFIG.instanceId}@web_test.io`);
 
         // 4. End Meeting (as moderator)
-        CONFIG.isModerator = true;
-        const endResult = await handleToolCall("end_meeting", { 
-            meetingId, 
-            summary: "Decided to use SQLite for better concurrency." 
+        CONFIG.isHost = true;
+        const endResult = await handleToolCall("end_meeting", {
+            meetingId,
+            summary: "Decided to use SQLite for better concurrency."
         }, mockContext);
         const endData = JSON.parse(endResult.content[0].text);
         expect(endData.status).toBe("closed");
@@ -88,7 +88,7 @@ describe("Meeting Integration Tests", () => {
 
         // 6. Archive Meeting (as moderator)
         await handleToolCall("archive_meeting", { meetingId }, mockContext);
-        CONFIG.isModerator = false;
+        CONFIG.isHost = false;
         const finalRead = await getResourceContent(`mcp://nexus/meetings/${meetingId}`, mockContext.currentProject);
         expect(JSON.parse(finalRead!.text).status).toBe("archived");
     });
@@ -96,7 +96,7 @@ describe("Meeting Integration Tests", () => {
     it("should correctly handle Chinese topics and slugs", async () => {
         const startResult = await handleToolCall("start_meeting", { topic: "中文会议测试" }, mockContext);
         const startData = JSON.parse(startResult.content[0].text);
-        
+
         // Slug should be base64 fallback since there are no alpha-numeric chars
         expect(startData.meetingId).toContain("-");
         // Verify it doesn't crash
@@ -106,7 +106,7 @@ describe("Meeting Integration Tests", () => {
     it("should fallback to global log when no active meeting exists", async () => {
         // No meeting started
         await handleToolCall("send_message", { message: "Global broadcast" }, mockContext);
-        
+
         // Reading recent discussion should return from global discussion.json
         const result = await handleToolCall("read_messages", { count: 5 }, mockContext);
         const data = JSON.parse(result.content[0].text);
@@ -130,12 +130,12 @@ describe("Meeting Integration Tests", () => {
         expect(JSON.parse(readB!.text).messages[0].text).toBe("MSG for B");
 
         // End B... A should become default again
-        CONFIG.isModerator = true;
+        CONFIG.isHost = true;
         await handleToolCall("end_meeting", { meetingId: idB }, mockContext);
-        CONFIG.isModerator = false;
-        
+        CONFIG.isHost = false;
+
         await handleToolCall("send_message", { message: "MSG back to A" }, mockContext);
-        
+
         const readA = await getResourceContent(`mcp://nexus/meetings/${idA}`, mockContext.currentProject);
         expect(JSON.parse(readA!.text).messages[0].text).toBe("MSG back to A");
     });
@@ -147,8 +147,8 @@ describe("Meeting Integration Tests", () => {
         const BURST_SIZE = 20;
         const tasks = [];
         for (let i = 0; i < BURST_SIZE; i++) {
-            tasks.push(handleToolCall("send_message", { 
-                message: `Burst message ${i}` 
+            tasks.push(handleToolCall("send_message", {
+                message: `Burst message ${i}`
             }, mockContext));
         }
 
@@ -157,7 +157,7 @@ describe("Meeting Integration Tests", () => {
         const final = await getResourceContent(`mcp://nexus/meetings/${meetingId}`, mockContext.currentProject);
         const meeting = JSON.parse(final!.text);
         expect(meeting.messages).toHaveLength(BURST_SIZE);
-        
+
         // Check all messages are there
         const texts = meeting.messages.map((m: any) => m.text);
         for (let i = 0; i < BURST_SIZE; i++) {
