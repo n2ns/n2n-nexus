@@ -116,15 +116,23 @@ async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?
  * 3. If not found, try to become Host
  * 4. If bind fails, wait and re-probe (give winner time to start)
  */
-async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
+async function isHostAutoElection(root: string, retryCount: number = 0): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
     const startPort = 5688;
-    const endPort = 5700;
+    const endPort = 5800;
 
-    // Phase 1: Probe-First - Check if any Host already exists
-    for (let port = startPort; port <= endPort; port++) {
-        const probe = await probeHost(port);
-        if (probe.isNexus) {
-            return { isHost: false, port, rootStorage: probe.rootStorage };
+    // Phase 1: Probe-First - Check if any Host already exists (Concurrent Batch Scan)
+    const BATCH_SIZE = 20;
+    for (let batchStart = startPort; batchStart <= endPort; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPort);
+        const promises = [];
+        for (let port = batchStart; port <= batchEnd; port++) {
+            promises.push(probeHost(port).then(res => ({ port, ...res })));
+        }
+
+        const results = await Promise.all(promises);
+        const found = results.find(r => r.isNexus);
+        if (found) {
+            return { isHost: false, port: found.port, rootStorage: found.rootStorage };
         }
     }
 
@@ -172,8 +180,13 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
         // If still not Nexus, try next port (occupied by non-Nexus service)
     }
 
-    // Fallback: become Host on startPort (should rarely happen)
-    return { isHost: true, port: startPort };
+    // Fallback: All ports occupied - progressive backoff retry
+    // First 5 attempts: 1 minute interval, then 2 minute interval
+    const waitTime = retryCount < 5 ? 60000 : 120000;
+    const intervalStr = retryCount < 5 ? "1 minute" : "2 minutes";
+    console.error(`[Nexus] All ports ${startPort}-${endPort} occupied. Retry #${retryCount + 1} in ${intervalStr}...`);
+    await new Promise(r => setTimeout(r, waitTime));
+    return isHostAutoElection(root, retryCount + 1);
 }
 
 /**

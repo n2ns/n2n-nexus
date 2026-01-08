@@ -223,25 +223,33 @@ class NexusServer {
         } else {
             // --- GUEST MODE: SSE Proxy ---
             const guestId = CONFIG.instanceId;
+            let retryCount = 0;
+            const maxRetries = 50; // Prevent infinite reconnection loops
 
             // Random delay function to prevent thundering herd during re-election
             const randomDelay = () => Math.floor(Math.random() * 3000);
 
             const startProxy = () => {
+                if (retryCount >= maxRetries) {
+                    console.error(`[Nexus Guest] Max retries (${maxRetries}) reached. Exiting.`);
+                    process.exit(1);
+                }
+                retryCount++;
+
                 // Clear any stale stdin listeners before starting
                 process.stdin.removeAllListeners("data");
 
-                console.error(`[Nexus:${guestId}] Global Hub detected at ${CONFIG.port}. Joining...`);
+                console.error(`[Nexus:${guestId}] Global Hub detected at ${CONFIG.port}. Joining... (attempt ${retryCount})`);
                 let sessionId: string | null = null;
                 let lastActivity = Date.now();
 
                 // Watchdog: trigger re-election if Host is silent for too long
                 const watchdog = setInterval(() => {
                     if (Date.now() - lastActivity > 60000) {
-                        console.error("[Nexus Guest] Host stale. Triggering re-election...");
+                        console.error("[Nexus Guest] Host stale. Reconnecting...");
                         cleanup();
-                        // Random delay to prevent all guests from racing for the port
-                        setTimeout(() => this.run(), randomDelay());
+                        // Use setImmediate to break call stack, then delay
+                        setImmediate(() => setTimeout(startProxy, randomDelay()));
                     }
                 }, 10000);
 
@@ -269,6 +277,7 @@ class NexusServer {
                 process.stdin.on("data", stdioHandler);
 
                 http.get(`http://127.0.0.1:${CONFIG.port}/mcp?id=${guestId}`, (res) => {
+                    retryCount = 0; // Reset on successful connection
                     let buffer = "";
                     res.on("data", (chunk) => {
                         lastActivity = Date.now();
@@ -287,15 +296,15 @@ class NexusServer {
                         }
                     });
                     res.on("end", () => {
-                        console.error("[Nexus Guest] Lost connection to Host. Re-electing...");
+                        console.error("[Nexus Guest] Lost connection to Host. Reconnecting...");
                         cleanup();
-                        // Random delay for re-election
-                        setTimeout(() => this.run(), randomDelay());
+                        // Use setImmediate to break call stack
+                        setImmediate(() => setTimeout(startProxy, randomDelay()));
                     });
                 }).on("error", () => {
-                    console.error("[Nexus Guest] Proxy Receive Error. Retry with random delay...");
+                    console.error("[Nexus Guest] Proxy Receive Error. Retrying...");
                     cleanup();
-                    setTimeout(() => this.run(), 1000 + randomDelay());
+                    setImmediate(() => setTimeout(startProxy, 1000 + randomDelay()));
                 });
             };
             startProxy();

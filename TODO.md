@@ -118,3 +118,29 @@ IDE-A (second call): read_messages() → returns only "Hello from B" (1 new mess
 ---
 *Last updated: 2026-01-01 by Antigravity AI.*
 
+---
+
+## 📅 2026-01-08: Global Hub Architecture (v0.3.0)
+
+**Objective**: Implement automatic Host election and zero-configuration multi-IDE collaboration.
+
+### Global Hub Implementation (DONE)
+- [x] **Auto Host Election**: Port-based election (5688-5700) with probe-first strategy
+- [x] **SSE Communication**: Stdio-to-SSE proxy for Guest instances
+- [x] **Heartbeat & Watchdog**: 30s Host heartbeat, 60s Guest watchdog for auto-failover
+- [x] **Storage Path Inheritance**: Guests inherit `rootStorage` from Host for seamless failover
+- [x] **Terminology Refactoring**: Moderator → Host across all code, tests, and documentation
+
+### Documentation Updates (DONE)
+- [x] **README**: Added Global Hub Architecture section with ASCII diagram
+- [x] **CHANGELOG**: Added v0.3.0 release notes
+- [x] **ASSISTANT_GUIDE**: Updated to v0.3.0 with Global Hub context
+- [x] **Zero-Config Examples**: Simplified MCP configuration to single JSON block
+
+### Test Coverage (DONE)
+- [x] **election.test.ts**: 9 test cases covering probe, bind, and race scenarios
+- [x] **All tests passing**: 55/55
+
+---
+*Last updated: 2026-01-08 by Antigravity AI.*
+
