@@ -168,6 +168,18 @@ class NexusServer {
             process.exit(0);
         };
 
+        // Global Error Handlers to prevent process exit on background errors
+        process.on("uncaughtException", (err) => {
+            console.error("[Nexus CRITICAL] Uncaught Exception:", err);
+            // Attempt to log to disk if possible, but keep process alive if safe
+            // For a Hub, staying alive is often preferred over crashing
+        });
+
+        process.on("unhandledRejection", (reason, promise) => {
+            console.error("[Nexus WARNING] Unhandled Rejection at:", promise, "reason:", reason);
+            // Do not exit. Background tasks (like file sync) often trigger this.
+        });
+
         process.on("SIGINT", () => shutdown("SIGINT"));
         process.on("SIGTERM", () => shutdown("SIGTERM"));
 
@@ -291,7 +303,7 @@ class NexusServer {
                             const lines = str.split("\n");
                             const dataLine = lines.find((l: string) => l.startsWith("data: "));
                             if (dataLine) {
-                                try { process.stdout.write(dataLine.substring(6) + "\n"); } catch { }
+                                try { process.stdout.write(dataLine.substring(6) + "\n"); } catch { /* ignore stdout errors */ }
                             }
                         }
                     });

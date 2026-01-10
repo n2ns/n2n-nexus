@@ -17,7 +17,11 @@ export class StorageManager {
     static get registryFile() { return path.join(CONFIG.rootStorage, "registry.json"); }
     static get archivesDir() { return path.join(CONFIG.rootStorage, "archives"); }
 
+    private static initialized = false;
+
     static async init() {
+        if (this.initialized) return;
+
         await fs.mkdir(CONFIG.rootStorage, { recursive: true });
         await fs.mkdir(this.globalDir, { recursive: true });
         await fs.mkdir(this.projectsRoot, { recursive: true });
@@ -30,7 +34,7 @@ export class StorageManager {
         if (!await this.exists(this.globalBlueprint)) {
             await fs.writeFile(this.globalBlueprint, "# Global Coordination Blueprint\n\nShared meeting space.");
         }
-        
+
         // Initialize Phase 2 Tasks table (SQLite) - uses dynamic import to avoid circular dependency
         try {
             const { initTasksTable } = await import("./tasks.js");
@@ -38,6 +42,12 @@ export class StorageManager {
         } catch {
             // SQLite may not be available or database not ready - will be initialized on first use
         }
+
+        this.initialized = true;
+    }
+
+    static resetInit() {
+        this.initialized = false;
     }
 
     /**

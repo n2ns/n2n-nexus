@@ -6,6 +6,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { CONFIG } from "../src/config.js";
 import { closeDatabase } from "../src/storage/sqlite.js";
+import { resetTasksInit } from "../src/storage/tasks.js";
+
 
 const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-storage-handlers");
 CONFIG.rootStorage = TEST_ROOT;
@@ -27,6 +29,8 @@ describe("Tool Handlers", () => {
         await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
         await fs.mkdir(path.join(TEST_ROOT, "archives"), { recursive: true });
 
+        StorageManager.resetInit();
+        resetTasksInit();
         await StorageManager.init();
 
         mockContext = {
@@ -77,6 +81,9 @@ describe("Tool Handlers", () => {
             },
             internalDocs: "# Docs"
         }, mockContext);
+
+        // Wait for async sync task to complete
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         const result = await handleToolCall("rename_project", { oldId: "web_old.io", newId: "web_new.io" }, mockContext);
         expect(result.content[0].text).toContain("Rename task created.");

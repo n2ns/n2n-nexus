@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-01-10
+### Protocol & Stability
+- **New Handshake Protocol**: Introduced `POST /nexus/handshake` to replace legacy `/hello`. Supports strict versioning (Client/Server) and robust Host detection.
+- **Global Error Safety Net**: Implemented `uncaughtException` and `unhandledRejection` handlers to prevent process exits from background task errors, ensuring high availability of the Hub.
+- **Fix (EOF Error)**: Resolved "Connection Closed: EOF" crashes caused by non-idempotent SQLite initialization during repeated tool calls.
+- **Fix (Zombie Host)**: Eliminated infinite retry loops by improving Guest's host detection logic.
+- **Test Coverage**: Added `guest_connection.test.ts` to verify Guest-Host SSE integration.
+
 ## [0.3.3] - 2026-01-10
 ### 🔄 Zero-Config Persistence
 - **XDG Base Directory Support**: Moved valid storage location from ephemeral `node_modules` to system-standard user data paths:

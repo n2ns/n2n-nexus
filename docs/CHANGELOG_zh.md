@@ -2,6 +2,14 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.3.4] - 2026-01-10
+### 协议与稳定性
+- **新握手协议**: 引入 `POST /nexus/handshake` 替代旧版 `/hello`。支持严格的客户端/服务端版本校验和稳健的 Host 探测。
+- **全局错误安全网**: 增加了 `uncaughtException` 和 `unhandledRejection` 处理器，防止后台任务错误导致进程退出，确保 Hub 的高可用性。
+- **修复 (EOF 错误)**: 解决了由于 SQLite 非幂等初始化导致的“连接关闭：EOF”崩溃问题。
+- **修复 (僵尸 Host)**: 改进了 Guest 的 Host检测逻辑，消除了死循环重试。
+- **测试覆盖**: 新增 `guest_connection.test.ts` 验证 Guest-Host SSE 集成。
+
 ## [0.3.3] - 2026-01-10
 ### 🔄 零配置持久化 (Zero-Config Persistence)
 - **支持 XDG Base Directory**: 将存储位置从不稳定的 `node_modules` 迁移至系统标准的 User Data 路径：

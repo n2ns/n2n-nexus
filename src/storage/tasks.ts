@@ -43,10 +43,15 @@ function generateTaskId(): string {
     return `task_${timestamp}_${random}`;
 }
 
+
+let initialized = false;
+
 /**
  * Initialize the tasks table (run migrations)
  */
 export function initTasksTable(): void {
+    if (initialized) return;
+
     const db = getDatabase();
 
     const TASKS_SCHEMA = `
@@ -85,6 +90,11 @@ export function initTasksTable(): void {
     }
 
     console.error("[Nexus] Tasks table initialized");
+    initialized = true;
+}
+
+export function resetTasksInit(): void {
+    initialized = false;
 }
 
 /**

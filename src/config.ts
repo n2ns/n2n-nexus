@@ -21,7 +21,7 @@ const hasFlag = (k: string) => args.includes(k) || args.includes(k.charAt(1) ===
 
 // --- CLI Commands Handlers ---
 if (hasFlag("--help") || hasFlag("-h")) {
-    console.log(`
+    console.error(`
 n2ns Nexus 🚀 - Local Digital Asset Hub (MCP Server) v${pkg.version}
 
 USAGE:
@@ -53,7 +53,7 @@ ENVIRONMENT VARIABLES:
 }
 
 if (hasFlag("--version") || hasFlag("-v")) {
-    console.log(pkg.version);
+    console.error(pkg.version);
     process.exit(0);
 }
 
@@ -95,15 +95,34 @@ function getDefaultDataDir(): string {
 /**
  * Probe a port to see if it's a Nexus Host
  */
-async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?: string }> {
+/**
+ * Probe a port to see if it's a Nexus Host using the Custom Handshake Protocol
+ */
+async function probeHost(port: number, myId: string): Promise<{ isNexus: boolean; rootStorage?: string }> {
     return new Promise((resolve) => {
-        const req = http.get(`http://127.0.0.1:${port}/hello`, { timeout: 500 }, (res) => {
+        const postData = JSON.stringify({
+            clientVersion: pkg.version,
+            instanceId: myId
+        });
+
+        const req = http.request({
+            hostname: "127.0.0.1",
+            port: port,
+            path: "/nexus/handshake",
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(postData)
+            },
+            timeout: 500
+        }, (res) => {
             let data = "";
             res.on("data", (chunk) => data += chunk);
             res.on("end", () => {
                 try {
                     const info = JSON.parse(data);
                     if (info.service === "n2n-nexus" && info.role === "host") {
+                        // console.error(`[Nexus Handshake] Connected to Host v${info.serverVersion} (Protocol ${info.protocol})`);
                         resolve({ isNexus: true, rootStorage: info.rootStorage });
                     } else {
                         resolve({ isNexus: false });
@@ -113,11 +132,15 @@ async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?
                 }
             });
         });
+
         req.on("error", () => resolve({ isNexus: false }));
         req.on("timeout", () => {
             req.destroy();
             resolve({ isNexus: false });
         });
+
+        req.write(postData);
+        req.end();
     });
 }
 
@@ -137,14 +160,15 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-
         // Phase 1: Probe-First - Check if any Host already exists (Concurrent Batch Scan)
         const BATCH_SIZE = 20;
+        const myId = getArg("--id") || `candidate-${Math.random().toString(36).substring(2, 6)}`;
+
         for (let batchStart = startPort; batchStart <= endPort; batchStart += BATCH_SIZE) {
             const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPort);
             const promises = [];
             for (let port = batchStart; port <= batchEnd; port++) {
-                promises.push(probeHost(port).then(res => ({ port, ...res })));
+                promises.push(probeHost(port, myId).then(res => ({ port, ...res })));
             }
 
             const results = await Promise.all(promises);
@@ -158,26 +182,34 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
         for (let port = startPort; port <= endPort; port++) {
             const result = await new Promise<{ isHost: boolean; server?: http.Server }>((resolve) => {
                 const server = http.createServer((req, res) => {
-                    if (req.url === "/hello") {
-                        res.writeHead(200, { "Content-Type": "application/json" });
-                        res.end(JSON.stringify({
-                            service: "n2n-nexus",
-                            role: "host",
-                            version: pkg.version,
-                            rootStorage: root
-                        }));
+                    // HANDSHAKE ENDPOINT
+                    if (req.method === "POST" && req.url === "/nexus/handshake") {
+                        let body = "";
+                        req.on("data", chunk => body += chunk);
+                        req.on("end", () => {
+                            try {
+                                const _clientInfo = JSON.parse(body);
+                                // console.error(`[Nexus Handshake] Client connected: ${_clientInfo.instanceId} (v${_clientInfo.clientVersion})`);
+                            } catch { /* ignore malformed */ }
+
+                            res.writeHead(200, { "Content-Type": "application/json" });
+                            res.end(JSON.stringify({
+                                service: "n2n-nexus",
+                                protocol: "v1", // Nexus Handshake Protocol v1
+                                role: "host",
+                                serverVersion: pkg.version,
+                                rootStorage: root,
+                                status: "ready"
+                            }));
+                        });
                         return;
                     }
                     res.writeHead(404);
                     res.end();
                 });
 
-                server.on("error", (err: any) => {
-                    if (err.code === "EADDRINUSE") {
-                        resolve({ isHost: false });
-                    } else {
-                        resolve({ isHost: false });
-                    }
+                server.on("error", (_err: unknown) => {
+                    resolve({ isHost: false });
                 });
 
                 server.listen(port, "0.0.0.0", () => {
@@ -185,24 +217,23 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
                 });
             });
 
+
             if (result.isHost) {
                 return { isHost: true, port, server: result.server };
             }
 
             // Phase 3: Bind failed - another Guest won. Wait then join winner.
-            await new Promise(r => setTimeout(r, 10000)); // Give winner 10s to start /hello
-            const probe = await probeHost(port);
+            await new Promise(r => setTimeout(r, 2000)); // Short wait for winner to stabilize
+            const probe = await probeHost(port, myId);
             if (probe.isNexus) {
                 return { isHost: false, port, rootStorage: probe.rootStorage };
             }
-            // If still not Nexus, try next port (occupied by non-Nexus service)
+            // If still not Nexus, try next port
         }
 
         // Fallback: All ports occupied - progressive backoff retry
-        // First 5 attempts: 1 minute interval, then 2 minute interval
-        const waitTime = retryCount < 5 ? 60000 : 120000;
-        const intervalStr = retryCount < 5 ? "1 minute" : "2 minutes";
-        console.error(`[Nexus] All ports ${startPort}-${endPort} occupied. Retry #${retryCount + 1} in ${intervalStr}...`);
+        const waitTime = retryCount < 5 ? 5000 : 30000;
+        console.error(`[Nexus] All ports ${startPort}-${endPort} occupied. Retry #${retryCount + 1} in ${waitTime / 1000}s...`);
         await new Promise(r => setTimeout(r, waitTime));
         retryCount++;
     }

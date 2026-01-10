@@ -11,14 +11,20 @@ const TEST_PORT_END = 15700;
 function createMockHost(port: number, rootStorage: string): Promise<http.Server> {
     return new Promise((resolve, reject) => {
         const server = http.createServer((req, res) => {
-            if (req.url === "/hello") {
-                res.writeHead(200, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({
-                    service: "n2n-nexus",
-                    role: "host",
-                    version: "0.2.1",
-                    rootStorage
-                }));
+            if (req.method === "POST" && req.url === "/nexus/handshake") {
+                let body = "";
+                req.on("data", chunk => body += chunk);
+                req.on("end", () => {
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({
+                        service: "n2n-nexus",
+                        protocol: "v1",
+                        role: "host",
+                        serverVersion: "0.2.1",
+                        rootStorage,
+                        status: "ready"
+                    }));
+                });
             } else {
                 res.writeHead(404);
                 res.end();
@@ -34,7 +40,22 @@ function createMockHost(port: number, rootStorage: string): Promise<http.Server>
  */
 async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?: string }> {
     return new Promise((resolve) => {
-        const req = http.get(`http://127.0.0.1:${port}/hello`, { timeout: 500 }, (res) => {
+        const postData = JSON.stringify({
+            clientVersion: "test-client",
+            instanceId: "test-id"
+        });
+
+        const req = http.request({
+            hostname: "127.0.0.1",
+            port: port,
+            path: "/nexus/handshake",
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(postData)
+            },
+            timeout: 500
+        }, (res) => {
             let data = "";
             res.on("data", (chunk) => data += chunk);
             res.on("end", () => {
@@ -50,11 +71,15 @@ async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?
                 }
             });
         });
+
         req.on("error", () => resolve({ isNexus: false }));
         req.on("timeout", () => {
             req.destroy();
             resolve({ isNexus: false });
         });
+
+        req.write(postData);
+        req.end();
     });
 }
 

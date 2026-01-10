@@ -21,6 +21,8 @@ describe("StorageManager", () => {
         await new Promise(resolve => setTimeout(resolve, 50));
         // Create root directory first to avoid race condition
         await fs.mkdir(TEST_ROOT, { recursive: true });
+
+        StorageManager.resetInit();
         await StorageManager.init();
     });
 
@@ -121,11 +123,11 @@ describe("StorageManager", () => {
             id: "prj-del", name: "D", description: "D", techStack: [],
             relations: [], lastUpdated: "", repositoryUrl: "", localPath: TEST_ROOT, endpoints: [], apiSpec: []
         });
-        
+
         expect(await StorageManager.getProjectManifest("prj-del")).not.toBeNull();
-        
+
         await StorageManager.deleteProject("prj-del");
-        
+
         expect(await StorageManager.getProjectManifest("prj-del")).toBeNull();
         const exists = await StorageManager.exists(path.join(StorageManager.projectsRoot, "prj-del"));
         expect(exists).toBe(false);
