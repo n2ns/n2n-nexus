@@ -166,7 +166,7 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
                     }
                 });
 
-                server.listen(port, "127.0.0.1", () => {
+                server.listen(port, "0.0.0.0", () => {
                     resolve({ isHost: true, server });
                 });
             });
