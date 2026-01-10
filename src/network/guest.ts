@@ -60,13 +60,22 @@ export async function startGuest(
         process.stdin.removeAllListeners("data");
 
         console.error(`[Nexus:${guestId}] Connecting to Host at ${targetPort}...`);
-        let sessionId: string | null = null;
 
-        const stdioHandler = (chunk: Buffer) => {
-            if (!sessionId) return;
+        let sessionId: string | null = null;
+        let pendingStdin: Buffer[] = [];
+        let sseBuffer = "";
+
+        // Client connection should use 127.0.0.1 if host is 0.0.0.0
+        const connectHost = NEXUS_HOST === "0.0.0.0" ? "127.0.0.1" : NEXUS_HOST;
+
+        const forwardToHost = (chunk: Buffer) => {
+            if (!sessionId) {
+                pendingStdin.push(chunk);
+                return;
+            }
             try {
                 const req = http.request({
-                    hostname: NEXUS_HOST,
+                    hostname: connectHost,
                     port: targetPort,
                     path: `/mcp?sessionId=${sessionId}&id=${encodeURIComponent(guestId)}`,
                     method: "POST",
@@ -77,22 +86,40 @@ export async function startGuest(
                 req.end();
             } catch { /* suppress */ }
         };
+
+        const stdioHandler = (chunk: Buffer) => forwardToHost(chunk);
         process.stdin.on("data", stdioHandler);
 
-        http.get(`http://${NEXUS_HOST}:${targetPort}/mcp?id=${encodeURIComponent(guestId)}`, (res) => {
-            let buffer = "";
+        http.get(`http://${connectHost}:${targetPort}/mcp?id=${encodeURIComponent(guestId)}`, (res) => {
             res.on("data", (chunk) => {
-                const str = chunk.toString();
-                buffer += str;
-                if (!sessionId && buffer.includes("event: endpoint")) {
-                    const match = buffer.match(/sessionId=([a-f0-9-]+)/);
-                    if (match) sessionId = match[1];
-                }
-                if (str.includes("event: message")) {
-                    const lines = str.split("\n");
-                    const dataLine = lines.find((l: string) => l.startsWith("data: "));
-                    if (dataLine) {
-                        try { process.stdout.write(dataLine.substring(6) + "\n"); } catch { /* ignore */ }
+                sseBuffer += chunk.toString();
+                const lines = sseBuffer.split("\n");
+                sseBuffer = lines.pop() || ""; // Keep trailing incomplete line
+
+                for (const line of lines) {
+                    const cleanLine = line.trim();
+                    if (!cleanLine) continue;
+
+                    if (cleanLine.startsWith("data: ")) {
+                        const content = cleanLine.substring(6);
+
+                        // Check if this is the endpoint/session assignment
+                        if (!sessionId && content.includes("sessionId=")) {
+                            const match = content.match(/sessionId=([a-f0-9-]+)/);
+                            if (match) {
+                                sessionId = match[1];
+                                // console.error(`[Nexus:${guestId}] Session established: ${sessionId}`);
+                                // Flush pending messages
+                                const toFlush = [...pendingStdin];
+                                pendingStdin = [];
+                                toFlush.forEach(forwardToHost);
+                            }
+                        } else if (content) {
+                            // Assume JSON-RPC message
+                            try {
+                                process.stdout.write(content + "\n");
+                            } catch { /* ignore */ }
+                        }
                     }
                 }
             });
