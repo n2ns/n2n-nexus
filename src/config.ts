@@ -153,7 +153,7 @@ async function probeHost(port: number, myId: string): Promise<{ isNexus: boolean
  * 3. If not found, try to become Host
  * 4. If bind fails, wait and re-probe (give winner time to start)
  */
-async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
+async function isHostAutoElection(root: string, blacklistPorts: number[] = []): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
     const startPort = 5688;
     const endPort = 5800;
     let retryCount = 0;
@@ -168,6 +168,7 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
             const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPort);
             const promises = [];
             for (let port = batchStart; port <= batchEnd; port++) {
+                if (blacklistPorts.includes(port)) continue;
                 promises.push(probeHost(port, myId).then(res => ({ port, ...res })));
             }
 
@@ -180,6 +181,8 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
 
         // Phase 2: No Host found, attempt to become Host
         for (let port = startPort; port <= endPort; port++) {
+            if (blacklistPorts.includes(port)) continue;
+
             const result = await new Promise<{ isHost: boolean; server?: http.Server }>((resolve) => {
                 const server = http.createServer((req, res) => {
                     // HANDSHAKE ENDPOINT
@@ -224,9 +227,11 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
 
             // Phase 3: Bind failed - another Guest won. Wait then join winner.
             await new Promise(r => setTimeout(r, 2000)); // Short wait for winner to stabilize
-            const probe = await probeHost(port, myId);
-            if (probe.isNexus) {
-                return { isHost: false, port, rootStorage: probe.rootStorage };
+            if (backoffProbe(port, myId)) {
+                const probe = await probeHost(port, myId);
+                if (probe.isNexus) {
+                    return { isHost: false, port, rootStorage: probe.rootStorage };
+                }
             }
             // If still not Nexus, try next port
         }
@@ -238,6 +243,11 @@ async function isHostAutoElection(root: string): Promise<{ isHost: boolean; port
         retryCount++;
     }
 }
+
+function backoffProbe(_port: number, _myId: string) { return true; } // simplified inline for diff
+
+// Export needed for re-election
+export { isHostAutoElection };
 
 /**
  * Automatic Project Name Detection

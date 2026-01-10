@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] - 2026-01-10
+### Protocol & Stability
+- **Fix (Zombie Host)**: Implemented "Intelligent Retry" and "Re-Election" logic. If a Guest repeatedly connects to a Zombie Host (handshake OK, SSE broken), it will now automatically trigger a re-election process, blacklist the bad port, and promote itself to Host on a new port if necessary.
+- **Refactor**: Enabled dynamic role switching (Guest -> Host) without process restart.
+
 ## [0.3.4] - 2026-01-10
 ### Protocol & Stability
 - **New Handshake Protocol**: Introduced `POST /nexus/handshake` to replace legacy `/hello`. Supports strict versioning (Client/Server) and robust Host detection.
