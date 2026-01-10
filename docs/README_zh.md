@@ -115,15 +115,25 @@
 
 > **零配置**: 无需 `--id` 或 `--host`。直接运行即可协作！
 
-**可选**: 使用 `--root` 指定自定义存储路径：
-```json
-"args": ["-y", "@datafrog-io/n2n-nexus", "--root", "/path/to/storage"]
+"args": ["-y", "@datafrog-io/n2n-nexus"]
 ```
+
+### 💾 数据持久化 (零配置)
+
+Nexus 现在自动将数据存储在系统标准的 **用户数据目录** (XDG Base Directory) 中。这确保了会议历史和项目数据在 IDE 重启、`npx` 缓存清理和更新后依然存在。
+
+- **Linux / WSL**: `~/.local/share/n2n-nexus`
+- **Windows**: `%APPDATA%\n2n-nexus`
+- **macOS**: `~/Library/Application Support/n2n-nexus`
+
+> **WSL 用户注意**: 为了获得最佳 I/O 性能，WSL 实例将数据存储在 Linux 文件系统中 (`~/.local/share`)，而 Windows 实例使用 `%APPDATA%`。数据在两个环境之间是 **隔离** 的，以防止数据库损坏和性能下降。
 
 ### 命令行参数
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--root` | 本地数据存储路径 | `./storage` |
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--root` | 覆盖存储路径 (仅限高级用途) | 系统用户数据目录 |
 
 > **注意：** 实例 ID（默认为当前项目文件夹名称）和 Host 身份将根据启动顺序自动生成。
 

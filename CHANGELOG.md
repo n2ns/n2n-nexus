@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-01-10
+### 🔄 Zero-Config Persistence
+- **XDG Base Directory Support**: Moved valid storage location from ephemeral `node_modules` to system-standard user data paths:
+  - **Linux/WSL**: `~/.local/share/n2n-nexus`
+  - **Windows**: `%APPDATA%\n2n-nexus`
+  - **macOS**: `~/Library/Application Support/n2n-nexus`
+- **Data Persistence**: Data now survives `npx` cache clearing, project deletion, and re-installations.
+- **Bind Address**: Changed default listener to `0.0.0.0` to support WSL Mirror Mode networking.
+- **Identity Safety**: Default "Assistant" ID now appends a random suffix (e.g., `Assistant-x9a2`) to prevent conflicts when multiple empty IDEs connect.
+
 ## [0.3.2] - 2026-01-08
 ### Security & Stability
 - **Security**: Fixed potential URL parameter injection in Guest proxy connection URL.

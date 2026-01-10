@@ -115,15 +115,25 @@ Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP se
 
 > **Zero-Config**: No `--id` or `--host` needed. Just run and collaborate!
 
-**Optional**: Use `--root` to specify a custom storage path:
-```json
-"args": ["-y", "@datafrog-io/n2n-nexus", "--root", "/path/to/storage"]
+"args": ["-y", "@datafrog-io/n2n-nexus"]
 ```
+
+### 💾 Data Persistence (Zero-Config)
+
+Nexus now automatically stores data in your system's standard **User Data Directory** (XDG Base Directory). This ensures your meeting history and projects persist across IDE restarts, `npx` cache clears, and updates.
+
+- **Linux / WSL**: `~/.local/share/n2n-nexus`
+- **Windows**: `%APPDATA%\n2n-nexus`
+- **macOS**: `~/Library/Application Support/n2n-nexus`
+
+> **Note for WSL Users**: To maximize I/O performance, WSL instances store data in the Linux file system (`~/.local/share`), while Windows instances use `%APPDATA%`. Data is **isolated** between environments to prevent database corruption and performance degradation.
 
 ### CLI Arguments
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--root` | Local storage path for all Nexus data | `./storage` |
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--root` | Override storage path (advanced use only) | System User Data Dir |
 
 > **Note:** Host identity and Instance ID are determined automatically based on the project folder name and startup order.
 

@@ -2,6 +2,16 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.3.3] - 2026-01-10
+### 🔄 零配置持久化 (Zero-Config Persistence)
+- **支持 XDG Base Directory**: 将存储位置从不稳定的 `node_modules` 迁移至系统标准的 User Data 路径：
+  - **Linux/WSL**: `~/.local/share/n2n-nexus`
+  - **Windows**: `%APPDATA%\n2n-nexus`
+  - **macOS**: `~/Library/Application Support/n2n-nexus`
+- **数据持久化**: 数据现在可以从 `npx` 缓存清理、项目删除和重新安装中幸存。
+- **监听地址**: 默认监听地址更改为 `0.0.0.0` 以支持 WSL 镜像模式网络。
+- **身份安全**: 默认的 "Assistant" ID 现在会自动追加随机后缀（例如 `Assistant-x9a2`），以防止多个空 IDE 连接时发生冲突。
+
 ## [v0.3.0] - 2026-01-08
 
 ### 🌐 全局 Hub 架构 (零配置多 IDE 协作)

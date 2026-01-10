@@ -59,8 +59,8 @@ if (hasFlag("--version") || hasFlag("-v")) {
 
 // --- Path Normalization Logic ---
 function normalizeRootPath(inputPath: string | undefined): string {
-    // 1. Priority: CLI --root > ENV NEXUS_ROOT > Default ./storage
-    let root = inputPath || process.env.NEXUS_ROOT || path.join(__dirname, "../storage");
+    // 1. Priority: CLI --root > ENV NEXUS_ROOT > System Default (XDG/AppData)
+    let root = inputPath || process.env.NEXUS_ROOT || getDefaultDataDir();
 
     // 2. Resolve ~ to home directory
     if (root.startsWith("~")) {
@@ -75,6 +75,20 @@ function normalizeRootPath(inputPath: string | undefined): string {
     }
 
     return path.resolve(root);
+}
+
+function getDefaultDataDir(): string {
+    const home = os.homedir();
+    const appName = "n2n-nexus";
+
+    switch (process.platform) {
+        case "win32":
+            return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), appName);
+        case "darwin":
+            return path.join(home, "Library", "Application Support", appName);
+        default: // linux, wsl, etc.
+            return path.join(process.env.XDG_DATA_HOME || path.join(home, ".local", "share"), appName);
+    }
 }
 
 
@@ -205,7 +219,10 @@ function getAutoProjectName(): string {
             if (pkg.name) return pkg.name.split("/").pop() || pkg.name;
         }
     } catch { /* ignore */ }
-    return path.basename(process.cwd()) || "Assistant";
+    const base = path.basename(process.cwd()) || "Assistant";
+    // Append random suffix to prevent collisions when multiple IDEs open empty/same folders
+    const suffix = Math.random().toString(36).substring(2, 6);
+    return `${base}-${suffix}`;
 }
 
 const rootPath = normalizeRootPath(getArg("--root"));
