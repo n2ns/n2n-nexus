@@ -6,7 +6,7 @@ import { getResourceContent } from "../src/resources/index.js";
 import { closeDatabase } from "../src/storage/sqlite.js";
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../src/config.js";
+import { CONFIG } from "../src/config/index.js";
 
 const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-meetings");
 CONFIG.rootStorage = TEST_ROOT;

@@ -1,8 +1,9 @@
 import { promises as fs } from "fs";
 
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 import { StorageManager } from "../storage/index.js";
 import { UnifiedMeetingStore } from "../storage/store.js";
+import { FILE_ENCODING } from "../constants.js";
 
 /**
  * Resource content providers for MCP ReadResourceRequestSchema
@@ -14,17 +15,17 @@ export async function getResourceContent(
     await StorageManager.init();
 
     if (uri === "mcp://nexus/chat/global") {
-        const text = await fs.readFile(StorageManager.globalDiscussion, "utf-8");
+        const text = await fs.readFile(StorageManager.globalDiscussion, FILE_ENCODING);
         return { mimeType: "application/json", text };
     }
 
     if (uri === "mcp://nexus/hub/registry") {
-        const text = await fs.readFile(StorageManager.registryFile, "utf-8");
+        const text = await fs.readFile(StorageManager.registryFile, FILE_ENCODING);
         return { mimeType: "application/json", text };
     }
 
     if (uri === "mcp://nexus/docs/global-strategy") {
-        const text = await fs.readFile(StorageManager.globalBlueprint, "utf-8");
+        const text = await fs.readFile(StorageManager.globalBlueprint, FILE_ENCODING);
         return { mimeType: "text/markdown", text };
     }
 
@@ -76,7 +77,7 @@ export async function getResourceContent(
     if (uri.startsWith("mcp://nexus/docs/")) {
         const docId = uri.substring("mcp://nexus/docs/".length);
         if (docId === "global-strategy") {
-            const text = await fs.readFile(StorageManager.globalBlueprint, "utf-8");
+            const text = await fs.readFile(StorageManager.globalBlueprint, FILE_ENCODING);
             return { mimeType: "text/markdown", text };
         }
         const text = await StorageManager.getGlobalDoc(docId);

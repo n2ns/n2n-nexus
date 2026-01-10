@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { handleToolCall, ToolContext } from "../src/tools/handlers.js";
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../src/config.js";
+import { CONFIG } from "../src/config/index.js";
 import { closeDatabase } from "../src/storage/sqlite.js";
 import { StorageManager } from "../src/storage/index.js";
 

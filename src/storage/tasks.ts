@@ -5,6 +5,7 @@
  * meeting traceability, and MCP-compatible status reporting.
  */
 import { getDatabase } from "./sqlite.js";
+import { TASK_CLEANUP_MAX_AGE_MS } from "../constants.js";
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
@@ -255,7 +256,7 @@ export function cancelTask(id: string): boolean {
 /**
  * Delete completed/failed/cancelled tasks older than specified age
  */
-export function cleanupTasks(maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): number {
+export function cleanupTasks(maxAgeMs: number = TASK_CLEANUP_MAX_AGE_MS): number {
     const db = getDatabase();
     const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
 

@@ -1,8 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 import { DiscussionMessage, ProjectManifest, Registry } from "../types.js";
 import { AsyncMutex } from "../utils/async-mutex.js";
+import { FILE_ENCODING } from "../constants.js";
 
 export class StorageManager {
     // --- Concurrency Control ---
@@ -58,16 +59,16 @@ export class StorageManager {
     private static async loadJsonSafe<T>(filePath: string, defaultValue: T): Promise<T> {
         try {
             if (!await this.exists(filePath)) {
-                await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), "utf-8");
+                await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), FILE_ENCODING);
                 return defaultValue;
             }
-            const content = await fs.readFile(filePath, "utf-8");
+            const content = await fs.readFile(filePath, FILE_ENCODING);
             const cleanContent = content.replace(/^\uFEFF/, '').trim();
             if (!cleanContent) throw new Error("Empty file");
             return JSON.parse(cleanContent);
         } catch (e) {
             console.warn(`[Nexus Storage] Repairing corrupted file: ${filePath}. Error: ${(e as Error).message}`);
-            await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), "utf-8");
+            await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), FILE_ENCODING);
             return defaultValue;
         }
     }
@@ -81,7 +82,7 @@ export class StorageManager {
         if (!id) return null;
         const p = path.join(this.projectsRoot, id, "manifest.json");
         if (!await this.exists(p)) return null;
-        return JSON.parse(await fs.readFile(p, "utf-8"));
+        return JSON.parse(await fs.readFile(p, FILE_ENCODING));
     }
 
     /**
@@ -222,7 +223,7 @@ export class StorageManager {
     static async getProjectDocs(id: string) {
         if (!id) return null;
         const p = path.join(this.projectsRoot, id, "internal_blueprint.md");
-        return (await this.exists(p)) ? await fs.readFile(p, "utf-8") : null;
+        return (await this.exists(p)) ? await fs.readFile(p, FILE_ENCODING) : null;
     }
 
     static async saveProjectDocs(id: string, content: string) {
@@ -281,7 +282,7 @@ export class StorageManager {
 
         // Save document file
         const docPath = path.join(this.globalDocsDir, `${docId}.md`);
-        await fs.writeFile(docPath, content, "utf-8");
+        await fs.writeFile(docPath, content, FILE_ENCODING);
 
         // Update index
         const index = await this.listGlobalDocs();
@@ -290,13 +291,13 @@ export class StorageManager {
             lastUpdated: new Date().toISOString(),
             updatedBy
         };
-        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), "utf-8");
+        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), FILE_ENCODING);
     }
 
     static async getGlobalDoc(docId: string): Promise<string | null> {
         if (!docId) return null;
         const docPath = path.join(this.globalDocsDir, `${docId}.md`);
-        return (await this.exists(docPath)) ? await fs.readFile(docPath, "utf-8") : null;
+        return (await this.exists(docPath)) ? await fs.readFile(docPath, FILE_ENCODING) : null;
     }
 
     static async deleteGlobalDoc(docId: string): Promise<boolean> {
@@ -309,7 +310,7 @@ export class StorageManager {
         // Update index
         const index = await this.listGlobalDocs();
         delete index[docId];
-        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), "utf-8");
+        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), FILE_ENCODING);
         return true;
     }
 
@@ -349,9 +350,9 @@ export class StorageManager {
         // 2. Update manifest.id inside the project
         const manifestPath = path.join(newDir, "manifest.json");
         if (await this.exists(manifestPath)) {
-            const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8")) as ProjectManifest;
+            const manifest = JSON.parse(await fs.readFile(manifestPath, FILE_ENCODING)) as ProjectManifest;
             manifest.id = newId;
-            await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+            await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), FILE_ENCODING);
         }
 
         // 3. Update registry with lock and cascade updates
@@ -361,7 +362,7 @@ export class StorageManager {
             if (registry.projects[oldId]) {
                 registry.projects[newId] = registry.projects[oldId];
                 delete registry.projects[oldId];
-                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
+                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), FILE_ENCODING);
             }
 
             // 4. Cascade: Update relations in ALL other projects
@@ -400,7 +401,7 @@ export class StorageManager {
             const registry = await this.listRegistry();
             if (registry.projects[id]) {
                 delete registry.projects[id];
-                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), "utf-8");
+                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), FILE_ENCODING);
             }
         });
 

@@ -3,7 +3,7 @@ import { StorageManager } from "../src/storage/index.js";
 import { ProjectManifest } from "../src/types.js";
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../src/config.js";
+import { CONFIG } from "../src/config/index.js";
 
 // Mock fs and CONFIG if needed, or use a temp test directory
 const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-storage");

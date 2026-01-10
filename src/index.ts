@@ -1,6 +1,10 @@
 #!/usr/bin/env node
+/**
+ * n2ns Nexus: Unified Project Asset & Collaboration Hub
+ * 
+ * Modular MCP Server for multi-AI assistant coordination.
+ */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
     CallToolRequestSchema,
     ListResourcesRequestSchema,
@@ -13,27 +17,15 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-import { readFileSync } from "fs";
-import { join } from "path";
-import { fileURLToPath } from "url";
-import http from "http";
-import { AddressInfo } from "net";
-
-import { CONFIG, hostServer } from "./config.js";
+import { CONFIG, hostServer, pkg } from "./config/index.js";
 import { StorageManager } from "./storage/index.js";
 import { TOOL_DEFINITIONS, handleToolCall } from "./tools/index.js";
 import { listResources, getResourceContent } from "./resources/index.js";
 import { sanitizeErrorMessage } from "./utils/error.js";
 import { checkHostPermission } from "./utils/auth.js";
+import { SERVICE_NAME } from "./constants.js";
+import { startHost, startGuest } from "./network/index.js";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
-
-/**
- * n2ns Nexus: Unified Project Asset & Collaboration Hub
- * 
- * Modular MCP Server for multi-AI assistant coordination.
- */
 class NexusServer {
     private server: Server;
     private currentProject: string | null = null;
@@ -41,7 +33,7 @@ class NexusServer {
 
     constructor() {
         this.server = new Server(
-            { name: "n2n-nexus", version: pkg.version },
+            { name: SERVICE_NAME, version: pkg.version },
             { capabilities: { resources: {}, tools: {}, prompts: {} } }
         );
         this.setupHandlers();
@@ -60,111 +52,107 @@ class NexusServer {
 
         // --- Resource Reading ---
         this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-            const { uri } = request.params;
             try {
-                await StorageManager.init();
-                const content = await getResourceContent(uri, this.currentProject);
-                if (content) {
-                    return { contents: [{ uri, mimeType: content.mimeType, text: content.text }] };
+                const result = await getResourceContent(request.params.uri, this.currentProject);
+                if (!result) {
+                    throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${request.params.uri}`);
                 }
-                throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${uri}`);
+                return { contents: [{ uri: request.params.uri, ...result }] };
             } catch (error: unknown) {
-                if (error instanceof McpError) throw error;
                 const msg = error instanceof Error ? error.message : String(error);
-                throw new McpError(ErrorCode.InternalError, `Nexus Resource Error: ${sanitizeErrorMessage(msg)}`);
+                throw new McpError(ErrorCode.InternalError, `Nexus Read Error: ${sanitizeErrorMessage(msg)}`);
             }
         });
 
         // --- Tool Listing ---
-        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-            tools: TOOL_DEFINITIONS
-        }));
+        this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+            return { tools: TOOL_DEFINITIONS };
+        });
 
-        // --- Tool Execution ---
+        // --- Tool Calling ---
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            const { name, arguments: toolArgs } = request.params;
-
+            const agentId = CONFIG.instanceId;
             try {
-                if (name.startsWith("host_")) checkHostPermission(name);
-
-                const result = await handleToolCall(
-                    name,
-                    toolArgs as Record<string, unknown>,
-                    {
-                        currentProject: this.currentProject,
-                        setCurrentProject: (id: string) => { this.currentProject = id; },
-                        notifyResourceUpdate: (uri: string) => {
-                            this.server.sendResourceUpdated({ uri });
+                // Special handling for switch_project
+                if (request.params.name === "switch_project") {
+                    const args = request.params.arguments as { project_id?: string };
+                    if (args.project_id) {
+                        const manifest = await StorageManager.getProjectManifest(args.project_id);
+                        if (manifest) {
+                            this.currentProject = args.project_id;
+                            return { content: [{ type: "text", text: `Switched to project: ${args.project_id}` }] };
                         }
                     }
+                    return { content: [{ type: "text", text: `Project '${args.project_id}' not found.` }] };
+                }
+
+                // Host permission check for privileged tools
+                const hostOnlyTools = ["delete_project", "rename_project", "clear_global_logs", "archive_meeting"];
+                if (hostOnlyTools.includes(request.params.name)) {
+                    try {
+                        checkHostPermission(request.params.name);
+                    } catch {
+                        return { content: [{ type: "text", text: `[Permission Denied] Tool '${request.params.name}' requires Host privileges.` }] };
+                    }
+                }
+
+                // Delegate to tool handler
+                const ctx = {
+                    currentProject: this.currentProject,
+                    setCurrentProject: (id: string) => { this.currentProject = id; },
+                    notifyResourceUpdate: (_uri: string) => { /* MCP notification would go here */ }
+                };
+                const result = await handleToolCall(
+                    request.params.name,
+                    request.params.arguments as Record<string, unknown>,
+                    ctx
                 );
                 return result;
             } catch (error: unknown) {
-                if (error instanceof McpError) throw error;
-                const errorMessage = error instanceof Error ? error.message : String(error);
+                const msg = error instanceof Error ? error.message : String(error);
                 return {
-                    isError: true,
-                    content: [{ type: "text", text: `Nexus Error: ${sanitizeErrorMessage(errorMessage)}` }]
+                    content: [{ type: "text", text: sanitizeErrorMessage(`Tool Error: ${msg}`) }],
+                    isError: true
                 };
             }
         });
 
         // --- Prompt Listing ---
-        this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-            prompts: [
-                {
-                    name: "init_project_nexus",
-                    description: "Step-by-step guide for registering a new project with proper ID naming conventions.",
-                    arguments: [
-                        { name: "projectType", description: "Type: web, api, chrome, vscode, mcp, android, ios, flutter, desktop, lib, bot, infra, doc", required: true },
-                        { name: "technicalName", description: "Domain (e.g., example.com) or repo slug (e.g., my-library)", required: true }
-                    ]
-                }
-            ]
-        }));
+        this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+            return {
+                prompts: [
+                    {
+                        name: "nexus_status",
+                        description: "Get a comprehensive status report of the current Nexus Hub state"
+                    }
+                ]
+            };
+        });
 
-        // --- Prompt Retrieval ---
+        // --- Prompt Getting ---
         this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-            const { name, arguments: args } = request.params;
-
-            if (name === "init_project_nexus") {
-                const projectType = args?.projectType || "[TYPE]";
-                const technicalName = args?.technicalName || "[NAME]";
-                const projectId = `${projectType}_${technicalName}`;
+            if (request.params.name === "nexus_status") {
+                const registry = await StorageManager.listRegistry();
+                const projectCount = Object.keys(registry.projects).length;
+                const logs = await StorageManager.getRecentLogs(5);
 
                 return {
-                    description: "Initialize a new Nexus project",
-                    messages: [
-                        {
-                            role: "user",
-                            content: {
-                                type: "text",
-                                text: `I want to register a new project in Nexus.\n\n**Project Type:** ${projectType}\n**Technical Name:** ${technicalName}`
-                            }
-                        },
-                        {
-                            role: "assistant",
-                            content: {
-                                type: "text",
-                                text: `## Project ID Convention\n\nBased on your input, the correct Project ID is:\n\n\`\`\`\n${projectId}\n\`\`\`\n\n### Prefix Dictionary\n| Prefix | Use Case |\n|--------|----------|\n| web_ | Websites/Domains |\n| api_ | Backend Services |\n| chrome_ | Chrome Extensions |\n| vscode_ | VSCode Extensions |\n| mcp_ | MCP Servers |\n| android_ | Native Android |\n| ios_ | Native iOS |\n| flutter_ | Cross-platform Mobile |\n| desktop_ | Desktop Apps |\n| lib_ | Libraries/SDKs |\n| bot_ | Bots |\n| infra_ | Infrastructure as Code |\n| doc_ | Technical Docs |\n\n### Next Steps\n1. Call \`register_session_context\` with projectId: \`${projectId}\`\n2. Call \`sync_project_assets\` with your manifest and internal docs.`
-                            }
+                    messages: [{
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Nexus Hub Status:
+- Role: ${CONFIG.isHost ? "Host" : "Guest"}
+- Instance: ${CONFIG.instanceId}
+- Port: ${CONFIG.port}
+- Active Projects: ${projectCount}
+- Recent Activity: ${logs.length} entries`
                         }
-                    ]
+                    }]
                 };
             }
-
-            throw new McpError(ErrorCode.InvalidRequest, `Unknown prompt: ${name}`);
+            throw new McpError(ErrorCode.InvalidRequest, `Prompt not found: ${request.params.name}`);
         });
-    }
-
-    async run() {
-        this.setupShutdownHandlers();
-
-        if (CONFIG.isHost && hostServer) {
-            await this.startHost(hostServer);
-        } else {
-            await this.startGuest(CONFIG.port);
-        }
     }
 
     private setupShutdownHandlers() {
@@ -190,173 +178,21 @@ class NexusServer {
         process.on("SIGTERM", () => shutdown("SIGTERM"));
     }
 
-    private async startHost(server: http.Server) {
-        // --- HOST MODE: Central Hub ---
-        await StorageManager.init();
+    async run() {
+        this.setupShutdownHandlers();
 
-        server.on("request", async (req, res) => {
-            const url = new URL(req.url || "", `http://${req.headers.host}`);
-
-            if (url.pathname === "/mcp") {
-                const guestId = url.searchParams.get("id") || "UnknownGuest";
-                if (req.method === "GET") {
-                    const transport = new SSEServerTransport("/mcp", res);
-                    this.sseTransports.set(transport.sessionId, transport);
-
-                    const msg = `Guest Joined: ${guestId}`;
-                    await StorageManager.addGlobalLog(`HOST:${CONFIG.instanceId}`, msg, "UPDATE");
-                    console.error(`[Nexus Hub] ${msg} (Session: ${transport.sessionId})`);
-
-                    // Heartbeat: keep connection alive
-                    const heartbeat = setInterval(() => {
-                        try { res.write(": ping\n\n"); } catch { clearInterval(heartbeat); }
-                    }, 30000);
-
-                    transport.onclose = () => {
-                        this.sseTransports.delete(transport.sessionId);
-                        clearInterval(heartbeat);
-                        console.error(`[Nexus Hub] Guest Left: ${guestId}`);
-                    };
-                    await this.server.connect(transport);
-                    return;
-                } else if (req.method === "POST") {
-                    const sessionId = url.searchParams.get("sessionId");
-                    const transport = sessionId ? this.sseTransports.get(sessionId) : null;
-                    if (transport) {
-                        await transport.handlePostMessage(req, res);
-                    } else {
-                        res.writeHead(404).end("Session unknown");
-                    }
-                    return;
-                }
-            }
-        });
-
-        // Support local stdio for the host's own IDE
-        const transport = new StdioServerTransport();
-        await this.server.connect(transport);
-
-        const onlineMsg = `Nexus Hub Active. Playing Host.`;
-        await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, onlineMsg, "UPDATE");
-        console.error(`[Nexus:${CONFIG.instanceId}] ${onlineMsg} (Port: ${server.address() && typeof server.address() === 'object' ? (server.address() as AddressInfo).port : '?'})`);
-    }
-
-    private async startGuest(targetPort: number) {
-        // --- GUEST MODE: SSE Proxy ---
-        const guestId = CONFIG.instanceId;
-        let retryCount = 0;
-        const maxRetries = 10;
-        const blacklistPorts: number[] = [];
-
-        // Random delay function to prevent thundering herd during re-election
-        const randomDelay = () => Math.floor(Math.random() * 3000);
-
-        const connect = () => {
-            // ZOMBIE HOST DETECTION: If we hit max retries, it means the Host is unstable (Zombie).
-            // Trigger re-election ignoring the bad port.
-            if (retryCount >= maxRetries) {
-                console.error(`[Nexus Guest] Host at ${targetPort} is unstable (Zombie). Triggering re-election...`);
-                import("./config.js").then(async ({ isHostAutoElection }) => {
-                    blacklistPorts.push(targetPort);
-                    // Re-run election with blacklist
-                    const result = await isHostAutoElection(CONFIG.rootStorage, blacklistPorts);
-
-                    if (result.isHost && result.server) {
-                        // We became Host!
-                        console.error(`[Nexus] Promoted to Host on port ${result.port}!`);
-                        // Update global config (hack but necessary for singleton logs)
-                        CONFIG.isHost = true;
-                        CONFIG.port = result.port;
-                        await this.startHost(result.server);
-                    } else {
-                        // Found a new Host
-                        console.error(`[Nexus] Found new Host at ${result.port}. Reconnecting...`);
-                        CONFIG.port = result.port;
-                        this.startGuest(result.port);
-                    }
-                });
-                return;
-            }
-            retryCount++;
-
-            // Clear any stale stdin listeners before starting
-            process.stdin.removeAllListeners("data");
-
-            console.error(`[Nexus:${guestId}] Global Hub detected at ${targetPort}. Joining... (attempt ${retryCount})`);
-            let sessionId: string | null = null;
-            let lastActivity = Date.now();
-
-            // Watchdog: trigger re-election if Host is silent for too long
-            const watchdog = setInterval(() => {
-                if (Date.now() - lastActivity > 60000) {
-                    console.error("[Nexus Guest] Host stale. Reconnecting...");
-                    cleanup();
-                    // Use setImmediate to break call stack, then delay
-                    setImmediate(() => setTimeout(connect, randomDelay()));
-                }
-            }, 10000);
-
-            const cleanup = () => {
-                clearInterval(watchdog);
-                process.stdin.removeAllListeners("data");
-            };
-
-            const stdioHandler = (chunk: Buffer) => {
-                if (!sessionId) return;
-                try {
-                    const req = http.request({
-                        hostname: "127.0.0.1",
-                        port: targetPort,
-                        path: `/mcp?sessionId=${sessionId}&id=${encodeURIComponent(guestId)}`,
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" }
-                    });
-                    // Handle request errors to prevent unhandled exceptions
-                    req.on("error", () => { /* suppress ECONNREFUSED etc. */ });
-                    req.write(chunk);
-                    req.end();
-                } catch { /* suppress */ }
-            };
-            process.stdin.on("data", stdioHandler);
-
-            http.get(`http://127.0.0.1:${targetPort}/mcp?id=${encodeURIComponent(guestId)}`, (res) => {
-                // INTELLIGENT RETRY: Only reset retryCount if connection held for > 5 seconds
-                // This prevents infinite loops with "Zombie Hosts" that accept then immediately close
-                const stableTimer = setTimeout(() => {
-                    retryCount = 0;
-                }, 5000);
-
-                let buffer = "";
-                res.on("data", (chunk) => {
-                    lastActivity = Date.now();
-                    const str = chunk.toString();
-                    buffer += str;
-                    if (!sessionId && buffer.includes("event: endpoint")) {
-                        const match = buffer.match(/sessionId=([a-f0-9-]+)/);
-                        if (match) sessionId = match[1];
-                    }
-                    if (str.includes("event: message")) {
-                        const lines = str.split("\n");
-                        const dataLine = lines.find((l: string) => l.startsWith("data: "));
-                        if (dataLine) {
-                            try { process.stdout.write(dataLine.substring(6) + "\n"); } catch { /* ignore stdout errors */ }
-                        }
-                    }
-                });
-                res.on("end", () => {
-                    clearTimeout(stableTimer);
-                    console.error("[Nexus Guest] Lost connection to Host. Reconnecting...");
-                    cleanup();
-                    // Use setImmediate to break call stack
-                    setImmediate(() => setTimeout(connect, randomDelay()));
-                });
-            }).on("error", () => {
-                console.error("[Nexus Guest] Proxy Receive Error. Retrying...");
-                cleanup();
-                setImmediate(() => setTimeout(connect, 1000 + randomDelay()));
-            });
+        const context = {
+            config: CONFIG,
+            pkg,
+            mcpServer: this.server,
+            sseTransports: this.sseTransports
         };
-        connect();
+
+        if (CONFIG.isHost && hostServer) {
+            await startHost(hostServer, context);
+        } else {
+            await startGuest(CONFIG.port, context);
+        }
     }
 }
 

@@ -4,7 +4,7 @@ import { StorageManager } from "../src/storage/index.js";
 import { getResourceContent } from "../src/resources/index.js";
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../src/config.js";
+import { CONFIG } from "../src/config/index.js";
 import { closeDatabase } from "../src/storage/sqlite.js";
 import { resetTasksInit } from "../src/storage/tasks.js";
 

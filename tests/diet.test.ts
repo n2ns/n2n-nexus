@@ -4,7 +4,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { StorageManager } from "../src/storage/index.js";
 import { closeDatabase } from "../src/storage/sqlite.js";
 import path from "path";
-import { CONFIG } from "../src/config.js";
+import { CONFIG } from "../src/config/index.js";
 import { promises as fs } from "fs";
 
 const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-diet");

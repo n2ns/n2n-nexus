@@ -1,7 +1,7 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { promises as fs } from "fs";
 
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 import { StorageManager } from "../storage/index.js";
 import { UnifiedMeetingStore } from "../storage/store.js";
 import {

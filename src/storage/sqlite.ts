@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { createRequire } from "module";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 
 let db: Database.Database | null = null;
 

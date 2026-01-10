@@ -1,8 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 import { DiscussionMessage, MeetingSession, MeetingState } from "../types.js";
 import { AsyncMutex } from "../utils/async-mutex.js";
+import { FILE_ENCODING } from "../constants.js";
 
 /**
  * MeetingStore - Handles all meeting-related storage operations
@@ -37,16 +38,16 @@ export class MeetingStore {
         const defaultState: MeetingState = { activeMeetings: [], defaultMeetingId: null };
         try {
             if (!await this.exists(this.stateFile)) {
-                await fs.writeFile(this.stateFile, JSON.stringify(defaultState, null, 2), "utf-8");
+                await fs.writeFile(this.stateFile, JSON.stringify(defaultState, null, 2), FILE_ENCODING);
                 return defaultState;
             }
-            const content = await fs.readFile(this.stateFile, "utf-8");
+            const content = await fs.readFile(this.stateFile, FILE_ENCODING);
             const cleanContent = content.replace(/^\uFEFF/, '').trim();
             if (!cleanContent) throw new Error("Empty file");
             return JSON.parse(cleanContent);
         } catch (e) {
             console.warn(`[MeetingStore] Repairing corrupted state file. Error: ${(e as Error).message}`);
-            await fs.writeFile(this.stateFile, JSON.stringify(defaultState, null, 2), "utf-8");
+            await fs.writeFile(this.stateFile, JSON.stringify(defaultState, null, 2), FILE_ENCODING);
             return defaultState;
         }
     }
@@ -62,7 +63,7 @@ export class MeetingStore {
      * Save meeting state
      */
     private static async saveState(state: MeetingState): Promise<void> {
-        await fs.writeFile(this.stateFile, JSON.stringify(state, null, 2), "utf-8");
+        await fs.writeFile(this.stateFile, JSON.stringify(state, null, 2), FILE_ENCODING);
     }
 
     /**
@@ -71,22 +72,22 @@ export class MeetingStore {
     private static generateMeetingId(topic: string): string {
         const now = new Date();
         const timestamp = now.toISOString().replace(/[-:T]/g, '').substring(0, 14);
-        
+
         // Create slug from topic, fallback to base64 hash for non-ASCII
         let slug = topic
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
             .substring(0, 30);
-        
+
         // If slug is empty (e.g., Chinese topic), use base64 of topic
         if (!slug) {
             slug = Buffer.from(topic).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toLowerCase();
         }
-        
+
         // Add random suffix for uniqueness (prevents collision in same second)
         const suffix = Math.random().toString(36).substring(2, 6);
-        
+
         return `${timestamp}-${slug || 'meeting'}-${suffix}`;
     }
 
@@ -117,7 +118,7 @@ export class MeetingStore {
             };
 
             // Save meeting file
-            await fs.writeFile(this.getMeetingPath(id), JSON.stringify(meeting, null, 2), "utf-8");
+            await fs.writeFile(this.getMeetingPath(id), JSON.stringify(meeting, null, 2), FILE_ENCODING);
 
             // Update state
             const state = await this.loadStateSafe();
@@ -135,7 +136,7 @@ export class MeetingStore {
     static async getMeeting(id: string): Promise<MeetingSession | null> {
         const meetingPath = this.getMeetingPath(id);
         if (!await this.exists(meetingPath)) return null;
-        const content = await fs.readFile(meetingPath, "utf-8");
+        const content = await fs.readFile(meetingPath, FILE_ENCODING);
         return JSON.parse(content);
     }
 
@@ -161,7 +162,7 @@ export class MeetingStore {
                 meeting.decisions.push(message.text);
             }
 
-            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");
+            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), FILE_ENCODING);
         });
     }
 
@@ -184,13 +185,13 @@ export class MeetingStore {
             meeting.endTime = new Date().toISOString();
             if (summary) meeting.summary = summary;
 
-            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");
+            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), FILE_ENCODING);
 
             // Update state - remove from active meetings
             const state = await this.loadStateSafe();
             state.activeMeetings = state.activeMeetings.filter(id => id !== meetingId);
-            state.defaultMeetingId = state.activeMeetings.length > 0 
-                ? state.activeMeetings[state.activeMeetings.length - 1] 
+            state.defaultMeetingId = state.activeMeetings.length > 0
+                ? state.activeMeetings[state.activeMeetings.length - 1]
                 : null;
             await this.saveState(state);
 
@@ -217,7 +218,7 @@ export class MeetingStore {
         }
 
         meeting.status = "archived";
-        await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");
+        await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), FILE_ENCODING);
     }
 
     /**
@@ -232,7 +233,7 @@ export class MeetingStore {
             // Update status to active
             meeting.status = "active";
             meeting.endTime = undefined;
-            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), "utf-8");
+            await fs.writeFile(this.getMeetingPath(meetingId), JSON.stringify(meeting, null, 2), FILE_ENCODING);
 
             // Update state
             const state = await this.loadStateSafe();

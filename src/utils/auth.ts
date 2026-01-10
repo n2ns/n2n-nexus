@@ -1,5 +1,5 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { CONFIG } from "../config.js";
+import { CONFIG } from "../config/index.js";
 
 /**
  * Validates host permissions for privileged tools.
