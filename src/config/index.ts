@@ -20,7 +20,7 @@ export { pkg };
 
 // --- CLI Commands Handlers ---
 if (hasFlag("--help") || hasFlag("-h")) {
-    console.error(`
+  console.error(`
 n2ns Nexus 🚀 - Local Digital Asset Hub (MCP Server) v${pkg.version}
 
 USAGE:
@@ -48,43 +48,58 @@ MCP CONFIG EXAMPLE (claude_desktop_config.json):
 ENVIRONMENT VARIABLES:
   NEXUS_ROOT        Override default storage path.
     `);
-    process.exit(0);
+  process.exit(0);
 }
 
 if (hasFlag("--version") || hasFlag("-v")) {
-    console.error(pkg.version);
-    process.exit(0);
+  console.error(pkg.version);
+  process.exit(0);
 }
 
 /**
  * Automatic Project Name Detection
  */
 function getAutoProjectName(): string {
-    try {
-        const localPkgPath = path.join(process.cwd(), PACKAGE_JSON);
-        if (fs.existsSync(localPkgPath)) {
-            const localPkg = JSON.parse(fs.readFileSync(localPkgPath, FILE_ENCODING));
-            if (localPkg.name) return localPkg.name.split("/").pop() || localPkg.name;
-        }
-    } catch { /* ignore */ }
-    const base = path.basename(process.cwd()) || "Assistant";
-    const suffix = Math.random().toString(36).substring(2, 6);
-    return `${base}-${suffix}`;
+  try {
+    const localPkgPath = path.join(process.cwd(), PACKAGE_JSON);
+    if (fs.existsSync(localPkgPath)) {
+      const localPkg = JSON.parse(fs.readFileSync(localPkgPath, FILE_ENCODING));
+      if (localPkg.name) return localPkg.name.split("/").pop() || localPkg.name;
+    }
+  } catch { /* ignore */ }
+  const base = path.basename(process.cwd()) || "Assistant";
+  const suffix = Math.random().toString(36).substring(2, 6);
+  return `${base}-${suffix}`;
 }
 
-// Run election at module load
+// Run election at module load - REMOVED for Online First architecture
+// const rootPath = getRootPath();
+// const election = await isHostAutoElection(rootPath);
+// const projectName = getAutoProjectName();
+
+// export const hostServer = election.server;
+
+// Mutable Config for Online First
 const rootPath = getRootPath();
-const election = await isHostAutoElection(rootPath);
 const projectName = getAutoProjectName();
 
-export const hostServer = election.server;
-
 export const CONFIG: HubConfig = {
-    instanceId: getArg("--id") || projectName,
-    isHost: election.isHost,
-    rootStorage: election.isHost ? rootPath : (election.rootStorage || rootPath),
-    port: election.port
+  instanceId: getArg("--id") || projectName,
+  isHost: false, // Default to Guest until elected
+  rootStorage: rootPath, // Default to local until updated
+  port: 0 // Will be set after election
 };
+
+// Export mutable hostServer container
+export let hostServer: import("http").Server | undefined;
+
+export function updateConfig(update: Partial<HubConfig>) {
+  Object.assign(CONFIG, update);
+}
+
+export function setHostServer(server: import("http").Server) {
+  hostServer = server;
+}
 
 // Re-export for Guest reconnection
 export { isHostAutoElection } from "../network/election.js";

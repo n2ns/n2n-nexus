@@ -17,7 +17,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-import { CONFIG, hostServer, pkg } from "./config/index.js";
+import { CONFIG, hostServer, pkg, updateConfig, setHostServer, isHostAutoElection } from "./config/index.js";
 import { StorageManager } from "./storage/index.js";
 import { TOOL_DEFINITIONS, handleToolCall } from "./tools/index.js";
 import { listResources, getResourceContent } from "./resources/index.js";
@@ -188,13 +188,47 @@ class NexusServer {
             sseTransports: this.sseTransports
         };
 
-        if (CONFIG.isHost && hostServer) {
-            await startHost(hostServer, context);
-        } else {
-            await startGuest(CONFIG.port, context);
-        }
+        // 1. Start Election in Background
+        console.error(`[Nexus] Starting in Online First mode...`);
+
+        // Asynchronously determine role
+        isHostAutoElection(CONFIG.rootStorage).then(async (election) => {
+            console.error(`[Nexus] Election finished. Role: ${election.isHost ? "HOST" : "GUEST"}`);
+
+            // Update Global Config
+            updateConfig({
+                isHost: election.isHost,
+                port: election.port,
+                rootStorage: election.isHost ? CONFIG.rootStorage : (election.rootStorage || CONFIG.rootStorage)
+            });
+
+            if (election.server) {
+                setHostServer(election.server);
+            }
+
+            // Start appropriate network service
+            if (election.isHost && election.server) {
+                await startHost(election.server, context);
+            } else {
+                // Critical: Close the initial Stdio transport before handing over to Guest proxy
+                // This prevents race conditions where both instances attempt to read stdin
+                await this.server.close();
+                console.error(`[Nexus] Local Server closed. Transitioning to Guest Proxy...`);
+
+                await startGuest(election.port, context);
+            }
+        }).catch(err => {
+            console.error(`[Nexus CRITICAL] Election failed:`, err);
+        });
+
+        // 2. Connect via Stdio IMMEDIATELY (Don't wait for election)
+        const transport = new StdioServerTransport();
+        await this.server.connect(transport);
+        console.error(`[Nexus] MCP Server connected via stdio.`);
     }
 }
+
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const server = new NexusServer();
 server.run().catch(console.error);

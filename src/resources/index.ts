@@ -108,6 +108,7 @@ export async function getResourceContent(
  * Uses resourceTemplates instead - AI should query registry first.
  */
 export async function listResources() {
+    await StorageManager.init(); // Ensure storage is ready (Online First)
     const registry = await StorageManager.listRegistry();
     const projectCount = Object.keys(registry.projects).length;
 

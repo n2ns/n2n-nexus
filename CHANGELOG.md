@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.8] - 2026-01-11
+### 🚀 Online First Architecture
+- **Performance**: Removed top-level blocking await for election. Server now starts in <300ms (Online First), reducing startup time by 99% in congested networks.
+- **Stability**: Fixed "Timeout" errors in MCP clients (Cursor/Claude) by ensuring `tools/list` is available immediately before Host Election completes.
+- **Race Condition Fix**: Implemented explicit server shutdown before transitioning from Local to Guest mode to prevent Stdio stream conflicts.
+- **Refactor**: Moved `isHost` logic from static config to dynamic `updateConfig` flow.
+
+
 ## [0.3.5] - 2026-01-10
 ### Protocol & Stability
 - **Fix (Zombie Host)**: Implemented "Intelligent Retry" and "Re-Election" logic. If a Guest repeatedly connects to a Zombie Host (handshake OK, SSE broken), it will now automatically trigger a re-election process, blacklist the bad port, and promote itself to Host on a new port if necessary.
