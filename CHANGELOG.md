@@ -25,7 +25,12 @@ All notable changes to this project will be documented in this file.
 - **Bind Address**: Changed default listener to `0.0.0.0` to support WSL Mirror Mode networking.
 - **Identity Safety**: Default "Assistant" ID now appends a random suffix (e.g., `Assistant-x9a2`) to prevent conflicts when multiple empty IDEs connect.
 
-## [0.3.2] - 2026-01-08
+## [0.3.8] - 2026-01-11
+
+### Fixed
+- **Guest Proxy Framing**: Implemented proper message framing (newline-delimited JSON buffer) in Guest-to-Host proxy. This resolves "context deadline exceeded" timeouts in IDEs where stdin pipes fragment JSON-RPC messages.
+
+## [0.3.7] - 2026-01-08
 ### Security & Stability
 - **Security**: Fixed potential URL parameter injection in Guest proxy connection URL.
 - **Stability**: Refactored host election fallback loop from async recursion to `while(true)` to prevent long-term stack overflow.

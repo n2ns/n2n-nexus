@@ -87,7 +87,21 @@ export async function startGuest(
             } catch { /* suppress */ }
         };
 
-        const stdioHandler = (chunk: Buffer) => forwardToHost(chunk);
+        let stdinBuffer = "";
+
+        const stdioHandler = (chunk: Buffer) => {
+            stdinBuffer += chunk.toString();
+            // Process all complete lines (JSON-RPC messages)
+            let newlineIndex;
+            while ((newlineIndex = stdinBuffer.indexOf("\n")) !== -1) {
+                const line = stdinBuffer.substring(0, newlineIndex);
+                stdinBuffer = stdinBuffer.substring(newlineIndex + 1);
+
+                if (line.trim()) {
+                    forwardToHost(Buffer.from(line));
+                }
+            }
+        };
         process.stdin.on("data", stdioHandler);
 
         http.get(`http://${connectHost}:${targetPort}/mcp?id=${encodeURIComponent(guestId)}`, (res) => {
