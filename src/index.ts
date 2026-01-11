@@ -17,7 +17,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-import { CONFIG, hostServer, pkg, updateConfig, setHostServer, isHostAutoElection } from "./config/index.js";
+import { CONFIG, pkg, updateConfig, setHostServer, isHostAutoElection } from "./config/index.js";
 import { StorageManager } from "./storage/index.js";
 import { TOOL_DEFINITIONS, handleToolCall } from "./tools/index.js";
 import { listResources, getResourceContent } from "./resources/index.js";
@@ -71,7 +71,6 @@ class NexusServer {
 
         // --- Tool Calling ---
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            const agentId = CONFIG.instanceId;
             try {
                 // Special handling for switch_project
                 if (request.params.name === "switch_project") {

@@ -1,6 +1,6 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.3.8",
+    "version": "0.3.9",
     "description": "Modular MCP Server for multi-AI assistant coordination",
     "main": "build/index.js",
     "type": "module",

@@ -9,7 +9,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AddressInfo } from "net";
 
-import { NEXUS_HOST, HEARTBEAT_INTERVAL, SERVICE_NAME } from "../constants.js";
+import { HEARTBEAT_INTERVAL, SERVICE_NAME } from "../constants.js";
 import { StorageManager } from "../storage/index.js";
 
 interface HostContext {

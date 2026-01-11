@@ -5,7 +5,6 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { HubConfig } from "../types.js";
-import { SERVICE_NAME, FILE_ENCODING, PACKAGE_JSON } from "../constants.js";
 import { getArg, hasFlag } from "./cli.js";
 import { getRootPath } from "./paths.js";
 import { isHostAutoElection } from "../network/election.js";

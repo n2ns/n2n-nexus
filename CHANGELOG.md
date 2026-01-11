@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.8] - 2026-01-11
+## [0.3.9] - 2026-01-11
 ### 🚀 Online First Architecture
 - **Performance**: Removed top-level blocking await for election. Server now starts in <300ms (Online First), reducing startup time by 99% in congested networks.
 - **Stability**: Fixed "Timeout" errors in MCP clients (Cursor/Claude) by ensuring `tools/list` is available immediately before Host Election completes.
