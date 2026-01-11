@@ -7,7 +7,6 @@ import { fileURLToPath } from "url";
 import { HubConfig } from "../types.js";
 import { getArg, hasFlag } from "./cli.js";
 import { getRootPath } from "./paths.js";
-import { isHostAutoElection } from "../network/election.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
