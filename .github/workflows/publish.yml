@@ -7,7 +7,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -31,3 +31,9 @@ jobs:
       - run: npm test
 
       - run: npm publish --access public --provenance
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: success() && startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
