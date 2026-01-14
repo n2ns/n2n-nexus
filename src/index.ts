@@ -56,9 +56,29 @@ class NexusServer {
     constructor() {
         this.server = new Server(
             { name: SERVICE_NAME, version: pkg.version },
-            { capabilities: { resources: {}, tools: {}, prompts: {} } }
+            { capabilities: { resources: {}, tools: {}, prompts: {}, logging: {} } }
         );
         this.setupHandlers();
+    }
+
+    /**
+     * Unified Logger
+     * - stderr: For critical/boot logs (visible in terminal/logs)
+     * - MCP Logging: For runtime logs (visible in IDE Output Channel)
+     */
+    private log(message: string, level: "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency" = "info") {
+        // ALWAYS log to stderr for persistence/boot visibility
+        console.error(message);
+
+        // Send to MCP client if connected
+        try {
+            this.server.sendLoggingMessage({
+                level,
+                data: message
+            });
+        } catch {
+            // SDK might not be ready or transport disconnected
+        }
     }
 
     /**
@@ -265,11 +285,11 @@ class NexusServer {
         // 1. IMMEDIATE: Connect Stdio (Handshake Ready)
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
-        console.error(`[Nexus] Stdio Connected (Pending Election)...`);
+        this.log(`[Nexus] Stdio Connected (Pending Election)...`);
 
         // 2. Start Election (Parallel)
         isHostAutoElection(CONFIG.rootStorage).then(async (election) => {
-            console.error(`[Nexus] Election Finished. Role: ${election.isHost ? "HOST" : "GUEST"}`);
+            this.log(`[Nexus] Election Finished. Role: ${election.isHost ? "HOST" : "GUEST"}`);
 
             this.role = election.isHost ? "HOST" : "GUEST";
             this.isElectionDone = true;
@@ -308,7 +328,7 @@ class NexusServer {
             }
 
         }).catch(err => {
-            console.error(`[Nexus CRITICAL] Election failed:`, err);
+            this.log(`[Nexus CRITICAL] Election failed: ${err}`, "error");
             // In case of failure, reject all buffered requests
             this.requestBuffer.forEach(req => req.reject(new Error("Nexus Startup Failed")));
             process.exit(1);
@@ -316,7 +336,7 @@ class NexusServer {
     }
 
     private flushBufferAsHost() {
-        console.error(`[Nexus] Flushing ${this.requestBuffer.length} buffered requests (Local)...`);
+        this.log(`[Nexus] Flushing ${this.requestBuffer.length} buffered requests (Local)...`);
         while (this.requestBuffer.length > 0) {
             const req = this.requestBuffer.shift();
             if (!req) break;
@@ -334,7 +354,7 @@ class NexusServer {
     }
 
     private flushBufferAsGuest() {
-        console.error(`[Nexus] Flushing ${this.requestBuffer.length} buffered requests (Remote)...`);
+        this.log(`[Nexus] Flushing ${this.requestBuffer.length} buffered requests (Remote)...`);
         while (this.requestBuffer.length > 0) {
             const req = this.requestBuffer.shift();
             if (!req) break;
@@ -344,7 +364,7 @@ class NexusServer {
 
     private setupShutdownHandlers() {
         const shutdown = async (signal: string) => {
-            console.error(`\n[Nexus] Received ${signal}. Shutting down...`);
+            this.log(`\n[Nexus] Received ${signal}. Shutting down...`, "notice");
             try {
                 if (this.role === "HOST") {
                     await StorageManager.addGlobalLog(`SYSTEM:${CONFIG.instanceId}`, `Nexus Host Terminated (${signal}).`, "UPDATE");
@@ -360,7 +380,7 @@ class NexusServer {
     }
 
     private handleReElection() {
-        console.error(`[Nexus] Host Unreachable! Triggering Auto-Re-Election...`);
+        this.log(`[Nexus] Host Unreachable! Triggering Auto-Re-Election...`, "warning");
 
         // 1. Reset State
         this.role = "PENDING";
@@ -377,7 +397,7 @@ class NexusServer {
         setTimeout(() => {
             // 3. Re-run startup logic (simplified inline version of run() election part)
             isHostAutoElection(CONFIG.rootStorage).then(async (election) => {
-                console.error(`[Nexus] Re-Election Finished. New Role: ${election.isHost ? "HOST" : "GUEST"}`);
+                this.log(`[Nexus] Re-Election Finished. New Role: ${election.isHost ? "HOST" : "GUEST"}`);
                 this.role = election.isHost ? "HOST" : "GUEST";
                 this.isElectionDone = true;
 
@@ -404,7 +424,7 @@ class NexusServer {
                     this.flushBufferAsGuest();
                 }
             }).catch(err => {
-                console.error("[Nexus] Re-Election Failed:", err);
+                this.log(`[Nexus] Re-Election Failed: ${err}`, "error");
                 // Retry again? Or just die? Let's retry indefinitely for now.
                 setTimeout(() => this.handleReElection(), 2000);
             });
@@ -413,4 +433,4 @@ class NexusServer {
 }
 
 const server = new NexusServer();
-server.run().catch(console.error);
+server.run().catch(err => console.error("[Nexus FATAL]", err));
