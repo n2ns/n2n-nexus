@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-01-14
+### ✨ Developer Experience & Observability
+- **MCP Logging Protocol**: Implemented standard `notifications/message` protocol support. Debug logs now appear directly in the IDE's "Model Context Protocol" output channel.
+- **Improved Stdio Handling**: Verified and strictly enforced JSON-RPC compliance on `stdout` to prevent IDE integration issues.
+- **Better Error Reporting**: Boot failures now include more descriptive context on `stderr`.
+
 ## [0.4.0] - 2026-01-14
 ### 🚀 High Availability & Scalability
 - **Failover Mechanism**: Implemented automatic Guest-to-Host promotion. If the Host process dies, a Guest detects usage of the port/lock and takes over immediately with data persistence.

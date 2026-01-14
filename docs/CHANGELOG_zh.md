@@ -2,6 +2,12 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.4.1] - 2026-01-14
+### ✨ 开发者体验与可观测性 (Developer Experience & Observability)
+- **MCP Logging Protocol**: 实现了标准的 `notifications/message` 协议支持。调试日志现在直接显示在 IDE 的 "Model Context Protocol" 输出频道中。
+- **Improved Stdio Handling**: 严格验证并确保了 `stdout` 流的 JSON-RPC 合规性，防止 IDE 插件加载失败。
+- **Better Error Reporting**: 启动失败时会在 `stderr` 中提供更具描述性的上下文信息。
+
 ## [0.4.0] - 2026-01-14
 ### 🚀 高可用与高扩展 (High Availability & Scalability)
 - **Failover Mechanism**: 实现了自动的 Guest-to-Host 故障转移。如果 Host 进程意外退出，Guest 会检测到端口/锁释放并立即接管 Host 角色，同时保证数据持久性。
