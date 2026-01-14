@@ -41,3 +41,18 @@ Nexus_Storage/
 **自我修复 (Self-healing)**: 核心数据文件（如 `registry.json`, `discussion.json`）具备自动检测与修复机制。如果文件损坏或意外丢失，系统会自动重建初始状态，确保服务不中断。
 
 **多并发安全 (Concurrency Safety)**: 对共享文件（`discussion.json`, `registry.json`）的所有写入操作均受 `AsyncMutex` 锁保护，防止多个 AI 代理同时通信时发生竞争条件。
+
+## 🌐 Host-Guest 网络架构 (v2)
+
+### 零配置启动与选举
+系统旨在提供“魔法般”的用户体验，同一台机器上的多个实例无需手动配置即可自动发现并组网。
+
+1.  **并行竞速选举**: 启动时，每个实例并发扫描前 5 个端口 (5688-5692) (<300ms)。
+2.  **角色解析**:
+    *   **Host**: 如果发现空闲端口，实例绑定该端口并成为 Host。
+    *   **Guest**: 如果发现已有 Host，实例通过 SSE (Server-Sent Events) 连接并成为 Guest。
+3.  **立即握手**: `StdioServerTransport` 对 IDE 的连接是立即完成的 (<10ms)。静态请求（如 `tools/list`）由本地直接响应，避免 IDE 超时；动态请求被**缓冲**，直到选举完成。
+
+### 故障转移与高可用
+*   **智能代理 (Smart Proxy)**: Guest 实例通过 HTTP/SSE 将 IDE 请求代理给 Host。它们处理背压和缓冲，防止网络抖动导致数据丢失。
+*   **自动故障转移**: 如果 Host 进程终止（例如用户关闭了 Host IDE 窗口），Guest 实例会检测到连接断开（通过 `ECONNREFUSED` 或 SSE `end`），并触发 **重新选举**。其中一个幸存的 Guest 将自动晋升为新的 Host，自动恢复集群服务。

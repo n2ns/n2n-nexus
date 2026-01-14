@@ -1,6 +1,6 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.3.9",
+    "version": "0.4.0",
     "description": "Modular MCP Server for multi-AI assistant coordination",
     "main": "build/index.js",
     "type": "module",
@@ -41,6 +41,7 @@
         "start": "node build/index.js",
         "dev": "tsc -w",
         "test": "vitest run",
+        "test:integration": "vitest run tests/integration.test.ts tests/failover.test.ts tests/meeting.test.ts tests/guest_connection.test.ts",
         "lint": "eslint src/**",
         "prepublishOnly": "npm run build"
     },

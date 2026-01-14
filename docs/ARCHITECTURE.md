@@ -61,3 +61,18 @@ To ensure clarity and prevent collisions in the flat local namespace, all Projec
 | `bot_` | Bots (Discord, Slack, DingTalk, etc.) | `bot_auto-moderator` |
 | `infra_` | Infrastructure as Code, CI/CD, DevOps scripts | `infra_k8s-config` |
 | `doc_` | Pure technical handbooks, strategies, roadmaps | `doc_coding-guide` |
+
+## 🌐 Host-Guest Network Architecture (v2)
+
+### Zero-Config Startup & Election
+The system aims for a "magic" user experience where multiple instances on the same machine automatically discover each other without manual configuration.
+
+1.  **Parallel Race Election**: Upon startup, every instance scans the first 5 ports (5688-5692) concurrently (<300ms).
+2.  **Role Resolution**:
+    *   **Host**: If a port is free, the instance binds it and becomes the Host.
+    *   **Guest**: If a Host is found, the instance connects via SSE (Server-Sent Events) and becomes a Guest.
+3.  **Immediate Handshake**: The `StdioServerTransport` connects immediately (<10ms) to the IDE. Static requests (`tools/list`) are served locally, preventing IDE timeouts. Dynamic requests are **buffered** until the election concludes.
+
+### Failover & Resilience
+*   **Smart Proxy**: Guest instances proxy IDE requests to the Host via HTTP/SSE. They handle backpressure and buffering to prevent data loss during connection blips.
+*   **Auto-Failover**: If the Host process terminates (e.g., user closes the Host IDE window), Guest instances detect the connection loss (via `ECONNREFUSED` or SSE `end`) and trigger a **Re-Election**. One of the surviving Guests will promote itself to become the new Host, restoring the cluster automatically.

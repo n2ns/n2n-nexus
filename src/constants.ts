@@ -17,7 +17,7 @@ export const PORT_RANGE_START = 5688;
 export const PORT_RANGE_END = 5800;
 
 // Timeouts (milliseconds)
-export const HANDSHAKE_TIMEOUT = 500;
+export const HANDSHAKE_TIMEOUT = 200;
 export const HEARTBEAT_INTERVAL = 30000;
 
 // Task cleanup

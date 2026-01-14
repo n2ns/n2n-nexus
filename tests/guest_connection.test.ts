@@ -4,6 +4,7 @@ import http from "http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { createGuestClient } from "../src/network/guest.js";
 
 // Mock Host Implementation
 class MockHost {
@@ -20,13 +21,6 @@ class MockHost {
             tools: [{ name: "ping", inputSchema: { type: "object" } }]
         }));
 
-        this.mcpServer.setRequestHandler(CallToolRequestSchema, async (req) => {
-            if (req.params.name === "ping") {
-                return { content: [{ type: "text", text: "pong" }] };
-            }
-            throw new Error("Unknown tool");
-        });
-
         this.server = http.createServer(async (req, res) => {
             const url = new URL(req.url || "", `http://${req.headers.host}`);
             if (url.pathname === "/mcp") {
@@ -37,6 +31,10 @@ class MockHost {
                     return;
                 } else if (req.method === "POST") {
                     const sessionId = url.searchParams.get("sessionId");
+                    // Quick fix for test: parse from query, or if missing check body (MCP spec varies)
+                    // The SSEServerTransport normally handles POST to /message?sessionId=...
+                    // But GuestClient posts to /mcp?sessionId=...
+                    // Let's ensure the Mock matches GuestClient expectations
                     const transport = sessionId ? this.transports.get(sessionId) : null;
                     if (transport) {
                         await transport.handlePostMessage(req, res);
@@ -59,87 +57,35 @@ class MockHost {
     }
 }
 
-// Guest Logic Simulating src/index.ts
-function runGuest(port: number, messageToSend: any): Promise<string> {
-    return new Promise((resolve, reject) => {
-        let sessionId: string | null = null;
-        let responseBuffer = "";
-
-        const req = http.get(`http://127.0.0.1:${port}/mcp`, (res) => {
-            res.on("data", (chunk) => {
-                const str = chunk.toString();
-
-                // 1. Handshake: Parse Session ID
-                if (!sessionId && str.includes("event: endpoint")) {
-                    const match = str.match(/sessionId=([a-f0-9-]+)/);
-                    if (match) {
-                        sessionId = match[1];
-
-                        // 2. Once connected, Send Request
-                        const postReq = http.request({
-                            hostname: "127.0.0.1",
-                            port: port,
-                            path: `/mcp?sessionId=${sessionId}`,
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" }
-                        });
-                        postReq.write(JSON.stringify(messageToSend));
-                        postReq.end();
-                    }
-                }
-
-                // 3. Listen for Message
-                if (str.includes("event: message")) {
-                    const lines = str.split("\n");
-                    const dataLine = lines.find((l: string) => l.startsWith("data: "));
-                    if (dataLine) {
-                        const jsonStr = dataLine.substring(6);
-                        responseBuffer += jsonStr;
-                        // Determine if complete (naive check for this test)
-                        if (jsonStr.includes("jsonrpc")) {
-                            req.destroy(); // Close connection
-                            resolve(responseBuffer);
-                        }
-                    }
-                }
-            });
-        });
-
-        req.on("error", reject);
-
-        // Timeout
-        setTimeout(() => {
-            req.destroy();
-            reject(new Error("Timeout waiting for guest response"));
-        }, 2000);
-    });
-}
-
 describe("Guest-Host SSE Integration", () => {
     const PORT = 15900;
     let host: MockHost;
 
     afterEach(async () => {
         if (host) await host.stop();
+        // GuestClient has internal timers/connections, but since it's a unit test we let them die with the process or GC
+        // In a real scenario we'd want a .close() method on GuestClient.
     });
 
-    it("should successfully connect and exchange messages using Guest logic", async () => {
+    it("should successfully connect and exchange messages using real GuestClient", async () => {
         host = new MockHost(PORT);
         await host.start();
 
-        const request = {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/list",
-            params: {}
-        };
+        const guest = createGuestClient(PORT, "test-guest");
 
-        const responseStr = await runGuest(PORT, request);
-        const response = JSON.parse(responseStr);
+        // Allow some time for connection (GuestClient connects immediately in constructor)
+        await new Promise(r => setTimeout(r, 100));
 
-        expect(response.jsonrpc).toBe("2.0");
-        expect(response.id).toBe(1);
-        expect(response.result.tools).toBeDefined();
-        expect(response.result.tools[0].name).toBe("ping");
+        // Use sendRequest (public API of the new GuestClient)
+        // GuestClient.sendRequest(method, params)
+        const response = await guest.sendRequest("tools/list", {});
+
+        // GuestClient returns the RESULT directly (or throws error)
+        expect(response).toBeDefined();
+        expect(response.tools).toBeDefined();
+        expect(response.tools[0].name).toBe("ping");
+
+        guest.close();
     });
 });
+

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-01-14
+### 🚀 High Availability & Scalability
+- **Failover Mechanism**: Implemented automatic Guest-to-Host promotion. If the Host process dies, a Guest detects usage of the port/lock and takes over immediately with data persistence.
+- **Progressive Discovery**: Added `search_projects` tool. Allows AI to find relevant projects by query without loading the entire 1000+ project registry, reducing context usage.
+- **Immediate Handshake**: Implementing Request Buffering allows the server to accept IDE requests immediately (<10ms) while the Host Election runs in background (~300ms). Fixes startup race conditions.
+- **Stability**: Added explicit E2E tests for process failover (`tests/failover.test.ts`) and request buffering (`tests/buffered_requests.test.ts`).
+
 ## [0.3.9] - 2026-01-11
 ### 🚀 Online First Architecture
 - **Performance**: Removed top-level blocking await for election. Server now starts in <300ms (Online First), reducing startup time by 99% in congested networks.

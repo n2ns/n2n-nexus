@@ -66,6 +66,16 @@ export async function probeHost(port: number, myId: string): Promise<{ isNexus: 
  * 1. Try to bind → Success → I am Host
  * 2. Bind fails → Try handshake → Success → I am Guest
  * 3. Handshake fails → Port occupied by non-Nexus → Next port
+ * 
+ * Optimized for speed: Fast-fail on bind, short timeout on handshake.
+ */
+/**
+ * Automatic Host Election
+ * 
+ * Strategy:
+ * 1. Parallel Scan (0-200ms): Race to bind or handshake on the first batch of ports.
+ * 2. Sequential Scan: If all preferred ports are busy/zombie, try remaining ports.
+ * 3. Fallback: Bind to port 0 (OS assigned) to guarantee isolation.
  */
 export async function isHostAutoElection(
     _root: string,
@@ -75,32 +85,81 @@ export async function isHostAutoElection(
     const endPort = PORT_RANGE_END;
     const myId = getArg("--id") || `node-${Math.random().toString(36).substring(2, 6)}`;
 
-    for (let port = startPort; port <= endPort; port++) {
+    // 1. Parallel Scan of first 5 ports (High Probability Zone)
+    const BATCH_SIZE = 5;
+    const batchEnd = Math.min(startPort + BATCH_SIZE, endPort);
+    const checks: Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string } | null>[] = [];
+
+    for (let port = startPort; port < batchEnd; port++) {
         if (blacklistPorts.includes(port)) continue;
-
-        // 1. Try to bind port
-        const bindResult = await new Promise<{ success: boolean; server?: http.Server }>((resolve) => {
-            const server = http.createServer();
-            server.on("error", () => resolve({ success: false }));
-            server.listen(port, NEXUS_HOST, () => resolve({ success: true, server }));
-        });
-
-        if (bindResult.success) {
-            // Bind success → I am Host
-            return { isHost: true, port, server: bindResult.server };
-        }
-
-        // 2. Bind failed → Try handshake
-        const probe = await probeHost(port, myId);
-        if (probe.isNexus) {
-            // Handshake success → I am Guest
-            return { isHost: false, port, rootStorage: probe.rootStorage };
-        }
-
-        // 3. Handshake failed → Port occupied by non-Nexus → Continue
+        checks.push(checkPort(port, myId));
     }
 
-    // All ports unavailable
-    console.error(`[Nexus] All ports ${startPort}-${endPort} occupied by non-Nexus processes.`);
-    throw new Error("No available port for Nexus");
+    try {
+        // Wait for all checks to complete, then pick the first valid result (Win-Win)
+        const results = await Promise.all(checks);
+
+        // Priority: Prefer Host (Bind Success) over Guest (Existing Nexus) if both happen?
+        // Actually, 'checkPort' tries Bind FIRST, then Handshake.
+        // So if we get a result from checkPort, it's a definitive state for that port.
+        // We pick the first non-null result based on port order (implicitly by array index if we iterated, but here we scan).
+        const winner = results.find(r => r !== null);
+
+        if (winner) {
+            return winner;
+        }
+    } catch {
+        // Continue to sequential
+    }
+
+    // 2. Sequential Scan for the rest (Low Probability)
+    for (let port = batchEnd; port <= endPort; port++) {
+        if (blacklistPorts.includes(port)) continue;
+        const result = await checkPort(port, myId);
+        if (result) return result;
+    }
+
+    // 3. Fallback: Isolated Host
+    // 3. Fallback: Isolated Host
+    console.error(`[Nexus] Preferred ports ${startPort}-${endPort} busy. Starting isolated Host...`);
+    const fallbackServer = http.createServer();
+    const fallbackPort = await new Promise<number>((resolve, reject) => {
+        fallbackServer.listen(0, NEXUS_HOST, () => {
+            const addr = fallbackServer.address();
+            if (addr && typeof addr !== 'string') resolve(addr.port);
+            else reject("Failed to bind fallback port");
+        });
+    });
+
+    return { isHost: true, port: fallbackPort, server: fallbackServer };
+}
+
+/**
+ * Atomic Port Check: 
+ * Returns result if we successfully Bind (Host) or Handshake (Guest).
+ * Returns null if port is busy with non-Nexus service.
+ */
+async function checkPort(port: number, myId: string): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string } | null> {
+    // A. Try Bind
+    const bindResult = await new Promise<{ success: boolean; server?: http.Server }>((resolve) => {
+        const server = http.createServer();
+        server.on("error", () => resolve({ success: false }));
+        server.listen(port, NEXUS_HOST, () => resolve({ success: true, server }));
+    });
+
+    if (bindResult.success) {
+        return { isHost: true, port, server: bindResult.server };
+    }
+
+    // B. Try Handshake (if bind failed)
+    try {
+        const probe = await probeHost(port, myId);
+        if (probe.isNexus) {
+            return { isHost: false, port, rootStorage: probe.rootStorage };
+        }
+    } catch {
+        // Handshake failed/timeout
+    }
+
+    return null;
 }

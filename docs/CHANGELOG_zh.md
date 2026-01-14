@@ -2,6 +2,19 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.4.0] - 2026-01-14
+### 🚀 高可用与高扩展 (High Availability & Scalability)
+- **Failover Mechanism**: 实现了自动的 Guest-to-Host 故障转移。如果 Host 进程意外退出，Guest 会检测到端口/锁释放并立即接管 Host 角色，同时保证数据持久性。
+- **Progressive Discovery**: 新增 `search_projects` 工具。允许 AI 根据意图搜索相关项目，而无需读取包含 1000+ 项目的完整注册表，大幅节省 Token。
+- **Immediate Handshake**: 实现了请求缓冲机制 (Request Buffering)，允许 Server 在 Host 选举 (~300ms) 完成前就立即接受 (<10ms) IDE 的请求，彻底解决了启动时的竞态条件。
+- **Stability**: 增加了针对进程故障转移 (`tests/failover.test.ts`) 和请求缓冲 (`tests/buffered_requests.test.ts`) 的端到端测试。
+
+## [0.3.9] - 2026-01-14
+### 🚀 故障切换与立即握手
+- **立即握手**: 实现了基于缓冲区的设计，Stdio 启动后 <10ms 内即可响应，不再阻塞 IDE 等待选举。
+- **自动故障切换**: 新增了 `Failover` 机制。如果 Host 进程被杀或崩溃，存活的 Guest 会在检测到连接断开后立即触发重新选举，并自动晋升为新 Host。
+- **零配置 V2**: 进一步优化了启动流程，完全无需用户干预即可组建高可用集群。
+
 ## [0.3.5] - 2026-01-10
 ### 协议与稳定性
 - **修复 (僵尸 Host)**: 实现了“智能重试”和“重新选举”逻辑。如果 Guest 反复连接到僵尸 Host（握手成功但 SSE 断开），现在会自动触发重新选举流程，将坏端口加入黑名单，并在必要时在从端口上将自身提升为 Host。

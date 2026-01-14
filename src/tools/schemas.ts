@@ -76,6 +76,15 @@ export const TopologySchema = z.object({
 
 export const EmptySchema = z.object({});
 
+/**
+ * 5. search_projects
+ */
+export const SearchProjectsSchema = z.object({
+    query: z.string().min(1, "Query is required"),
+    limit: z.number().int().positive().optional().default(10)
+});
+
+
 
 /**
  * 7. send_message
@@ -236,73 +245,77 @@ export const TOOL_REGISTRY: Record<string, { description: string; schema: z.ZodT
         description: "Project topology. Default: list summary. With projectId: detailed subgraph.",
         schema: TopologySchema
     },
-    send_message: {
-        description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",
-        schema: SendMessageSchema
+    search_projects: {
+        description: "Search project registry by name or description. Use this instead of reading the full registry.",
+        schema: SearchProjectsSchema
     },
-    read_messages: {
-        description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global logs.",
-        schema: ReadMessagesSchema
-    },
-    update_global_strategy: {
-        description: "Overwrite master strategy. Content is MANDATORY.",
-        schema: UpdateStrategySchema
-    },
-    sync_global_doc: {
-        description: "Create or update a global document. Returns the document ID.",
-        schema: SyncGlobalDocSchema
-    },
-    update_project: {
-        description: "Partially update a project's manifest. Only provided fields will be updated.",
-        schema: UpdateProjectSchema
-    },
-    rename_project: {
-        description: "[ASYNC] Rename a project ID with automatic cascading updates to all relation references. Returns task ID.",
-        schema: RenameProjectSchema
-    },
-    host_maintenance: {
-        description: "[HOST ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
-        schema: HostMaintenanceSchema
-    },
-    host_delete_project: {
-        description: "[ASYNC][HOST ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Returns task ID. Irreversible.",
-        schema: HostDeleteSchema
-    },
-    start_meeting: {
-        description: "Start a new meeting session. Creates a dedicated file for the meeting. Returns the meeting ID and details.",
-        schema: StartMeetingSchema
-    },
-    end_meeting: {
-        description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only host can end].",
-        schema: EndMeetingSchema
-    },
-    archive_meeting: {
-        description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only host can archive].",
-        schema: ArchiveMeetingSchema
-    },
-    reopen_meeting: {
-        description: "Reopen a closed or archived meeting. [Open to all participants].",
-        schema: ReopenMeetingSchema
-    },
-    // --- Phase 2: Task Management ---
-    create_task: {
-        description: "[ASYNC] Create a new background task. Returns task ID for polling. Link to meeting for traceability.",
-        schema: CreateTaskSchema
-    },
-    get_task: {
-        description: "[ASYNC] Get the status and progress of a task by ID.",
-        schema: GetTaskSchema
-    },
-    list_tasks: {
-        description: "[ASYNC] List all tasks with optional status filter.",
-        schema: ListTasksSchema
-    },
-    update_task: {
-        description: "[ASYNC][INTERNAL] Update task status, progress, or result. Intended for background workers only - do not call directly from user-facing tools.",
-        schema: UpdateTaskSchema
-    },
-    cancel_task: {
-        description: "[ASYNC] Cancel a pending or running task.",
-        schema: CancelTaskSchema
-    },
-};
+        send_message: {
+            description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",
+            schema: SendMessageSchema
+        },
+        read_messages: {
+            description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global logs.",
+            schema: ReadMessagesSchema
+        },
+        update_global_strategy: {
+            description: "Overwrite master strategy. Content is MANDATORY.",
+            schema: UpdateStrategySchema
+        },
+        sync_global_doc: {
+            description: "Create or update a global document. Returns the document ID.",
+            schema: SyncGlobalDocSchema
+        },
+        update_project: {
+            description: "Partially update a project's manifest. Only provided fields will be updated.",
+            schema: UpdateProjectSchema
+        },
+        rename_project: {
+            description: "[ASYNC] Rename a project ID with automatic cascading updates to all relation references. Returns task ID.",
+            schema: RenameProjectSchema
+        },
+        host_maintenance: {
+            description: "[HOST ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
+            schema: HostMaintenanceSchema
+        },
+        host_delete_project: {
+            description: "[ASYNC][HOST ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Returns task ID. Irreversible.",
+            schema: HostDeleteSchema
+        },
+        start_meeting: {
+            description: "Start a new meeting session. Creates a dedicated file for the meeting. Returns the meeting ID and details.",
+            schema: StartMeetingSchema
+        },
+        end_meeting: {
+            description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only host can end].",
+            schema: EndMeetingSchema
+        },
+        archive_meeting: {
+            description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only host can archive].",
+            schema: ArchiveMeetingSchema
+        },
+        reopen_meeting: {
+            description: "Reopen a closed or archived meeting. [Open to all participants].",
+            schema: ReopenMeetingSchema
+        },
+        // --- Phase 2: Task Management ---
+        create_task: {
+            description: "[ASYNC] Create a new background task. Returns task ID for polling. Link to meeting for traceability.",
+            schema: CreateTaskSchema
+        },
+        get_task: {
+            description: "[ASYNC] Get the status and progress of a task by ID.",
+            schema: GetTaskSchema
+        },
+        list_tasks: {
+            description: "[ASYNC] List all tasks with optional status filter.",
+            schema: ListTasksSchema
+        },
+        update_task: {
+            description: "[ASYNC][INTERNAL] Update task status, progress, or result. Intended for background workers only - do not call directly from user-facing tools.",
+            schema: UpdateTaskSchema
+        },
+        cancel_task: {
+            description: "[ASYNC] Cancel a pending or running task.",
+            schema: CancelTaskSchema
+        },
+    };

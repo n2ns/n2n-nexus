@@ -15,6 +15,7 @@ export interface ToolContext {
     currentProject: string | null;
     setCurrentProject: (id: string) => void;
     notifyResourceUpdate: (uri: string) => void;
+    requestId?: string | number;
 }
 
 
@@ -40,7 +41,8 @@ export async function handleToolCall(
         validatedArgs = toolEntry.schema.parse(toolArgs);
     } catch (e: unknown) {
         const error = e as Error;
-        throw new McpError(ErrorCode.InvalidParams, `Schema validation failed: ${error.message}`);
+        const idPrefix = ctx.requestId ? `[Req:${ctx.requestId}] ` : "";
+        throw new McpError(ErrorCode.InvalidParams, `${idPrefix}Schema validation failed: ${error.message}`);
     }
 
     switch (name) {
@@ -52,6 +54,10 @@ export async function handleToolCall(
 
         case "upload_project_asset":
             return handleUploadAsset(validatedArgs, ctx);
+
+
+        case "search_projects":
+            return handleSearchProjects(validatedArgs);
 
         case "get_global_topology":
             return handleGetTopology(validatedArgs);
@@ -285,6 +291,39 @@ async function handleRenameProject(args: { oldId: string; newId: string }, ctx: 
                 message: "Rename task created.",
                 task_id: task.id,
                 status: "pending"
+            }, null, 2)
+        }]
+    };
+}
+
+async function handleSearchProjects(args: { query: string; limit?: number }) {
+    if (!args.query) throw new McpError(ErrorCode.InvalidParams, "Query is required.");
+    const limit = args.limit || 10;
+
+    const registry = await StorageManager.listRegistry();
+    const query = args.query.toLowerCase();
+
+    // Search in ID, Name, and Description
+    const matches = Object.entries(registry.projects)
+        .filter(([id, p]) =>
+            id.toLowerCase().includes(query) ||
+            (p.name && p.name.toLowerCase().includes(query)) ||
+            (p.summary && p.summary.toLowerCase().includes(query))
+        )
+        .map(([id, p]) => ({
+            id: id,
+            name: p.name || id,
+            description: p.summary
+        }))
+        .slice(0, limit);
+
+    return {
+        content: [{
+            type: "text",
+            text: JSON.stringify({
+                query: args.query,
+                count: matches.length,
+                results: matches
             }, null, 2)
         }]
     };

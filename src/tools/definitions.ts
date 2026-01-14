@@ -110,6 +110,18 @@ const ALL_TOOLS: ToolDefinition[] = [
 
     // --- Global Collaboration ---
     {
+        name: "search_projects",
+        description: "Search project registry by name or description. Use this instead of reading the full registry.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string" },
+                limit: { type: "integer", default: 10 }
+            },
+            required: ["query"]
+        }
+    },
+    {
         name: "get_global_topology",
         description: "Default: project list + stats. With projectId: detailed subgraph.",
         inputSchema: {

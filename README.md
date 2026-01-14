@@ -92,9 +92,9 @@
 ```
 
 - **Zero Config**: Just run `npx @datafrog-io/n2n-nexus` - no `--id` or `--host` required.
-- **Auto Election**: First instance binds port 5688 and becomes Host; others join as Guests.
-- **Cross-Project Sync**: All IDEs share the same Hub, enabling real-time cross-project meetings.
-- **Hot Failover**: If Host disconnects, a Guest automatically promotes within 10 seconds.
+- **Immediate Handshake**: Stdio connects instantly (<10ms) for static requests (`tools/list`), buffering dynamic requests until election completes.
+- **Parallel Election**: Concurrent port scanning ensures Host/Guest resolution in <300ms.
+- **Hot Failover**: If Host disconnects, a Guest automatically promotes itself to Host and others reconnect.
 
 ## 🚀 Quick Start
 

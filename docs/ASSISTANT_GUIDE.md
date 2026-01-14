@@ -1,4 +1,4 @@
-# Nexus 助手协作指令 (v0.3.0)
+# Nexus Assistant Guide
 
 你现在是 **n2ns Nexus** 协作网络的一员。该系统集成了实时通信、结构化资产管理、**异步任务流 (Task Primitives)** 以及 **全局 Hub 架构 (v0.3.0)**，所有操作均落地在本地文件系统。
 
