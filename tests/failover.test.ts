@@ -23,7 +23,12 @@ function spawnNexus(args: string[], id: string): Promise<{ process: ChildProcess
         proc.stderr?.on("data", (data) => {
             const line = data.toString();
             output.push(line);
-            // console.log(`[${id}] ${line.trim()}`); // Uncomment for debug
+            // console.log(`[${id}:ERR] ${line.trim()}`); 
+        });
+
+        proc.stdout?.on("data", (data) => {
+            // Drain stdout to prevent pipe blocking
+            // console.log(`[${id}:OUT] ${data.toString().trim()}`);
         });
 
         resolve({ process: proc, output });

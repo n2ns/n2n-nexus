@@ -27,6 +27,11 @@ function spawnNexus(args: string[], id: string): Promise<{ process: ChildProcess
             // console.log(`[${id}] ${line.trim()}`); // Uncomment for debug
         });
 
+        // Collect stdout (draining to prevent block)
+        proc.stdout?.on("data", (data) => {
+            // Drain
+        });
+
         // Resolve immediately so we can interact with it, 
         // but we attach the output array for checking later.
         resolve({ process: proc, output });

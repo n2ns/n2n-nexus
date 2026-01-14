@@ -86,7 +86,7 @@ export const CONFIG: HubConfig = {
   instanceId: getArg("--id") || projectName,
   isHost: false, // Default to Guest until elected
   rootStorage: rootPath, // Default to local until updated
-  port: 0 // Will be set after election
+  port: parseInt(getArg("--port") || "0")
 };
 
 // Export mutable hostServer container

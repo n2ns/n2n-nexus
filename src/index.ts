@@ -284,7 +284,9 @@ class NexusServer {
 
         // 1. IMMEDIATE: Connect Stdio (Handshake Ready)
         const transport = new StdioServerTransport();
-        await this.server.connect(transport);
+        this.server.connect(transport).catch(err => {
+            this.log(`[Nexus FATAL] Stdio transport failed: ${err}`, "error");
+        });
         this.log(`[Nexus] Stdio Connected (Pending Election)...`);
 
         // 2. Start Election (Parallel)

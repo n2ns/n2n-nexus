@@ -2,6 +2,13 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.4.2] - 2026-01-14
+### 🛡️ 稳定性与自动化 (Stability & Automation)
+- **Lefthook Integration**: 引入高性能 Git 钩子。现在提交时自动运行 `lint`，推送时自动运行 `build + test`，确保零回归。
+- **E2E Test Stability**: 修复了子进程日志阻塞导致的测试挂起问题（通过实现 `stdout` 泄流）。
+- **CLI Port Override**: 修复了 `--port` 命令行参数在 Host 选举过程中被忽略的 Bug。
+- **Non-blocking Handshake**: 优化了 Stdio 连接逻辑，防止其阻塞选举。
+
 ## [0.4.1] - 2026-01-14
 ### ✨ 开发者体验与可观测性 (Developer Experience & Observability)
 - **MCP Logging Protocol**: 实现了标准的 `notifications/message` 协议支持。调试日志现在直接显示在 IDE 的 "Model Context Protocol" 输出频道中。

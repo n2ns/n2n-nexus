@@ -81,9 +81,17 @@ export async function isHostAutoElection(
     _root: string,
     blacklistPorts: number[] = []
 ): Promise<{ isHost: boolean; port: number; server?: http.Server; rootStorage?: string }> {
+    const manualPort = parseInt(getArg("--port") || "0");
+    const myId = getArg("--id") || `node-${Math.random().toString(36).substring(2, 6)}`;
+
+    // 0. Manual Port Priority
+    if (manualPort > 0) {
+        const result = await checkPort(manualPort, myId);
+        if (result) return result;
+    }
+
     const startPort = PORT_RANGE_START;
     const endPort = PORT_RANGE_END;
-    const myId = getArg("--id") || `node-${Math.random().toString(36).substring(2, 6)}`;
 
     // 1. Parallel Scan of first 5 ports (High Probability Zone)
     const BATCH_SIZE = 5;

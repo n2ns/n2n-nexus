@@ -1,6 +1,6 @@
 {
     "name": "@datafrog-io/n2n-nexus",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "description": "Modular MCP Server for multi-AI assistant coordination",
     "main": "build/index.js",
     "type": "module",
@@ -55,6 +55,7 @@
         "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^25.0.3",
         "eslint": "^9.39.2",
+        "lefthook": "^2.0.15",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.51.0",
         "vitest": "^4.0.16"

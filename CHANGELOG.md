@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-01-14
+### 🛡️ Stability & Automation
+- **Lefthook Integration**: Added high-performance Git hooks. Now automatically runs `lint` on commit and `build + test` on push to ensure zero regressions.
+- **E2E Test Stability**: Fixed a critical hang in subprocess logging by implementing `stdout` draining.
+- **CLI Port Override**: Fixed a bug where the `--port` flag was ignored during Host Election.
+- **Non-blocking Handshake**: Optimized Stdio connection to prevent blocking election logic.
+
 ## [0.4.1] - 2026-01-14
 ### ✨ Developer Experience & Observability
 - **MCP Logging Protocol**: Implemented standard `notifications/message` protocol support. Debug logs now appear directly in the IDE's "Model Context Protocol" output channel.
