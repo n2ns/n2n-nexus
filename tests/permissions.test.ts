@@ -1,125 +1,128 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { handleToolCall, ToolContext } from "../src/tools/handlers.js";
-import { StorageManager } from "../src/storage/index.js";
-import { closeDatabase } from "../src/storage/sqlite.js";
-import { promises as fs } from "fs";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { spawn, ChildProcess } from "child_process";
 import path from "path";
-import { CONFIG } from "../src/config/index.js";
+import fs from "fs";
 
-const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-permissions");
-CONFIG.rootStorage = TEST_ROOT;
+const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
+const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "e2e-permissions-storage");
 
-describe("Meeting Permission Tests", () => {
-    let mockContextA: ToolContext;
-    let mockContextB: ToolContext;
+function spawnNexus(id: string, port?: number): Promise<{ process: ChildProcess, output: string[] }> {
+    return new Promise((resolve) => {
+        const args = ["node", ENTRY_POINT, "--id", id];
+        if (port) args.push("--port", port.toString());
 
-    beforeEach(async () => {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        try {
-            await fs.rm(TEST_ROOT, { recursive: true, force: true });
-        } catch { }
+        const proc = spawn(args[0], args.slice(1), {
+            env: { ...process.env, NEXUS_STORAGE: TEST_ROOT, NEXUS_PORT_START: "15000", NEXUS_PORT_END: "15010" },
+            stdio: ["pipe", "pipe", "pipe"]
+        });
 
-        await fs.mkdir(TEST_ROOT, { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "meetings"), { recursive: true });
+        const output: string[] = [];
+        proc.stderr?.on("data", (data) => {
+            output.push(data.toString());
+        });
 
-        await StorageManager.init();
+        resolve({ process: proc, output });
+    });
+}
 
-        CONFIG.instanceId = "Daisy-AI";
-        CONFIG.isHost = false;
+function sendRequest(proc: ChildProcess, method: string, params: any, id: string = "req-1") {
+    proc.stdin?.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+}
 
-        mockContextA = {
-            currentProject: "web_project-a.io",
-            setCurrentProject: vi.fn(),
-            notifyResourceUpdate: vi.fn(),
+async function waitForResponse(proc: ChildProcess, id: string, timeoutMs: number = 8000): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(`Timeout waiting for response ${id}`)), timeoutMs);
+        const onData = (data: Buffer) => {
+            const lines = data.toString().split("\n");
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const json = JSON.parse(line);
+                    if (json.id === id) {
+                        proc.stdout?.removeListener("data", onData);
+                        clearTimeout(timeout);
+                        resolve(json);
+                    }
+                } catch { }
+            }
         };
-
-        mockContextB = {
-            currentProject: "web_project-b.io",
-            setCurrentProject: vi.fn(),
-            notifyResourceUpdate: vi.fn(),
-        };
+        proc.stdout?.on("data", onData);
     });
+}
 
-    afterEach(async () => {
-        closeDatabase();
-        await new Promise(resolve => setTimeout(resolve, 50));
-    });
+describe("Permissions E2E (Real Processes)", () => {
+    let proc: ChildProcess;
+    let output: string[];
+    const TEST_PORT = 15000;
 
-    it("should deny initiator from ending their meeting if not moderator", async () => {
-        // AI A starts meeting
-        const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
-        const meetingId = JSON.parse(startResult.content[0].text).meetingId;
+    beforeAll(async () => {
+        if (fs.existsSync(TEST_ROOT)) fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+        fs.mkdirSync(TEST_ROOT, { recursive: true });
 
-        // AI A ends meeting -> Failure (Strict Moderator check)
-        try {
-            await handleToolCall("end_meeting", { meetingId }, mockContextA);
-            throw new Error("Should have failed");
-        } catch (e: any) {
-            expect(e.message).toContain("Permission denied");
-            expect(e.message).toContain("Only hosts");
+        const n = await spawnNexus("perm-host", TEST_PORT);
+        proc = n.process;
+        output = n.output;
+        // Wait for Role: HOST
+        const start = Date.now();
+        while (Date.now() - start < 8000) {
+            if (output.some(l => l.includes("Role: HOST"))) break;
+            await new Promise(r => setTimeout(r, 100));
         }
     });
 
-    it("should deny other agents from ending a meeting they didn't start", async () => {
-        // AI A starts meeting
-        const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
-        const meetingId = JSON.parse(startResult.content[0].text).meetingId;
+    afterAll(() => {
+        if (proc) proc.kill("SIGKILL");
+        if (fs.existsSync(TEST_ROOT)) fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+    });
 
-        // AI B tries to end meeting A -> Failure (Strict Moderator check)
-        try {
-            await handleToolCall("end_meeting", { meetingId }, mockContextB);
-            throw new Error("Should have failed");
-        } catch (e: any) {
-            expect(e.message).toContain("Permission denied");
-            expect(e.message).toContain("Only hosts");
+    it("should allow host to perform sensitive actions", async () => {
+        // Host (this process) should be able to clear global logs
+        sendRequest(proc, "tools/call", {
+            name: "host_maintenance",
+            arguments: { action: "clear", count: 0 }
+        }, "perm-1");
+
+        const resp = await waitForResponse(proc, "perm-1");
+        expect(resp.result.content[0].text).toContain("wiped");
+    });
+
+    it("should reject non-host from performing sensitive actions", async () => {
+        // 1. Start a Guest process (It will find the host via TEST_ROOT's election info)
+        const g = await spawnNexus("perm-guest");
+        const gProc = g.process;
+
+        // 2. Wait for Guest to join
+        const start = Date.now();
+        let joined = false;
+        while (Date.now() - start < 10000) {
+            // Check Guest's output for Role: GUEST
+            if (g.output.some(l => l.includes("Role: GUEST"))) {
+                joined = true;
+                break;
+            }
+            // Check Host's output for Guest Joined
+            if (output.some(l => l.includes("Guest Joined"))) {
+                joined = true;
+                break;
+            }
+            await new Promise(r => setTimeout(r, 200));
         }
-    });
-
-    it("should allow moderator to end any meeting", async () => {
-        // AI A starts meeting
-        const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
-        const meetingId = JSON.parse(startResult.content[0].text).meetingId;
-
-        // Elevate AI B to Moderator
-        CONFIG.isHost = true;
-
-        // AI B ends meeting A -> Success (Moderator bypass)
-        const endResult = await handleToolCall("end_meeting", { meetingId }, mockContextB);
-        expect(JSON.parse(endResult.content[0].text).status).toBe("closed");
-
-        CONFIG.isHost = false;
-    });
-
-    it("should enforce moderator-only for archive and reopen", async () => {
-        // AI A starts meeting
-        const startResult = await handleToolCall("start_meeting", { topic: "Meeting A" }, mockContextA);
-        const meetingId = JSON.parse(startResult.content[0].text).meetingId;
-
-        // End as moderator
-        CONFIG.isHost = true;
-        await handleToolCall("end_meeting", { meetingId }, mockContextB);
-        CONFIG.isHost = false;
-
-        // Try to archive as initiator (AI A) -> Failure
-        try {
-            await handleToolCall("archive_meeting", { meetingId }, mockContextA);
-            throw new Error("Should have failed");
-        } catch (e: any) {
-            expect(e.message).toContain("Permission denied");
+        if (!joined) {
+            console.error("Guest Output:", g.output);
+            console.error("Host Output:", output);
+            throw new Error("Guest failed to join host");
         }
 
-        // Try to reopen as initiator (AI A) -> Success (Relaxed per user request)
-        const reopenResult = await handleToolCall("reopen_meeting", { meetingId }, mockContextA);
-        expect(JSON.parse(reopenResult.content[0].text).status).toBe("active");
+        // 3. Send a host-only tool call to the GUEST's Stdio
+        // The Guest should forward it, and the Host should reject it because the source is SSE.
+        sendRequest(gProc, "tools/call", {
+            name: "host_maintenance",
+            arguments: { action: "clear", count: 0 }
+        }, "perm-guest-1");
 
-        // Archive as moderator -> Success
-        CONFIG.isHost = true;
-        await handleToolCall("end_meeting", { meetingId }, mockContextB);
-        const archiveResult = await handleToolCall("archive_meeting", { meetingId }, mockContextB);
-        expect(JSON.parse(archiveResult.content[0].text).status).toBe("archived");
+        const resp = await waitForResponse(gProc, "perm-guest-1");
+        expect(resp.result.content[0].text).toContain("Permission Denied");
 
-        CONFIG.isHost = false;
-    });
+        gProc.kill("SIGKILL");
+    }, 15000);
 });

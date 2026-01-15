@@ -95,6 +95,7 @@ export async function startHost(
 
     // Support local stdio for the host's own IDE
     const stdioTransport = new StdioServerTransport();
+    (stdioTransport as any)._isStdio = true;
     await mcpServer.connect(stdioTransport);
 
     const onlineMsg = `Nexus Hub Active. Playing Host.`;

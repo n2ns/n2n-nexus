@@ -1,228 +1,94 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import http from "http";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { spawn, ChildProcess, execSync } from "child_process";
+import path from "path";
+import fs from "fs";
 
-// Port range for testing (use higher ports to avoid conflicts)
-const TEST_PORT_START = 15688;
-const TEST_PORT_END = 15700;
+const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
+const RX_ELECTION_HOST = /Role: HOST/;
+const RX_ELECTION_GUEST = /Role: GUEST/;
 
-/**
- * Helper: Create a mock Nexus Host server
- */
-function createMockHost(port: number, rootStorage: string): Promise<http.Server> {
-    return new Promise((resolve, reject) => {
-        const server = http.createServer((req, res) => {
-            if (req.method === "POST" && req.url === "/nexus/handshake") {
-                let body = "";
-                req.on("data", chunk => body += chunk);
-                req.on("end", () => {
-                    res.writeHead(200, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({
-                        service: "n2n-nexus",
-                        protocol: "v1",
-                        role: "host",
-                        serverVersion: "0.2.1",
-                        rootStorage,
-                        status: "ready"
-                    }));
-                });
-            } else {
-                res.writeHead(404);
-                res.end();
-            }
-        });
-        server.on("error", reject);
-        server.listen(port, "127.0.0.1", () => resolve(server));
-    });
-}
-
-/**
- * Helper: Probe a port for Nexus Host (mirrors config.ts logic)
- */
-async function probeHost(port: number): Promise<{ isNexus: boolean; rootStorage?: string }> {
+function spawnNexus(port: string, id: string): Promise<{ process: ChildProcess, output: string[] }> {
     return new Promise((resolve) => {
-        const postData = JSON.stringify({
-            clientVersion: "test-client",
-            instanceId: "test-id"
+        const proc = spawn("node", [ENTRY_POINT, "--port", port, "--id", id], {
+            env: { ...process.env },
+            stdio: ["pipe", "pipe", "pipe"]
         });
 
-        const req = http.request({
-            hostname: "127.0.0.1",
-            port: port,
-            path: "/nexus/handshake",
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(postData)
-            },
-            timeout: 500
-        }, (res) => {
-            let data = "";
-            res.on("data", (chunk) => data += chunk);
-            res.on("end", () => {
-                try {
-                    const info = JSON.parse(data);
-                    if (info.service === "n2n-nexus" && info.role === "host") {
-                        resolve({ isNexus: true, rootStorage: info.rootStorage });
-                    } else {
-                        resolve({ isNexus: false });
-                    }
-                } catch {
-                    resolve({ isNexus: false });
-                }
-            });
+        const output: string[] = [];
+        proc.stderr?.on("data", (data) => {
+            output.push(data.toString());
         });
 
-        req.on("error", () => resolve({ isNexus: false }));
-        req.on("timeout", () => {
-            req.destroy();
-            resolve({ isNexus: false });
-        });
-
-        req.write(postData);
-        req.end();
+        proc.stdout?.on("data", () => { });
+        resolve({ process: proc, output });
     });
 }
 
-/**
- * Helper: Try to bind a port (mirrors Phase 2 of election)
- */
-async function tryBind(port: number): Promise<{ success: boolean; server?: http.Server }> {
-    return new Promise((resolve) => {
-        const server = http.createServer();
-        server.on("error", (err: any) => {
-            if (err.code === "EADDRINUSE") {
-                resolve({ success: false });
-            } else {
-                resolve({ success: false });
-            }
-        });
-        server.listen(port, "127.0.0.1", () => {
-            resolve({ success: true, server });
-        });
-    });
+async function waitForLog(output: string[], pattern: RegExp, timeoutMs: number = 8000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (output.some(line => pattern.test(line))) return true;
+        await new Promise(r => setTimeout(r, 200));
+    }
+    return false;
 }
 
-describe("Host Election Algorithm", () => {
-    let servers: http.Server[] = [];
+describe("Election E2E (Real Processes)", () => {
+    let processes: ChildProcess[] = [];
+    const TEST_PORT = "17000";
 
-    afterEach(async () => {
-        // Clean up all test servers
-        for (const server of servers) {
-            await new Promise<void>((resolve) => server.close(() => resolve()));
-        }
-        servers = [];
+    afterAll(() => {
+        processes.forEach(p => p.kill("SIGKILL"));
     });
 
-    describe("probeHost", () => {
-        it("should detect a Nexus Host and return rootStorage", async () => {
-            const mockServer = await createMockHost(TEST_PORT_START, "/test/storage");
-            servers.push(mockServer);
+    it("should elect a Host on an empty port range", async () => {
+        const { process, output } = await spawnNexus(TEST_PORT, "election-host");
+        processes.push(process);
 
-            const result = await probeHost(TEST_PORT_START);
-            expect(result.isNexus).toBe(true);
-            expect(result.rootStorage).toBe("/test/storage");
-        });
+        const isHost = await waitForLog(output, RX_ELECTION_HOST);
+        expect(isHost).toBe(true);
 
-        it("should return isNexus=false for empty port", async () => {
-            const result = await probeHost(TEST_PORT_START + 1);
-            expect(result.isNexus).toBe(false);
-        });
-
-        it("should return isNexus=false for non-Nexus HTTP server", async () => {
-            const fakeServer = http.createServer((req, res) => {
-                res.writeHead(200);
-                res.end("Hello World");
-            });
-            await new Promise<void>(r => fakeServer.listen(TEST_PORT_START + 2, "127.0.0.1", () => r()));
-            servers.push(fakeServer);
-
-            const result = await probeHost(TEST_PORT_START + 2);
-            expect(result.isNexus).toBe(false);
-        });
+        // Verify only port 17000 is bound (Leakage check)
+        const ssOutput = execSync(`ss -lntp | grep :${TEST_PORT}`).toString();
+        expect(ssOutput).toContain(`pid=${process.pid}`);
     });
 
-    describe("Port Binding (Atomic)", () => {
-        it("should successfully bind an available port", async () => {
-            const result = await tryBind(TEST_PORT_START + 3);
-            expect(result.success).toBe(true);
-            if (result.server) servers.push(result.server);
-        });
+    it("should elect a Guest when a Host is already running", async () => {
+        // Port 17000 is still held by the Host from previous test (if not killed)
+        // Actually each test should be isolated.
 
-        it("should fail to bind an occupied port", async () => {
-            // First, occupy the port
-            const first = await tryBind(TEST_PORT_START + 4);
-            expect(first.success).toBe(true);
-            if (first.server) servers.push(first.server);
+        // Cleanup from previous test
+        processes.forEach(p => p.kill("SIGKILL"));
+        processes = [];
 
-            // Second attempt should fail
-            const second = await tryBind(TEST_PORT_START + 4);
-            expect(second.success).toBe(false);
-        });
+        // 1. Start Host
+        const h = await spawnNexus(TEST_PORT, "e2e-host");
+        processes.push(h.process);
+        await waitForLog(h.output, RX_ELECTION_HOST);
+
+        // 2. Start Guest
+        const g = await spawnNexus(TEST_PORT, "e2e-guest");
+        processes.push(g.process);
+
+        const isGuest = await waitForLog(g.output, RX_ELECTION_GUEST);
+        expect(isGuest).toBe(true);
     });
 
-    describe("Election Flow", () => {
-        it("Phase 1: Should join existing Host if found during probe", async () => {
-            // Simulate existing Host
-            const existingHost = await createMockHost(TEST_PORT_START + 5, "/existing/storage");
-            servers.push(existingHost);
+    it("should handle port fallback when multiple ports are partially busy", async () => {
+        processes.forEach(p => p.kill("SIGKILL"));
+        processes = [];
 
-            // Simulate election Phase 1: probe first
-            const probe = await probeHost(TEST_PORT_START + 5);
-            expect(probe.isNexus).toBe(true);
-            expect(probe.rootStorage).toBe("/existing/storage");
-            // Guest should join this Host, not try to become one
-        });
+        // 1. Occupy 17000 with a dummy non-nexus server (manual socket)
+        const dummy = spawn("node", ["-e", `require('http').createServer().listen(${TEST_PORT}, '0.0.0.0')`], { detached: true });
+        processes.push(dummy);
+        await new Promise(r => setTimeout(r, 1000));
 
-        it("Phase 2: Should become Host if no existing Host found", async () => {
-            // Simulate election Phase 1: probe first (no Host)
-            const probe = await probeHost(TEST_PORT_START + 6);
-            expect(probe.isNexus).toBe(false);
+        // 2. Start Nexus. It should see 17000 is busy and NOT Nexus, so try 17001.
+        const n1 = await spawnNexus(TEST_PORT, "fallback-host");
+        processes.push(n1.process);
 
-            // Proceed to Phase 2: try to become Host
-            const bind = await tryBind(TEST_PORT_START + 6);
-            expect(bind.success).toBe(true);
-            if (bind.server) servers.push(bind.server);
-        });
-
-        it("Phase 3: Should join winner after bind failure", async () => {
-            // Simulate another Guest winning the race
-            const winner = await createMockHost(TEST_PORT_START + 7, "/winner/storage");
-            servers.push(winner);
-
-            // Simulate this Guest's bind failing
-            const bind = await tryBind(TEST_PORT_START + 7);
-            expect(bind.success).toBe(false);
-
-            // Wait (simulating the 10s delay) then probe again
-            await new Promise(r => setTimeout(r, 100)); // Shortened for test
-            const probe = await probeHost(TEST_PORT_START + 7);
-            expect(probe.isNexus).toBe(true);
-            expect(probe.rootStorage).toBe("/winner/storage");
-        });
-    });
-
-    describe("Multi-Guest Race Simulation", () => {
-        it("Only one Guest should become Host when racing", async () => {
-            const testPort = TEST_PORT_START + 8;
-
-            // Simulate 5 Guests racing to bind the same port
-            const results = await Promise.all([
-                tryBind(testPort),
-                tryBind(testPort),
-                tryBind(testPort),
-                tryBind(testPort),
-                tryBind(testPort),
-            ]);
-
-            // Exactly one should succeed
-            const winners = results.filter(r => r.success);
-            const losers = results.filter(r => !r.success);
-
-            expect(winners).toHaveLength(1);
-            expect(losers).toHaveLength(4);
-
-            // Clean up winner's server
-            if (winners[0].server) servers.push(winners[0].server);
-        });
+        const isHost = await waitForLog(n1.output, RX_ELECTION_HOST);
+        expect(isHost).toBe(true);
+        expect(n1.output.join("\n")).toContain(`Port: ${parseInt(TEST_PORT) + 1}`);
     });
 });

@@ -90,8 +90,8 @@ export async function isHostAutoElection(
         if (result) return result;
     }
 
-    const startPort = PORT_RANGE_START;
-    const endPort = PORT_RANGE_END;
+    const startPort = parseInt(process.env.NEXUS_PORT_START || "") || PORT_RANGE_START;
+    const endPort = parseInt(process.env.NEXUS_PORT_END || "") || PORT_RANGE_END;
 
     // 1. Parallel Scan of first 5 ports (High Probability Zone)
     const BATCH_SIZE = 5;
@@ -107,16 +107,25 @@ export async function isHostAutoElection(
         // Wait for all checks to complete, then pick the first valid result (Win-Win)
         const results = await Promise.all(checks);
 
-        // Priority: Prefer Host (Bind Success) over Guest (Existing Nexus) if both happen?
-        // Actually, 'checkPort' tries Bind FIRST, then Handshake.
-        // So if we get a result from checkPort, it's a definitive state for that port.
-        // We pick the first non-null result based on port order (implicitly by array index if we iterated, but here we scan).
+        // 1.1. Determine the winner (first non-null result based on port order)
         const winner = results.find(r => r !== null);
+
+        // 1.2. CLEANUP: Close all other successfully bound servers that were NOT selected
+        for (const res of results) {
+            if (res && res.isHost && res.server && res !== winner) {
+                try {
+                    res.server.close();
+                } catch (e) {
+                    // Ignore close errors for redundant servers
+                }
+            }
+        }
 
         if (winner) {
             return winner;
         }
-    } catch {
+    } catch (e) {
+        console.error("[Nexus] Parallel scan error:", e);
         // Continue to sequential
     }
 

@@ -7,5 +7,6 @@
 import { TOOL_DEFINITIONS, ALL_TOOL_DEFINITIONS, ToolDefinition } from "./definitions.js";
 
 export { TOOL_DEFINITIONS, ALL_TOOL_DEFINITIONS, ToolDefinition };
-export { handleToolCall, ToolContext } from "./handlers.js";
+export { handleToolCall } from "./handlers.js";
+export { ToolContext } from "../types.js";
 export { TOOL_REGISTRY } from "./schemas.js";

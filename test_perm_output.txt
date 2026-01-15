@@ -1,0 +1,44 @@
+
+ RUN  v4.0.16 /home/deploy/projects/n2n-nexus
+
+ ❯ tests/permissions.test.ts (2 tests | 2 failed) 10030ms
+     × should allow host to perform sensitive actions 9ms
+     × should reject non-host from performing sensitive actions 5002ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/permissions.test.ts > Permissions E2E (Real Processes) > should allow host to perform sensitive actions
+AssertionError: expected '[Permission Denied] Instance Role Err…' to contain 'wiped'
+
+Expected: [32m"wiped"[39m
+Received: [31m"[Permission Denied] Instance Role Error: This instance is not a HOST and cannot run 'host_maintenance'."[39m
+
+ ❯ tests/permissions.test.ts:80:45
+     78| 
+     79|         const resp = await waitForResponse(proc, "perm-1");
+     80|         expect(resp.result.content[0].text).toContain("wiped");
+       |                                             ^
+     81|     });
+     82| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/permissions.test.ts > Permissions E2E (Real Processes) > should reject non-host from performing sensitive actions
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/permissions.test.ts:83:5
+     81|     });
+     82| 
+     83|     it("should reject non-host from performing sensitive actions", asy…
+       |     ^
+     84|         // To test this, we'd normally need a Guest process.
+     85|         // But we can also test by sending a request without Host priv…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  18:46:38
+   Duration  10.16s (transform 28ms, setup 0ms, import 37ms, tests 10.03s, environment 0ms)
+

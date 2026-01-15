@@ -1,24 +1,24 @@
 import { promises as fs } from "fs";
-import path from "path";
 import { CONFIG } from "../config/index.js";
-import { DiscussionMessage, ProjectManifest, Registry } from "../types.js";
-import { AsyncMutex } from "../utils/async-mutex.js";
+import { ProjectManifest } from "../types.js";
 import { FILE_ENCODING } from "../constants.js";
 
+import { NexusPaths } from "./paths.js";
+import { RegistryStorage } from "./registry.js";
+import { ProjectStorage } from "./projects.js";
+import { LogStorage } from "./logs.js";
+import { DocStorage } from "./docs.js";
+
 export class StorageManager {
-    // --- Concurrency Control ---
-    private static discussionLock = new AsyncMutex();
-    private static registryLock = new AsyncMutex();
-    // --- Path Definitions ---
-    static get globalDir() { return path.join(CONFIG.rootStorage, "global"); }
-    static get globalBlueprint() { return path.join(this.globalDir, "blueprint.md"); }
-    static get globalDiscussion() { return path.join(this.globalDir, "discussion.json"); }
-
-    static get projectsRoot() { return path.join(CONFIG.rootStorage, "projects"); }
-    static get registryFile() { return path.join(CONFIG.rootStorage, "registry.json"); }
-    static get archivesDir() { return path.join(CONFIG.rootStorage, "archives"); }
-
     private static initialized = false;
+
+    // --- Path Proxies (Backward Compatibility) ---
+    static get globalDir() { return NexusPaths.globalDir; }
+    static get globalBlueprint() { return NexusPaths.globalBlueprint; }
+    static get globalDiscussion() { return NexusPaths.globalDiscussion; }
+    static get projectsRoot() { return NexusPaths.projectsRoot; }
+    static get registryFile() { return NexusPaths.registryFile; }
+    static get archivesDir() { return NexusPaths.archivesDir; }
 
     static async init() {
         if (this.initialized) return;
@@ -36,13 +36,12 @@ export class StorageManager {
             await fs.writeFile(this.globalBlueprint, "# Global Coordination Blueprint\n\nShared meeting space.");
         }
 
-        // Initialize Phase 2 Tasks table (SQLite) - uses dynamic import to avoid circular dependency
+        await DocStorage.init();
+
         try {
             const { initTasksTable } = await import("./tasks.js");
             initTasksTable();
-        } catch {
-            // SQLite may not be available or database not ready - will be initialized on first use
-        }
+        } catch { }
 
         this.initialized = true;
     }
@@ -51,11 +50,6 @@ export class StorageManager {
         this.initialized = false;
     }
 
-    /**
-     * Proactively reads and validates JSON. 
-     * If file is missing, empty, or corrupted (encoding/syntax), 
-     * it REPAIRS the file with default content.
-     */
     private static async loadJsonSafe<T>(filePath: string, defaultValue: T): Promise<T> {
         try {
             if (!await this.exists(filePath)) {
@@ -63,11 +57,9 @@ export class StorageManager {
                 return defaultValue;
             }
             const content = await fs.readFile(filePath, FILE_ENCODING);
-            const cleanContent = content.replace(/^\uFEFF/, '').trim();
-            if (!cleanContent) throw new Error("Empty file");
-            return JSON.parse(cleanContent);
+            return JSON.parse(content.replace(/^\uFEFF/, '').trim());
         } catch (e) {
-            console.warn(`[Nexus Storage] Repairing corrupted file: ${filePath}. Error: ${(e as Error).message}`);
+            console.warn(`[Nexus Storage] Repairing corrupted file: ${filePath}`);
             await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), FILE_ENCODING);
             return defaultValue;
         }
@@ -77,337 +69,29 @@ export class StorageManager {
         try { await fs.access(p); return true; } catch { return false; }
     }
 
-    // --- Asset & Registry Management ---
-    static async getProjectManifest(id: string): Promise<ProjectManifest | null> {
-        if (!id) return null;
-        const p = path.join(this.projectsRoot, id, "manifest.json");
-        if (!await this.exists(p)) return null;
-        return JSON.parse(await fs.readFile(p, FILE_ENCODING));
-    }
+    // --- Registry Methods ---
+    static listRegistry() { return RegistryStorage.listRegistry(); }
+    static getProjectManifest(id: string) { return RegistryStorage.getProjectManifest(id); }
+    static saveProjectManifest(manifest: ProjectManifest) { return RegistryStorage.saveProjectManifest(manifest); }
+    static patchProjectManifest(id: string, patch: Partial<ProjectManifest>) { return RegistryStorage.patchProjectManifest(id, patch); }
+    static calculateTopology(projectId?: string) { return RegistryStorage.calculateTopology(projectId); }
 
-    /**
-     * Save a project manifest and update the global registry.
-     * Uses mutex lock to prevent concurrent registry write conflicts.
-     */
-    static async saveProjectManifest(manifest: ProjectManifest) {
-        const id = manifest.id;
-        if (!id) throw new Error("Manifest ID is missing.");
+    // --- Project Methods ---
+    static getProjectDocs(id: string) { return ProjectStorage.getProjectDocs(id); }
+    static saveProjectDocs(id: string, content: string) { return ProjectStorage.saveProjectDocs(id, content); }
+    static saveAsset(id: string, fileName: string, content: string | Buffer) { return ProjectStorage.saveAsset(id, fileName, content); }
+    static deleteProject(id: string) { return ProjectStorage.deleteProject(id); }
+    static renameProject(oldId: string, newId: string) { return ProjectStorage.renameProject(oldId, newId); }
 
-        const projectDir = path.join(this.projectsRoot, id);
-        await fs.mkdir(projectDir, { recursive: true });
-        await fs.writeFile(path.join(projectDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+    // --- Log Methods ---
+    static addGlobalLog(from: string, text: string, category?: any) { return LogStorage.addLog(from, text, category); }
+    static getRecentLogs(count: number = 10) { return LogStorage.getLogs(count); }
+    static pruneGlobalLogs(count: number) { return LogStorage.pruneLogs(count); }
+    static clearGlobalLogs() { return LogStorage.clearLogs(); }
 
-        // Update global registry with lock
-        await this.registryLock.withLock(async () => {
-            const registry = await this.listRegistry();
-            registry.projects[id] = {
-                name: manifest.name,
-                summary: manifest.description,
-                lastActive: new Date().toISOString()
-            };
-            await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2));
-        });
-    }
-
-    static async saveAsset(id: string, fileName: string, content: string | Buffer) {
-        if (!id || !fileName) throw new Error("ID or FileName is missing for asset storage.");
-        const assetDir = path.join(this.projectsRoot, id, "assets");
-        await fs.mkdir(assetDir, { recursive: true });
-        await fs.writeFile(path.join(assetDir, fileName), content);
-        return path.join("projects", id, "assets", fileName);
-    }
-
-    /**
-     * Calculate project dependency topology.
-     * 
-     * Context7-style progressive loading:
-     * - Default: Returns summary (project list + stats) - lightweight
-     * - With projectId: Returns detailed subgraph for that project
-     */
-    static async calculateTopology(projectId?: string) {
-        const registry = await this.listRegistry();
-        const projectIds = Object.keys(registry.projects);
-
-        // Collect manifests
-        const manifests = new Map<string, ProjectManifest>();
-        let totalEdges = 0;
-        for (const id of projectIds) {
-            const manifest = await this.getProjectManifest(id);
-            if (manifest) {
-                manifests.set(id, manifest);
-                totalEdges += (manifest.relations || []).length;
-            }
-        }
-
-        // === FOCUSED MODE: Return detailed subgraph ===
-        if (projectId) {
-            const targetManifest = manifests.get(projectId);
-            if (!targetManifest) {
-                return { mode: "focused", projectId, error: "Project not found", nodes: [], edges: [] };
-            }
-
-            const nodes: Array<{ id: string; name: string }> = [];
-            const edges: Array<{ from: string; to: string; type: string }> = [];
-
-            // Add target node
-            nodes.push({ id: projectId, name: targetManifest.name });
-
-            // Outgoing relations
-            const connectedIds = new Set<string>();
-            (targetManifest.relations || []).forEach(rel => {
-                edges.push({ from: projectId, to: rel.targetId, type: rel.type });
-                connectedIds.add(rel.targetId);
-            });
-
-            // Incoming relations
-            for (const [id, manifest] of manifests) {
-                if (id === projectId) continue;
-                (manifest.relations || []).forEach(rel => {
-                    if (rel.targetId === projectId) {
-                        edges.push({ from: id, to: projectId, type: rel.type });
-                        connectedIds.add(id);
-                    }
-                });
-            }
-
-            // Add connected nodes
-            for (const id of connectedIds) {
-                const m = manifests.get(id);
-                if (m) nodes.push({ id, name: m.name });
-            }
-
-            return { mode: "focused", projectId, nodes, edges };
-        }
-
-        // === LIST MODE: Return lightweight summary ===
-        const projects = Array.from(manifests.entries()).map(([id, m]) => ({
-            id,
-            name: m.name,
-            relationsCount: (m.relations || []).length
-        }));
-
-        return {
-            mode: "list",
-            summary: {
-                totalProjects: projects.length,
-                totalEdges,
-                hint: "Call with projectId to get detailed subgraph"
-            },
-            projects
-        };
-    }
-
-    // --- Discussion & Log Management ---
-    /**
-     * Add a message to the global discussion log.
-     * Uses mutex lock to prevent concurrent write conflicts.
-     */
-    static async addGlobalLog(from: string, text: string, category?: DiscussionMessage["category"]) {
-        await this.discussionLock.withLock(async () => {
-            const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-            logs.push({
-                timestamp: new Date().toISOString(),
-                from,
-                text,
-                category
-            });
-            await fs.writeFile(this.globalDiscussion, JSON.stringify(logs, null, 2));
-        });
-    }
-
-    static async getRecentLogs(count: number = 10): Promise<DiscussionMessage[]> {
-        const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-        return logs.slice(-count);
-    }
-
-    static async getProjectDocs(id: string) {
-        if (!id) return null;
-        const p = path.join(this.projectsRoot, id, "internal_blueprint.md");
-        return (await this.exists(p)) ? await fs.readFile(p, FILE_ENCODING) : null;
-    }
-
-    static async saveProjectDocs(id: string, content: string) {
-        if (!id) throw new Error("Project ID is missing for documentation storage.");
-        const projectDir = path.join(this.projectsRoot, id);
-        await fs.mkdir(projectDir, { recursive: true });
-        await fs.writeFile(path.join(projectDir, "internal_blueprint.md"), content);
-    }
-
-    static async listRegistry(): Promise<Registry> {
-        return this.loadJsonSafe<Registry>(this.registryFile, { projects: {} });
-    }
-
-    /**
-     * Prune global logs, keeping only messages after the specified count.
-     * Uses mutex lock to prevent concurrent write conflicts.
-     */
-    static async pruneGlobalLogs(count: number) {
-        await this.discussionLock.withLock(async () => {
-            const logs = await this.loadJsonSafe<DiscussionMessage[]>(this.globalDiscussion, []);
-            await fs.writeFile(this.globalDiscussion, JSON.stringify(logs.slice(count), null, 2));
-        });
-    }
-
-    /**
-     * Clear all global logs.
-     * Uses mutex lock to prevent concurrent write conflicts.
-     */
-    static async clearGlobalLogs() {
-        await this.discussionLock.withLock(async () => {
-            await fs.writeFile(this.globalDiscussion, "[]");
-        });
-    }
-
-    // --- Global Document Management ---
-    static get globalDocsDir() { return path.join(this.globalDir, "docs"); }
-    static get globalDocIndexFile() { return path.join(this.globalDir, "docs_index.json"); }
-
-    static async initGlobalDocs() {
-        await fs.mkdir(this.globalDocsDir, { recursive: true });
-        await this.loadJsonSafe(this.globalDocIndexFile, {});
-    }
-
-    static async listGlobalDocs(): Promise<import("../types.js").GlobalDocIndex> {
-        await this.initGlobalDocs();
-        return this.loadJsonSafe(this.globalDocIndexFile, {});
-    }
-
-    static async saveGlobalDoc(docId: string, title: string, content: string, updatedBy: string): Promise<void> {
-        if (!docId) throw new Error("Document ID is required.");
-        // Validate docId format (no slashes, no ..)
-        if (docId.includes("/") || docId.includes("\\") || docId.includes("..")) {
-            throw new Error("Document ID cannot contain '/', '\\' or '..'.");
-        }
-        await this.initGlobalDocs();
-
-        // Save document file
-        const docPath = path.join(this.globalDocsDir, `${docId}.md`);
-        await fs.writeFile(docPath, content, FILE_ENCODING);
-
-        // Update index
-        const index = await this.listGlobalDocs();
-        index[docId] = {
-            title,
-            lastUpdated: new Date().toISOString(),
-            updatedBy
-        };
-        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), FILE_ENCODING);
-    }
-
-    static async getGlobalDoc(docId: string): Promise<string | null> {
-        if (!docId) return null;
-        const docPath = path.join(this.globalDocsDir, `${docId}.md`);
-        return (await this.exists(docPath)) ? await fs.readFile(docPath, FILE_ENCODING) : null;
-    }
-
-    static async deleteGlobalDoc(docId: string): Promise<boolean> {
-        if (!docId) return false;
-        const docPath = path.join(this.globalDocsDir, `${docId}.md`);
-        if (!await this.exists(docPath)) return false;
-
-        await fs.unlink(docPath);
-
-        // Update index
-        const index = await this.listGlobalDocs();
-        delete index[docId];
-        await fs.writeFile(this.globalDocIndexFile, JSON.stringify(index, null, 2), FILE_ENCODING);
-        return true;
-    }
-
-    /**
-     * Patch (partial update) a project manifest.
-     * Only updates fields present in the patch object.
-     */
-    static async patchProjectManifest(id: string, patch: Partial<ProjectManifest>): Promise<ProjectManifest> {
-        const existing = await this.getProjectManifest(id);
-        if (!existing) throw new Error(`Project '${id}' does not exist.`);
-
-        // Merge patch into existing (shallow merge for top-level fields)
-        const updated: ProjectManifest = { ...existing, ...patch, id }; // ID cannot be changed via patch
-        updated.lastUpdated = new Date().toISOString();
-
-        await this.saveProjectManifest(updated);
-        return updated;
-    }
-
-    /**
-     * Rename a project ID with cascading updates to all relations.
-     * @returns Number of other projects updated with new reference.
-     */
-    static async renameProject(oldId: string, newId: string): Promise<number> {
-        if (!oldId || !newId) throw new Error("Both oldId and newId are required.");
-        if (oldId === newId) throw new Error("Old and new IDs are identical.");
-
-        const oldDir = path.join(this.projectsRoot, oldId);
-        const newDir = path.join(this.projectsRoot, newId);
-
-        if (!await this.exists(oldDir)) throw new Error(`Project '${oldId}' does not exist.`);
-        if (await this.exists(newDir)) throw new Error(`Project '${newId}' already exists.`);
-
-        // 1. Rename directory
-        await fs.rename(oldDir, newDir);
-
-        // 2. Update manifest.id inside the project
-        const manifestPath = path.join(newDir, "manifest.json");
-        if (await this.exists(manifestPath)) {
-            const manifest = JSON.parse(await fs.readFile(manifestPath, FILE_ENCODING)) as ProjectManifest;
-            manifest.id = newId;
-            await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), FILE_ENCODING);
-        }
-
-        // 3. Update registry with lock and cascade updates
-        let updatedCount = 0;
-        await this.registryLock.withLock(async () => {
-            const registry = await this.listRegistry();
-            if (registry.projects[oldId]) {
-                registry.projects[newId] = registry.projects[oldId];
-                delete registry.projects[oldId];
-                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), FILE_ENCODING);
-            }
-
-            // 4. Cascade: Update relations in ALL other projects
-            const projectIds = Object.keys(registry.projects);
-            for (const id of projectIds) {
-                if (id === newId) continue; // Skip the renamed project itself
-                const otherManifest = await this.getProjectManifest(id);
-                if (!otherManifest || !otherManifest.relations) continue;
-
-                let changed = false;
-                for (const rel of otherManifest.relations) {
-                    if (rel.targetId === oldId) {
-                        rel.targetId = newId;
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    // Note: saveProjectManifest will try to acquire registryLock again,
-                    // but since we're already holding it, we write directly here
-                    const projectDir = path.join(this.projectsRoot, id);
-                    await fs.writeFile(path.join(projectDir, "manifest.json"), JSON.stringify(otherManifest, null, 2));
-                    updatedCount++;
-                }
-            }
-        });
-
-        return updatedCount;
-    }
-
-    /**
-     * Delete a project from the registry and disk.
-     * Uses mutex lock to prevent concurrent registry write conflicts.
-     */
-    static async deleteProject(id: string): Promise<void> {
-        await this.registryLock.withLock(async () => {
-            const registry = await this.listRegistry();
-            if (registry.projects[id]) {
-                delete registry.projects[id];
-                await fs.writeFile(this.registryFile, JSON.stringify(registry, null, 2), FILE_ENCODING);
-            }
-        });
-
-        const projectDir = path.join(this.projectsRoot, id);
-        if (await this.exists(projectDir)) {
-            await fs.rm(projectDir, { recursive: true, force: true });
-        }
-    }
+    // --- Doc Methods ---
+    static listGlobalDocs() { return DocStorage.listDocs(); }
+    static getGlobalDoc(docId: string) { return DocStorage.getDoc(docId); }
+    static saveGlobalDoc(docId: string, title: string, content: string, updatedBy: string) { return DocStorage.saveDoc(docId, title, content, updatedBy); }
+    static deleteGlobalDoc(docId: string) { return DocStorage.deleteDoc(docId); }
 }

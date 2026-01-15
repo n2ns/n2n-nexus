@@ -108,7 +108,7 @@ describe("StorageManager", () => {
         expect(listResult.mode).toBe("list");
         expect(listResult.summary.totalProjects).toBe(2);
         expect(listResult.summary.totalEdges).toBe(1);
-        expect(listResult.projects).toHaveLength(2);
+        expect(Object.keys(listResult.projects)).toHaveLength(2);
 
         // Test focused mode
         const focusedResult = await StorageManager.calculateTopology("prj-a");

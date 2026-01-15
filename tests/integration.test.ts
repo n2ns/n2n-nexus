@@ -7,14 +7,23 @@ import fs from "fs";
 const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
 const RX_HOST_READY = /MCP Server connected via stdio/;
 const RX_SESSION_ESTABLISHED = /Session established/;
-const RX_ELECTION_HOST = /Role: HOST/;
-const RX_ELECTION_GUEST = /Role: GUEST/;
+const RX_ELECTION_HOST = /Nexus Hub Active\. Playing Host/;
+const RX_ELECTION_GUEST = /Nexus Hub\] Guest Active/;
 
 // Helper to spawn a Nexus Node
-function spawnNexus(args: string[], id: string): Promise<{ process: ChildProcess, output: string[] }> {
+function spawnNexus(portStart: string, id: string): Promise<{ process: ChildProcess, output: string[] }> {
     return new Promise((resolve, reject) => {
-        const proc = spawn("node", [ENTRY_POINT, ...args], {
-            env: { ...process.env, "NEXUS_CHECK_INTERVAL": "100" }, // Faster checks
+        const portEnd = (parseInt(portStart) + 10).toString();
+        const env = {
+            ...process.env,
+            "NEXUS_CHECK_INTERVAL": "100",
+            NEXUS_PORT_START: portStart,
+            NEXUS_PORT_END: portEnd,
+            NEXUS_STORAGE: process.env.NEXUS_STORAGE || path.join(process.cwd(), "tests", "tmp", "integration-shared")
+        };
+
+        const proc = spawn("node", [ENTRY_POINT, "--id", id], {
+            env,
             stdio: ["pipe", "pipe", "pipe"]
         });
 
@@ -24,7 +33,6 @@ function spawnNexus(args: string[], id: string): Promise<{ process: ChildProcess
         proc.stderr?.on("data", (data) => {
             const line = data.toString();
             output.push(line);
-            // console.log(`[${id}] ${line.trim()}`); // Uncomment for debug
         });
 
         // Collect stdout (draining to prevent block)
@@ -32,8 +40,6 @@ function spawnNexus(args: string[], id: string): Promise<{ process: ChildProcess
             // Drain
         });
 
-        // Resolve immediately so we can interact with it, 
-        // but we attach the output array for checking later.
         resolve({ process: proc, output });
     });
 }
@@ -59,6 +65,11 @@ describe("Nexus Integration (E2E)", () => {
         if (!fs.existsSync(ENTRY_POINT)) {
             throw new Error(`Build not found at ${ENTRY_POINT}. Run 'npm run build' first.`);
         }
+        // Cleanup shared storage
+        const storagePath = path.join(process.cwd(), "tests", "tmp", "integration-shared");
+        if (fs.existsSync(storagePath)) {
+            fs.rmSync(storagePath, { recursive: true, force: true });
+        }
     });
 
     afterAll(() => {
@@ -69,15 +80,18 @@ describe("Nexus Integration (E2E)", () => {
 
     it("should start a Host successfully", async () => {
         // Start Process A (should become Host)
-        // Use a specific high port to avoid collision
         const port = "15888";
 
-        const host = await spawnNexus(["--port", port, "--id", "test-host"], "HOST");
+        const host = await spawnNexus(port, "test-host");
         hostProc = host.process;
         Object.assign(hostOutput, host.output); // Link ref
 
         // Wait for it to announce itself as Host
-        const isHost = await waitForLog(host.output, RX_ELECTION_HOST, 5000);
+        // Update regex to match correct log
+        const isHost = await waitForLog(host.output, /Nexus Hub Active\. Playing Host/, 5000);
+        if (!isHost) {
+            console.error("DEBUG - Host Output:\n", host.output.join(""));
+        }
         expect(isHost).toBe(true);
     }, 10000);
 
@@ -85,12 +99,15 @@ describe("Nexus Integration (E2E)", () => {
         const port = "15888";
 
         // Start Process B (should become Guest)
-        const guest = await spawnNexus(["--port", port, "--id", "test-guest"], "GUEST");
+        const guest = await spawnNexus(port, "test-guest");
         guestProc = guest.process;
         Object.assign(guestOutput, guest.output);
 
         // Wait for it to announce Guest Role
         const isGuest = await waitForLog(guest.output, RX_ELECTION_GUEST, 5000);
+        if (!isGuest) {
+            console.error("DEBUG - Guest Output:\n", guest.output.join(""));
+        }
         expect(isGuest).toBe(true);
 
         // Wait for session established log (from GuestClient)

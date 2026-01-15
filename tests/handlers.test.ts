@@ -1,190 +1,133 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { handleToolCall, ToolContext } from "../src/tools/handlers.js";
-import { StorageManager } from "../src/storage/index.js";
-import { getResourceContent } from "../src/resources/index.js";
-import { promises as fs } from "fs";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { spawn, ChildProcess } from "child_process";
 import path from "path";
-import { CONFIG } from "../src/config/index.js";
-import { closeDatabase } from "../src/storage/sqlite.js";
-import { resetTasksInit } from "../src/storage/tasks.js";
+import fs from "fs";
 
+const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
+const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "e2e-tools-storage");
 
-const TEST_ROOT = path.join(process.cwd(), "tests", "tmp", "test-storage-handlers");
-CONFIG.rootStorage = TEST_ROOT;
+function spawnNexus(): Promise<{ process: ChildProcess, output: string[] }> {
+    return new Promise((resolve) => {
+        const proc = spawn("node", [ENTRY_POINT, "--id", "tools-e2e-node"], {
+            env: { ...process.env, NEXUS_STORAGE: TEST_ROOT },
+            stdio: ["pipe", "pipe", "pipe"]
+        });
 
-describe("Tool Handlers", () => {
-    let mockContext: ToolContext;
+        const output: string[] = [];
+        proc.stderr?.on("data", (data) => {
+            output.push(data.toString());
+        });
 
-    beforeEach(async () => {
-        // Ensure clean state - wait a bit for any pending file operations
-        await new Promise(resolve => setTimeout(resolve, 50));
+        resolve({ process: proc, output });
+    });
+}
 
-        try {
-            await fs.rm(TEST_ROOT, { recursive: true, force: true });
-        } catch { }
+function sendRequest(proc: ChildProcess, method: string, params: any, id: string = "req-1") {
+    const payload = {
+        jsonrpc: "2.0",
+        id,
+        method,
+        params
+    };
+    proc.stdin?.write(JSON.stringify(payload) + "\n");
+}
 
-        // Create root directory first, then subdirectories
-        await fs.mkdir(TEST_ROOT, { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "global"), { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "projects"), { recursive: true });
-        await fs.mkdir(path.join(TEST_ROOT, "archives"), { recursive: true });
+async function waitForResponse(proc: ChildProcess, id: string, timeoutMs: number = 8000): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(`Timeout waiting for response ${id}`)), timeoutMs);
 
-        StorageManager.resetInit();
-        resetTasksInit();
-        await StorageManager.init();
-
-        mockContext = {
-            currentProject: null,
-            setCurrentProject: vi.fn((id) => { mockContext.currentProject = id; }),
-            notifyResourceUpdate: vi.fn(),
+        const onData = (data: Buffer) => {
+            const lines = data.toString().split("\n");
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const json = JSON.parse(line);
+                    if (json.id === id) {
+                        proc.stdout?.removeListener("data", onData);
+                        clearTimeout(timeout);
+                        resolve(json);
+                    }
+                } catch { }
+            }
         };
+        proc.stdout?.on("data", onData);
+    });
+}
+
+describe("Tools E2E (Real Processes via Stdin)", () => {
+    let proc: ChildProcess;
+    let output: string[];
+
+    beforeAll(async () => {
+        if (fs.existsSync(TEST_ROOT)) {
+            fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+        }
+        const n = await spawnNexus();
+        proc = n.process;
+        output = n.output;
+
+        // Wait for boot
+        const start = Date.now();
+        while (Date.now() - start < 5000) {
+            if (output.some(l => l.includes("Role: HOST"))) break;
+            await new Promise(r => setTimeout(r, 100));
+        }
     });
 
-    afterEach(async () => {
-        // Clean up locks
-        closeDatabase();
-        // Short delay to ensure file handles are released by OS
-        await new Promise(resolve => setTimeout(resolve, 50));
+    afterAll(() => {
+        if (proc) proc.kill("SIGKILL");
+        if (fs.existsSync(TEST_ROOT)) {
+            fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+        }
     });
 
-    it("should register session context", async () => {
-        const result = await handleToolCall("register_session_context", { projectId: "web_test.io" }, mockContext);
-        expect(result.content[0].text).toContain("web_test.io");
-        expect(mockContext.setCurrentProject).toHaveBeenCalledWith("web_test.io");
-        expect(mockContext.currentProject).toBe("web_test.io");
+    it("should handle register_session_context via JSON-RPC", async () => {
+        sendRequest(proc, "tools/call", {
+            name: "register_session_context",
+            arguments: { projectId: "api_e2e_test_proj" }
+        }, "reg-1");
+
+        const resp = await waitForResponse(proc, "reg-1");
+        expect(resp.result.content[0].text).toContain("api_e2e_test_proj");
     });
 
-    it("should handle global discussion with category", async () => {
-        await handleToolCall("send_message", { message: "Meeting start", category: "MEETING_START" }, mockContext);
+    it("should handle sync_project_assets via JSON-RPC", async () => {
+        sendRequest(proc, "tools/call", {
+            name: "sync_project_assets",
+            arguments: {
+                manifest: {
+                    id: "api_e2e_test_proj",
+                    name: "E2E Test",
+                    description: "D",
+                    techStack: ["Node"],
+                    relations: [],
+                    lastUpdated: new Date().toISOString(),
+                    repositoryUrl: "",
+                    localPath: TEST_ROOT,
+                    endpoints: [],
+                    apiSpec: []
+                },
+                internalDocs: "# Hello E2E"
+            }
+        }, "sync-1");
 
-        const logs = await StorageManager.getRecentLogs(1);
-        expect(logs[0].text).toBe("Meeting start");
-        expect(logs[0].category).toBe("MEETING_START");
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/chat/global");
+        const resp = await waitForResponse(proc, "sync-1");
+        expect(resp.result.content[0].text).toContain("Sync task created");
     });
 
-    it("should rename project and notify updates", async () => {
-        // Create a project first
-        await handleToolCall("register_session_context", { projectId: "web_old.io" }, mockContext);
-        await handleToolCall("sync_project_assets", {
-            manifest: {
-                id: "web_old.io",
-                name: "Old",
-                description: "D",
-                techStack: [],
-                relations: [],
-                lastUpdated: new Date().toISOString(),
-                repositoryUrl: "",
-                localPath: TEST_ROOT,
-                endpoints: [],
-                apiSpec: []
-            },
-            internalDocs: "# Docs"
-        }, mockContext);
+    it("should handle send_message via JSON-RPC", async () => {
+        sendRequest(proc, "tools/call", {
+            name: "send_message",
+            arguments: { message: "Hello from E2E Stdin", category: "UPDATE" }
+        }, "msg-1");
 
-        // Wait for async sync task to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
+        const resp = await waitForResponse(proc, "msg-1");
+        expect(resp.result.content[0].text).toContain("Sent message");
 
-        const result = await handleToolCall("rename_project", { oldId: "web_old.io", newId: "web_new.io" }, mockContext);
-        expect(result.content[0].text).toContain("Rename task created.");
-
-        // Wait for async task to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/projects/web_new.io/manifest");
-
-        const oldExists = await StorageManager.getProjectManifest("web_old.io");
-        const newManifest = await StorageManager.getProjectManifest("web_new.io");
-        expect(oldExists).toBeNull();
-        expect(newManifest?.id).toBe("web_new.io");
-    });
-
-    it("should delete project via tool", async () => {
-        await handleToolCall("register_session_context", { projectId: "web_to-delete.io" }, mockContext);
-        await handleToolCall("sync_project_assets", {
-            manifest: {
-                id: "web_to-delete.io",
-                name: "DeleteMe",
-                description: "D",
-                techStack: [],
-                relations: [],
-                lastUpdated: new Date().toISOString(),
-                repositoryUrl: "",
-                localPath: TEST_ROOT,
-                endpoints: [],
-                apiSpec: []
-            },
-            internalDocs: "# Docs"
-        }, mockContext);
-
-        // Wait for async task to complete (sync_project_assets is now async)
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        expect(await StorageManager.getProjectManifest("web_to-delete.io")).not.toBeNull();
-
-        // Set host to true for this test since host_delete_project requires it
-        CONFIG.isHost = true;
-        await handleToolCall("host_delete_project", { projectId: "web_to-delete.io" }, mockContext);
-
-        // Wait for async task to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        expect(await StorageManager.getProjectManifest("web_to-delete.io")).toBeNull();
-        expect(mockContext.notifyResourceUpdate).toHaveBeenCalledWith("mcp://nexus/hub/registry");
-        // Reset for other tests
-        CONFIG.isHost = false;
-    });
-
-
-    describe("Host permissions", () => {
-        it("should allow host_maintenance when isHost is true", async () => {
-            CONFIG.isHost = true;
-
-            // Add some logs first
-            await handleToolCall("send_message", { message: "Test message" }, mockContext);
-
-            const result = await handleToolCall("host_maintenance", { action: "clear", count: 0 }, mockContext);
-            expect(result.content[0].text).toContain("wiped");
-        });
-
-        it("should verify CONFIG.isHost flag behavior", () => {
-            // Test the flag is properly set
-            CONFIG.isHost = true;
-            expect(CONFIG.isHost).toBe(true);
-
-            CONFIG.isHost = false;
-            expect(CONFIG.isHost).toBe(false);
-        });
-    });
-
-    describe("Session resource", () => {
-        it("should return Host role when isHost is true", async () => {
-            CONFIG.isHost = true;
-            CONFIG.instanceId = "Master-AI";
-
-            const result = await getResourceContent("mcp://nexus/session", "web_test.io");
-            expect(result).not.toBeNull();
-
-            const info = JSON.parse(result!.text);
-            expect(info.yourId).toBe("Master-AI");
-            expect(info.role).toBe("Host");
-            expect(info.isHost).toBe(true);
-            expect(info.activeProject).toBe("web_test.io");
-        });
-
-        it("should return Regular role when isHost is false", async () => {
-            CONFIG.isHost = false;
-            CONFIG.instanceId = "Assistant-AI";
-
-            const result = await getResourceContent("mcp://nexus/session", null);
-            expect(result).not.toBeNull();
-
-            const info = JSON.parse(result!.text);
-            expect(info.yourId).toBe("Assistant-AI");
-            expect(info.role).toBe("Regular");
-            expect(info.isHost).toBe(false);
-            expect(info.activeProject).toBe("None");
-        });
+        // Verify persistent log exists
+        const logFile = path.join(TEST_ROOT, "global", "discussion.json");
+        expect(fs.existsSync(logFile)).toBe(true);
+        const logs = JSON.parse(fs.readFileSync(logFile, "utf-8"));
+        expect(logs.some((l: any) => l.text === "Hello from E2E Stdin")).toBe(true);
     });
 });

@@ -22,7 +22,7 @@ export interface DiscussionMessage {
     timestamp: string;
     from: string;
     text: string;
-    category?: "MEETING_START" | "PROPOSAL" | "DECISION" | "UPDATE" | "CHAT";
+    category?: "MEETING_START" | "PROPOSAL" | "DECISION" | "UPDATE" | "CHAT" | "message" | "SYSTEM";
 }
 
 // Meeting Architecture Types (Phase 1)
@@ -33,6 +33,7 @@ export interface MeetingSession {
     topic: string;
     status: MeetingStatus;
     startTime: string;
+    internalDocs?: string;
     endTime?: string;
     initiator: string;              // The Agent ID who started the meeting
     participants: string[];         // List of Agent IDs who posted
@@ -68,3 +69,11 @@ export interface GlobalDocEntry {
 }
 
 export type GlobalDocIndex = Record<string, GlobalDocEntry>;
+
+export interface ToolContext {
+    currentProject: string | null;
+    setCurrentProject: (id: string) => void;
+    notifyResourceUpdate: (uri: string) => void;
+    requestId?: string | number;
+    isGuest?: boolean;
+}

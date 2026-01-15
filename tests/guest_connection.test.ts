@@ -1,91 +1,61 @@
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { spawn, ChildProcess } from "child_process";
+import path from "path";
+import fs from "fs";
 
-import { describe, it, expect, afterEach } from "vitest";
-import http from "http";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { createGuestClient } from "../src/network/guest.js";
+const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
+const RX_SESSION_ESTABLISHED = /Session established/;
 
-// Mock Host Implementation
-class MockHost {
-    server: http.Server;
-    mcpServer: Server;
-    port: number;
-    transports = new Map<string, SSEServerTransport>();
-
-    constructor(port: number) {
-        this.port = port;
-        this.mcpServer = new Server({ name: "test-host", version: "1.0.0" }, { capabilities: { tools: {} } });
-
-        this.mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
-            tools: [{ name: "ping", inputSchema: { type: "object" } }]
-        }));
-
-        this.server = http.createServer(async (req, res) => {
-            const url = new URL(req.url || "", `http://${req.headers.host}`);
-            if (url.pathname === "/mcp") {
-                if (req.method === "GET") {
-                    const transport = new SSEServerTransport("/mcp", res);
-                    this.transports.set(transport.sessionId, transport);
-                    await this.mcpServer.connect(transport);
-                    return;
-                } else if (req.method === "POST") {
-                    const sessionId = url.searchParams.get("sessionId");
-                    // Quick fix for test: parse from query, or if missing check body (MCP spec varies)
-                    // The SSEServerTransport normally handles POST to /message?sessionId=...
-                    // But GuestClient posts to /mcp?sessionId=...
-                    // Let's ensure the Mock matches GuestClient expectations
-                    const transport = sessionId ? this.transports.get(sessionId) : null;
-                    if (transport) {
-                        await transport.handlePostMessage(req, res);
-                    } else {
-                        res.writeHead(404).end();
-                    }
-                    return;
-                }
-            }
-            res.writeHead(404).end();
+function spawnNexus(port: string, id: string): Promise<{ process: ChildProcess, output: string[] }> {
+    return new Promise((resolve) => {
+        const proc = spawn("node", [ENTRY_POINT, "--port", port, "--id", id], {
+            env: { ...process.env },
+            stdio: ["pipe", "pipe", "pipe"]
         });
-    }
 
-    start() {
-        return new Promise<void>(resolve => this.server.listen(this.port, "127.0.0.1", resolve));
-    }
+        const output: string[] = [];
+        proc.stderr?.on("data", (data) => {
+            output.push(data.toString());
+        });
 
-    stop() {
-        return new Promise<void>(resolve => this.server.close(() => resolve()));
-    }
+        proc.stdout?.on("data", () => { });
+        resolve({ process: proc, output });
+    });
 }
 
-describe("Guest-Host SSE Integration", () => {
-    const PORT = 15900;
-    let host: MockHost;
+async function waitForLog(output: string[], pattern: RegExp, timeoutMs: number = 8000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (output.some(line => pattern.test(line))) return true;
+        await new Promise(r => setTimeout(r, 200));
+    }
+    return false;
+}
 
-    afterEach(async () => {
-        if (host) await host.stop();
-        // GuestClient has internal timers/connections, but since it's a unit test we let them die with the process or GC
-        // In a real scenario we'd want a .close() method on GuestClient.
+describe("Guest Connection E2E (Real Processes)", () => {
+    let processes: ChildProcess[] = [];
+    const TEST_PORT = "17100";
+
+    afterAll(() => {
+        processes.forEach(p => p.kill("SIGKILL"));
     });
 
-    it("should successfully connect and exchange messages using real GuestClient", async () => {
-        host = new MockHost(PORT);
-        await host.start();
+    it("should successfully connect Guest to Host via network", async () => {
+        // 1. Start Host
+        const h = await spawnNexus(TEST_PORT, "guest-test-host");
+        processes.push(h.process);
+        await waitForLog(h.output, /Role: HOST/);
 
-        const guest = createGuestClient(PORT, "test-guest");
+        // 2. Start Guest
+        const g = await spawnNexus(TEST_PORT, "guest-test-guest");
+        processes.push(g.process);
 
-        // Allow some time for connection (GuestClient connects immediately in constructor)
-        await new Promise(r => setTimeout(r, 100));
+        // 3. Verify Connection
+        const connected = await waitForLog(g.output, RX_SESSION_ESTABLISHED);
+        expect(connected).toBe(true);
 
-        // Use sendRequest (public API of the new GuestClient)
-        // GuestClient.sendRequest(method, params)
-        const response = await guest.sendRequest("tools/list", {});
-
-        // GuestClient returns the RESULT directly (or throws error)
-        expect(response).toBeDefined();
-        expect(response.tools).toBeDefined();
-        expect(response.tools[0].name).toBe("ping");
-
-        guest.close();
+        // 4. Verify Host log for guest joining
+        const guestJoined = await waitForLog(h.output, /Guest Joined: guest-test-guest/);
+        expect(guestJoined).toBe(true);
     });
 });
-

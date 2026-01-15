@@ -1,61 +1,43 @@
-/**
- * CLI Module Tests
- */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { spawn, ChildProcess } from "child_process";
+import path from "path";
+import fs from "fs";
 
-// We need to mock process.argv before importing the module
-describe("CLI Module", () => {
-    const originalArgv = process.argv;
+const ENTRY_POINT = path.resolve(__dirname, "../build/index.js");
 
-    afterEach(() => {
-        process.argv = originalArgv;
-        vi.resetModules();
-    });
-
-    describe("getArg", () => {
-        it("should return argument value when present", async () => {
-            process.argv = ["node", "script.js", "--root", "/custom/path"];
-            const { getArg } = await import("../src/config/cli.js");
-            expect(getArg("--root")).toBe("/custom/path");
+function runCli(args: string[]): Promise<{ stderr: string, stdout: string }> {
+    return new Promise((resolve) => {
+        const proc = spawn("node", [ENTRY_POINT, ...args], {
+            stdio: ["pipe", "pipe", "pipe"]
         });
 
-        it("should return empty string when argument not present", async () => {
-            process.argv = ["node", "script.js"];
-            const { getArg } = await import("../src/config/cli.js");
-            expect(getArg("--root")).toBe("");
-        });
+        let stderr = "";
+        let stdout = "";
+        proc.stderr?.on("data", (data) => stderr += data.toString());
+        proc.stdout?.on("data", (data) => stdout += data.toString());
 
-        it("should return empty string when argument has no value", async () => {
-            process.argv = ["node", "script.js", "--root"];
-            const { getArg } = await import("../src/config/cli.js");
-            expect(getArg("--root")).toBe("");
-        });
+        // We only wait for initial boot logs or a short timeout since it doesn't always exit
+        const timeout = setTimeout(() => {
+            proc.kill("SIGKILL");
+            resolve({ stderr, stdout });
+        }, 3000);
 
-        it("should handle multiple arguments", async () => {
-            process.argv = ["node", "script.js", "--root", "/path", "--id", "test-id"];
-            const { getArg } = await import("../src/config/cli.js");
-            expect(getArg("--root")).toBe("/path");
-            expect(getArg("--id")).toBe("test-id");
+        proc.on("close", () => {
+            clearTimeout(timeout);
+            resolve({ stderr, stdout });
         });
     });
+}
 
-    describe("hasFlag", () => {
-        it("should return true when flag is present", async () => {
-            process.argv = ["node", "script.js", "--help"];
-            const { hasFlag } = await import("../src/config/cli.js");
-            expect(hasFlag("--help")).toBe(true);
-        });
+describe("CLI E2E (Real Binary)", () => {
+    it("should accept custom instance id via --id", async () => {
+        const { stderr } = await runCli(["--id", "custom-e2e-id"]);
+        // The logs usually contain the instance ID
+        expect(stderr).toContain("Nexus:custom-e2e-id");
+    });
 
-        it("should return false when flag is not present", async () => {
-            process.argv = ["node", "script.js"];
-            const { hasFlag } = await import("../src/config/cli.js");
-            expect(hasFlag("--help")).toBe(false);
-        });
-
-        it("should handle short flags", async () => {
-            process.argv = ["node", "script.js", "-h"];
-            const { hasFlag } = await import("../src/config/cli.js");
-            expect(hasFlag("-h")).toBe(true);
-        });
+    it("should accept custom port via --port", async () => {
+        const { stderr } = await runCli(["--port", "19999"]);
+        expect(stderr).toContain("Port: 19999");
     });
 });

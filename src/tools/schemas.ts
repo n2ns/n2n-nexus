@@ -1,321 +1,135 @@
 import { z } from "zod";
+import {
+    RegisterSessionSchema,
+    SyncProjectAssetsSchema,
+    UploadAssetSchema,
+    TopologySchema,
+    SearchProjectsSchema,
+    SendMessageSchema,
+    ReadMessagesSchema,
+    UpdateStrategySchema,
+    SyncGlobalDocSchema,
+    UpdateProjectSchema,
+    RenameProjectSchema,
+    HostMaintenanceSchema,
+    StartMeetingSchema,
+    EndMeetingSchema,
+    ArchiveMeetingSchema,
+    ReopenMeetingSchema,
+    CreateTaskSchema,
+    GetTaskSchema,
+    ListTasksSchema,
+    UpdateTaskSchema,
+    CancelTaskSchema,
+    RemoveProjectSchema
+} from "./schemas/index.js";
 
-/**
- * Project ID validation regex based on Nexus conventions.
- */
-export const ProjectIdSchema = z.string()
-    .describe("Strict flat identifier. MUST start with a type-prefix followed by an underscore.")
-    .refine(val => {
-        const validPrefixes = ["web_", "api_", "chrome_", "vscode_", "mcp_", "android_", "ios_", "flutter_", "desktop_", "lib_", "bot_", "infra_", "doc_"];
-        return validPrefixes.some(p => val.startsWith(p));
-    }, "Project ID must start with a valid prefix (e.g., 'web_', 'api_')")
-    .refine(val => !val.includes("..") && !val.includes("/") && !val.includes("\\"), "Project ID cannot contain '..' or slashes.");
-
-/**
- * 1. register_session_context
- */
-export const RegisterSessionSchema = z.object({
-    projectId: ProjectIdSchema
-});
-
-/**
- * 2. sync_project_assets
- */
-export const SyncProjectAssetsSchema = z.object({
-    manifest: z.object({
-        id: ProjectIdSchema,
-        name: z.string(),
-        description: z.string(),
-        techStack: z.array(z.string()),
-        relations: z.array(z.object({
-            targetId: z.string(),
-            type: z.enum(["dependency", "parent", "child", "related"])
-        })),
-        lastUpdated: z.string().describe("ISO timestamp"),
-        repositoryUrl: z.string(),
-        localPath: z.string().describe("Physical disk path"),
-        endpoints: z.array(z.object({
-            name: z.string(),
-            url: z.string(),
-            description: z.string()
-        })),
-        apiSpec: z.array(z.object({
-            method: z.string(),
-            path: z.string(),
-            summary: z.string()
-        }))
-    }),
-    internalDocs: z.string().describe("Mandatory technical implementation guide (Markdown)")
-});
-
-/**
- * Safe file name validation (no path traversal)
- */
-export const FileNameSchema = z.string()
-    .min(1, "File name cannot be empty")
-    .max(255, "File name too long")
-    .refine(val => !val.includes("/") && !val.includes("\\"), "File name cannot contain slashes")
-    .refine(val => !val.includes(".."), "File name cannot contain '..'")
-    .refine(val => !val.startsWith("."), "File name cannot start with '.'")
-    .describe("Safe file name without path components");
-
-/**
- * 3. upload_project_asset
- */
-export const UploadAssetSchema = z.object({
-    fileName: FileNameSchema,
-    base64Content: z.string()
-});
-
-/**
- * 4. get_global_topology
- */
-export const TopologySchema = z.object({
-    projectId: ProjectIdSchema.optional().describe("Focus on specific project's subgraph. Omit for summary list.")
-});
-
-export const EmptySchema = z.object({});
-
-/**
- * 5. search_projects
- */
-export const SearchProjectsSchema = z.object({
-    query: z.string().min(1, "Query is required"),
-    limit: z.number().int().positive().optional().default(10)
-});
-
-
-
-/**
- * 7. send_message
- */
-export const SendMessageSchema = z.object({
-    message: z.string().min(1, "Message cannot be empty"),
-    category: z.enum(["MEETING_START", "PROPOSAL", "DECISION", "UPDATE", "CHAT"]).optional()
-});
-
-/**
- * 8. read_messages
- */
-export const ReadMessagesSchema = z.object({
-    count: z.number().int().positive().optional().default(10),
-    meetingId: z.string().optional()
-});
-
-/**
- * 9. update_global_strategy
- */
-export const UpdateStrategySchema = z.object({
-    content: z.string().min(1, "Strategy content cannot be empty")
-});
-
-/**
- * 10. sync_global_doc
- */
-export const SyncGlobalDocSchema = z.object({
-    docId: z.string(),
-    title: z.string(),
-    content: z.string()
-});
-
-
-/**
- * 13. update_project
- */
-export const UpdateProjectSchema = z.object({
-    projectId: ProjectIdSchema,
-    patch: z.object({}).passthrough().describe("Fields to update (e.g., description, techStack)")
-});
-
-/**
- * 14. rename_project
- */
-export const RenameProjectSchema = z.object({
-    oldId: ProjectIdSchema,
-    newId: ProjectIdSchema
-});
-
-/**
- * 15. host_maintenance
- */
-export const HostMaintenanceSchema = z.object({
-    action: z.enum(["prune", "clear"]),
-    count: z.number().int().min(0)
-});
-
-/**
- * 16. host_delete_project
- */
-export const HostDeleteSchema = z.object({
-    projectId: ProjectIdSchema
-});
-
-/**
- * 17. start_meeting
- */
-export const StartMeetingSchema = z.object({
-    topic: z.string().min(1, "Topic is required")
-});
-
-/**
- * 18. end_meeting
- */
-export const EndMeetingSchema = z.object({
-    meetingId: z.string().optional(),
-    summary: z.string().optional()
-});
-
-
-
-/**
- * 21. archive_meeting
- */
-export const ArchiveMeetingSchema = z.object({
-    meetingId: z.string()
-});
-
-/**
- * 22. reopen_meeting
- */
-export const ReopenMeetingSchema = z.object({
-    meetingId: z.string()
-});
-
-// ============ Phase 2: Task Management Schemas ============
-
-/**
- * 22. create_task
- */
-export const CreateTaskSchema = z.object({
-    source_meeting_id: z.string().optional().describe("Link task to a meeting for traceability"),
-    metadata: z.object({}).passthrough().optional().describe("Custom task parameters"),
-    ttl: z.number().int().positive().optional().describe("Time-to-live in milliseconds")
-});
-
-/**
- * 23. get_task
- */
-export const GetTaskSchema = z.object({
-    taskId: z.string()
-});
-
-/**
- * 24. list_tasks
- */
-export const ListTasksSchema = z.object({
-    status: z.enum(["pending", "running", "completed", "failed", "cancelled"]).optional(),
-    limit: z.number().int().positive().optional().default(50)
-});
-
-/**
- * 25. update_task
- */
-export const UpdateTaskSchema = z.object({
-    taskId: z.string(),
-    status: z.enum(["pending", "running", "completed", "failed", "cancelled"]).optional(),
-    progress: z.number().min(0).max(1).optional(),
-    result_uri: z.string().optional(),
-    error_message: z.string().optional()
-});
-
-/**
- * 26. cancel_task
- */
-export const CancelTaskSchema = z.object({
-    taskId: z.string()
-});
+// Re-export common schemas used by other modules
+export { ProjectIdSchema, FileNameSchema } from "./schemas/index.js";
 
 /**
  * Tool Registry with descriptions and schemas
  */
 export const TOOL_REGISTRY: Record<string, { description: string; schema: z.ZodTypeAny }> = {
+    // --- Session & Context ---
     register_session_context: {
-        description: "[IDENTITY] Declare the PROJECT identity. Format: [prefix]_[technical-identifier]. (e.g., 'web_datafrog.io', 'mcp_nexus-core').",
+        description: "Register current workspace session. Use this to bind subsequent tool calls to a specific project. [Stateful]",
         schema: RegisterSessionSchema
     },
+
+    // --- Project Assets ---
     sync_project_assets: {
-        description: "CRITICAL: [PREREQUISITE: register_session_context] Sync full project state. Both manifest and documentation are MANDATORY.",
+        description: "[ASYNC] Synchronize project manifest and internal docs. Validates local path existence. Returns task ID. [Host only RECOMMENDED]",
         schema: SyncProjectAssetsSchema
     },
     upload_project_asset: {
-        description: "Upload a binary file (images, PDFs, etc.) to the current project's asset folder. Requires active session (call register_session_context first). Returns the relative path of the saved file.",
+        description: "Upload a binary or text asset (base64) to the current project's asset directory.",
         schema: UploadAssetSchema
     },
+
+    // --- Discovery & Knowledge ---
     get_global_topology: {
-        description: "Project topology. Default: list summary. With projectId: detailed subgraph.",
+        description: "Retrieve project graph and cross-project relations. Supports progressive loading via optional projectId.",
         schema: TopologySchema
     },
     search_projects: {
         description: "Search project registry by name or description. Use this instead of reading the full registry.",
         schema: SearchProjectsSchema
     },
-        send_message: {
-            description: "Post a message to the Nexus collaboration space. If an active meeting exists, the message is automatically routed to that meeting. Otherwise, it goes to the global discussion log. Use this for proposals, decisions, or general coordination.",
-            schema: SendMessageSchema
-        },
-        read_messages: {
-            description: "Read recent messages. Automatically reads from the active meeting if one exists, otherwise reads from global logs.",
-            schema: ReadMessagesSchema
-        },
-        update_global_strategy: {
-            description: "Overwrite master strategy. Content is MANDATORY.",
-            schema: UpdateStrategySchema
-        },
-        sync_global_doc: {
-            description: "Create or update a global document. Returns the document ID.",
-            schema: SyncGlobalDocSchema
-        },
-        update_project: {
-            description: "Partially update a project's manifest. Only provided fields will be updated.",
-            schema: UpdateProjectSchema
-        },
-        rename_project: {
-            description: "[ASYNC] Rename a project ID with automatic cascading updates to all relation references. Returns task ID.",
-            schema: RenameProjectSchema
-        },
-        host_maintenance: {
-            description: "[HOST ONLY] Manage global discussion logs. 'prune' removes the oldest N entries (keeps newest). 'clear' wipes all logs (use count=0). Returns summary of removed entries. Irreversible.",
-            schema: HostMaintenanceSchema
-        },
-        host_delete_project: {
-            description: "[ASYNC][HOST ONLY] Completely remove a project, its manifest, and all its assets from Nexus Hub. Returns task ID. Irreversible.",
-            schema: HostDeleteSchema
-        },
-        start_meeting: {
-            description: "Start a new meeting session. Creates a dedicated file for the meeting. Returns the meeting ID and details.",
-            schema: StartMeetingSchema
-        },
-        end_meeting: {
-            description: "End an active meeting. Locks the session for further messages. [RESTRICTED: Only host can end].",
-            schema: EndMeetingSchema
-        },
-        archive_meeting: {
-            description: "Archive a closed meeting. Archived meetings are read-only and excluded from active queries. [RESTRICTED: Only host can archive].",
-            schema: ArchiveMeetingSchema
-        },
-        reopen_meeting: {
-            description: "Reopen a closed or archived meeting. [Open to all participants].",
-            schema: ReopenMeetingSchema
-        },
-        // --- Phase 2: Task Management ---
-        create_task: {
-            description: "[ASYNC] Create a new background task. Returns task ID for polling. Link to meeting for traceability.",
-            schema: CreateTaskSchema
-        },
-        get_task: {
-            description: "[ASYNC] Get the status and progress of a task by ID.",
-            schema: GetTaskSchema
-        },
-        list_tasks: {
-            description: "[ASYNC] List all tasks with optional status filter.",
-            schema: ListTasksSchema
-        },
-        update_task: {
-            description: "[ASYNC][INTERNAL] Update task status, progress, or result. Intended for background workers only - do not call directly from user-facing tools.",
-            schema: UpdateTaskSchema
-        },
-        cancel_task: {
-            description: "[ASYNC] Cancel a pending or running task.",
-            schema: CancelTaskSchema
-        },
-    };
+
+    // --- Global Discussion & Strategy ---
+    send_message: {
+        description: "Send a message to the Nexus Hub or active meeting. Auto-routes based on session context.",
+        schema: SendMessageSchema
+    },
+    read_messages: {
+        description: "Read recent messages from global hub or specific meeting. Default count=10.",
+        schema: ReadMessagesSchema
+    },
+    update_global_strategy: {
+        description: "Update the shared collaboration strategy document.",
+        schema: UpdateStrategySchema
+    },
+    sync_global_doc: {
+        description: "Sync a specialized global document (e.g., guidelines, shared specs).",
+        schema: SyncGlobalDocSchema
+    },
+
+    // --- Advanced Project Ops ---
+    update_project: {
+        description: "Patch project metadata in registry (description, techStack, etc). Cannot change ID.",
+        schema: UpdateProjectSchema
+    },
+    rename_project: {
+        description: "[ASYNC] Rename a project ID with automatic cascading updates to all relation references. Returns task ID.",
+        schema: RenameProjectSchema
+    },
+    host_delete_project: {
+        description: "[HOST ONLY] [ASYNC] Completely remove a project from registry and disk. Irreversible. Returns task ID.",
+        schema: RemoveProjectSchema
+    },
+    host_maintenance: {
+        description: "[HOST ONLY] Manage global discussion logs. 'prune' removes the oldest N entries. 'clear' wipes all logs. Irreversible.",
+        schema: HostMaintenanceSchema
+    },
+
+    // --- Meeting Management ---
+    start_meeting: {
+        description: "Start a project-specific collaboration session (meeting). Sets context for subsequent messages.",
+        schema: StartMeetingSchema
+    },
+    end_meeting: {
+        description: "Close an active meeting and archive its summary. Optional manual summary override.",
+        schema: EndMeetingSchema
+    },
+    archive_meeting: {
+        description: "Move a closed meeting to archives. [Admin/Initiator only].",
+        schema: ArchiveMeetingSchema
+    },
+    reopen_meeting: {
+        description: "Reopen a closed or archived meeting. [Open to all participants].",
+        schema: ReopenMeetingSchema
+    },
+
+    // --- Task Management (Phase 2) ---
+    create_task: {
+        description: "[ASYNC] Create a new background task. Returns task ID for polling. Link to meeting for traceability.",
+        schema: CreateTaskSchema
+    },
+    get_task: {
+        description: "Poll current status and progress of a background task.",
+        schema: GetTaskSchema
+    },
+    list_tasks: {
+        description: "List background tasks across the system. Support status filtering.",
+        schema: ListTasksSchema
+    },
+    update_task: {
+        description: "Update task progress or mark as finished (Internal use only).",
+        schema: UpdateTaskSchema
+    },
+    cancel_task: {
+        description: "[ASYNC] Cancel a pending or running task.",
+        schema: CancelTaskSchema
+    }
+};
