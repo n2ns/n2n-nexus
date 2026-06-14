@@ -389,10 +389,11 @@ async function toolRenameProject(args: { oldId: string; newId: string }, instanc
 async function toolSearchProjects(args: { query: string; limit?: number }) {
     if (!args.query) throw new Error("query is required.");
     const registry = await StorageManager.listRegistry();
+    const projects = registry.projects as Record<string, { name?: string; summary?: string }>;
     const q = args.query.toLowerCase();
     const limit = args.limit || 10;
 
-    const results = Object.entries(registry.projects)
+    const results = Object.entries(projects)
         .filter(([id, p]) =>
             id.toLowerCase().includes(q) ||
             (p.name && p.name.toLowerCase().includes(q)) ||

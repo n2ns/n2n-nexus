@@ -7,10 +7,10 @@
 // Service identification
 export const SERVICE_NAME = "n2n-nexus";
 
-// Host address for binding and connecting
-// Use "0.0.0.0" to allow connections from any interface
-// Use "127.0.0.1" to restrict to localhost only
-export const NEXUS_HOST = "0.0.0.0";
+// Host address for binding and connecting.
+// Default to localhost because the daemon exposes unauthenticated local admin APIs.
+// Use "0.0.0.0" only when you intentionally expose it to another trusted environment.
+export const NEXUS_HOST = "127.0.0.1";
 
 // Port range for auto-election
 export const PORT_RANGE_START = 5688;

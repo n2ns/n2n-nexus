@@ -1,4 +1,5 @@
 import http from "node:http";
+import https from "node:https";
 import { URL } from "node:url";
 
 export type ToolDefinition = {
@@ -34,9 +35,10 @@ export class NexusClient {
     private request<T>(method: string, path: string, body?: unknown): Promise<T> {
         const url = new URL(path, this.endpoint);
         const payload = body !== undefined ? JSON.stringify(body) : undefined;
+        const transport = url.protocol === "https:" ? https : http;
 
         return new Promise((resolve, reject) => {
-            const req = http.request(
+            const req = transport.request(
                 {
                     method,
                     protocol: url.protocol,

@@ -71,7 +71,7 @@ n2n-nexus 为 AI 助手提供共享协作空间。不同助手不再只依赖自
 
 - **Daemon 是唯一数据源**：启动一次并保持运行。
 - **MCP 适配器无状态**：每个 IDE 通过 `npx` 启动适配器，然后把工具调用转发给 daemon。
-- **跨环境协作**：通过 `NEXUS_ENDPOINT` 让不同机器或 shell 指向同一个 daemon。
+- **跨环境协作**：通过 `NEXUS_ENDPOINT` 让不同机器或 shell 指向同一个 daemon。daemon 默认只监听本机；只有在可信网络中才使用 `--host 0.0.0.0`。
 
 ## 快速开始
 
@@ -196,7 +196,7 @@ npx n2n-nexus daemon --port 5688
 
 ```bash
 # 启动 daemon
-n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus]
+n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus] [--host 127.0.0.1]
 
 # 启动 MCP 适配器
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
@@ -208,6 +208,7 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 | --- | --- | --- |
 | `NEXUS_ENDPOINT` | MCP 适配器连接的 daemon 地址 | `http://127.0.0.1:5688` |
 | `NEXUS_ROOT` | daemon 存储根目录 | `~/.n2n-nexus` |
+| `NEXUS_HOST` | daemon 监听地址 | `127.0.0.1` |
 | `NEXUS_INSTANCE_ID` | 覆盖 MCP 实例 ID | 自动生成 |
 
 ## 安全和治理说明

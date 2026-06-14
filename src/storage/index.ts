@@ -1,5 +1,5 @@
 import { promises as fs } from "fs";
-import { ProjectManifest } from "../types.js";
+import { DiscussionMessage, ProjectManifest } from "../types.js";
 import { FILE_ENCODING } from "../constants.js";
 
 import { NexusPaths } from "./paths.js";
@@ -100,7 +100,7 @@ export class StorageManager {
     }
 
     // --- Log Methods ---
-    static addGlobalLog(from: string, text: string, category?: string) { return LogStorage.addLog(from, text, category); }
+    static addGlobalLog(from: string, text: string, category?: DiscussionMessage["category"]) { return LogStorage.addLog(from, text, category); }
     static getRecentLogs(count: number = 10) { return LogStorage.getLogs(count); }
     static pruneGlobalLogs(count: number) { return LogStorage.pruneLogs(count); }
     static clearGlobalLogs() { return LogStorage.clearLogs(); }

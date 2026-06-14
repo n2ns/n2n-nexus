@@ -1,5 +1,6 @@
 import { createDaemonServer } from "./server.js";
 import { pkg, getRootPath } from "../config/index.js";
+import { NEXUS_HOST } from "../constants.js";
 
 function parsePort(): number {
     const argIndex = process.argv.indexOf("--port");
@@ -12,19 +13,28 @@ function parsePort(): number {
     return 5688;
 }
 
+function parseHost(): string {
+    const argIndex = process.argv.indexOf("--host");
+    if (argIndex !== -1 && process.argv[argIndex + 1]) {
+        return process.argv[argIndex + 1];
+    }
+    return process.env.NEXUS_HOST || NEXUS_HOST;
+}
+
 export async function runDaemon(): Promise<void> {
     const port = parsePort();
+    const host = parseHost();
     const root = getRootPath();
 
     // Inject root path into CONFIG via env so StorageManager picks it up
     process.env.NEXUS_ROOT = root;
 
-    const { server, storageInfo } = await createDaemonServer({ port, host: "0.0.0.0", version: pkg.version });
+    const { server, storageInfo } = await createDaemonServer({ port, host, version: pkg.version });
 
     await new Promise<void>((resolve, reject) => {
         server.once("error", reject);
-        server.listen(port, "0.0.0.0", () => {
-            console.error(`[n2n-nexus] Daemon v${pkg.version} listening on http://0.0.0.0:${port}`);
+        server.listen(port, host, () => {
+            console.error(`[n2n-nexus] Daemon v${pkg.version} listening on http://${host}:${port}`);
             console.error(`[n2n-nexus] Storage: ${root} (${storageInfo.storageMode}${storageInfo.isDegraded ? ", degraded" : ""})`);
             resolve();
         });

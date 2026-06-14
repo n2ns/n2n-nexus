@@ -116,6 +116,48 @@ describe("StorageManager", () => {
         expect(focusedResult.edges[0]).toMatchObject({ from: "prj-a", to: "prj-b", type: "dependency" });
     });
 
+    it("should fail when patching a missing project", async () => {
+        await expect(StorageManager.patchProjectManifest("missing-project", { description: "nope" }))
+            .rejects
+            .toThrow("Project 'missing-project' not found.");
+    });
+
+    it("should save, list, read, and delete global docs", async () => {
+        await StorageManager.saveGlobalDoc("release-notes", "Release Notes", "# Notes", "tester");
+
+        const docs = await StorageManager.listGlobalDocs();
+        expect(docs["release-notes"]).toMatchObject({
+            title: "Release Notes",
+            updatedBy: "tester"
+        });
+
+        await expect(StorageManager.getGlobalDoc("release-notes")).resolves.toBe("# Notes");
+
+        await StorageManager.deleteGlobalDoc("release-notes");
+        const docsAfterDelete = await StorageManager.listGlobalDocs();
+        expect(docsAfterDelete["release-notes"]).toBeUndefined();
+        await expect(StorageManager.getGlobalDoc("release-notes")).resolves.toBe("");
+    });
+
+    it("should reject path traversal in project and document identifiers", async () => {
+        await expect(StorageManager.saveGlobalDoc("../escape", "Bad", "x", "tester"))
+            .rejects
+            .toThrow("Invalid document id");
+
+        await expect(StorageManager.saveProjectManifest({
+            id: "../escape",
+            name: "Bad",
+            description: "D",
+            techStack: [],
+            relations: [],
+            lastUpdated: "",
+            repositoryUrl: "",
+            localPath: TEST_ROOT,
+            endpoints: [],
+            apiSpec: []
+        })).rejects.toThrow("Invalid project id");
+    });
+
     it("should delete project correctly", async () => {
         await StorageManager.saveProjectManifest({
             id: "prj-del", name: "D", description: "D", techStack: [],
@@ -129,5 +171,25 @@ describe("StorageManager", () => {
         expect(await StorageManager.getProjectManifest("prj-del")).toBeNull();
         const exists = await StorageManager.exists(path.join(StorageManager.projectsRoot, "prj-del"));
         expect(exists).toBe(false);
+    });
+
+    it("should cascade project rename through relations", async () => {
+        await StorageManager.saveProjectManifest({
+            id: "prj-source", name: "Source", description: "D", techStack: [],
+            relations: [{ targetId: "prj-target", type: "dependency" }],
+            lastUpdated: "", repositoryUrl: "", localPath: TEST_ROOT, endpoints: [], apiSpec: []
+        });
+        await StorageManager.saveProjectManifest({
+            id: "prj-target", name: "Target", description: "D", techStack: [],
+            relations: [], lastUpdated: "", repositoryUrl: "", localPath: TEST_ROOT, endpoints: [], apiSpec: []
+        });
+
+        await StorageManager.renameProject("prj-target", "prj-renamed");
+
+        const source = await StorageManager.getProjectManifest("prj-source");
+        expect(source?.relations[0]).toMatchObject({ targetId: "prj-renamed", type: "dependency" });
+
+        const topology = await StorageManager.calculateTopology("prj-source");
+        expect(topology.edges).toContainEqual({ from: "prj-source", to: "prj-renamed", type: "dependency" });
     });
 });

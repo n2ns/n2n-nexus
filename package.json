@@ -67,23 +67,24 @@
     "daemon": "node build/index.js daemon",
     "dev": "tsc -w",
     "test": "vitest run",
-    "test:integration": "vitest run tests/integration.test.ts tests/failover.test.ts tests/meeting.test.ts tests/guest_connection.test.ts",
+    "test:publish": "npm run build && npm test && npm pack --dry-run",
+    "test:integration": "vitest run tests/daemon_projects.test.ts tests/daemon_messages.test.ts tests/message_cursor.test.ts",
     "lint": "eslint src/**",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.25.1",
-    "better-sqlite3": "^12.5.0",
-    "zod": "^4.3.2"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.10.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.0.3",
-    "eslint": "^9.39.2",
-    "lefthook": "^2.0.15",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.51.0",
-    "vitest": "^4.0.16"
+    "@types/node": "^25.9.3",
+    "eslint": "^10.5.0",
+    "lefthook": "^2.1.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
   }
 }

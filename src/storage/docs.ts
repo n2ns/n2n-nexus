@@ -1,5 +1,4 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import { NexusPaths } from "./paths.js";
 import { FILE_ENCODING } from "../constants.js";
 import { GlobalDocIndex } from "../types.js";
@@ -51,7 +50,7 @@ export class DocStorage {
 
     static async getDoc(docId: string): Promise<string> {
         await this.ensureDirectory();
-        const filePath = path.join(NexusPaths.docsDir(), `${docId}.md`);
+        const filePath = NexusPaths.docFile(docId);
         try {
             return await fs.readFile(filePath, FILE_ENCODING);
         } catch {
@@ -62,7 +61,7 @@ export class DocStorage {
     static async saveDoc(docId: string, title: string, content: string, updatedBy: string): Promise<void> {
         await this.ensureDirectory();
         const index = await this.readIndex();
-        const filePath = path.join(NexusPaths.docsDir(), `${docId}.md`);
+        const filePath = NexusPaths.docFile(docId);
         await fs.writeFile(filePath, content, FILE_ENCODING);
         index[docId] = {
             title,
@@ -75,7 +74,7 @@ export class DocStorage {
     static async deleteDoc(docId: string): Promise<void> {
         await this.ensureDirectory();
         const index = await this.readIndex();
-        const filePath = path.join(NexusPaths.docsDir(), `${docId}.md`);
+        const filePath = NexusPaths.docFile(docId);
         delete index[docId];
         await this.writeIndex(index);
         await fs.rm(filePath, { force: true });

@@ -67,6 +67,8 @@ export class RegistryStorage {
     }
 
     static async saveProjectManifest(manifest: ProjectManifest): Promise<void> {
+        const projectDir = NexusPaths.projectDir(manifest.id);
+        const manifestPath = NexusPaths.projectManifestPath(manifest.id);
         const registry = await readRegistry();
         registry.projects[manifest.id] = {
             name: manifest.name,
@@ -75,9 +77,9 @@ export class RegistryStorage {
         };
         await writeRegistry(registry);
 
-        await fs.mkdir(NexusPaths.projectDir(manifest.id), { recursive: true });
+        await fs.mkdir(projectDir, { recursive: true });
         await fs.writeFile(
-            NexusPaths.projectManifestPath(manifest.id),
+            manifestPath,
             JSON.stringify({ ...manifest, lastUpdated: manifest.lastUpdated || new Date().toISOString() }, null, 2),
             "utf-8"
         );
@@ -110,7 +112,7 @@ export class RegistryStorage {
     static async patchProjectManifest(id: string, patch: Partial<ProjectManifest>): Promise<void> {
         const registry = await readRegistry();
         const existing = registry.projects[id];
-        if (!existing) return;
+        if (!existing) throw new Error(`Project '${id}' not found.`);
 
         registry.projects[id] = {
             ...existing,
@@ -237,6 +239,36 @@ export class RegistryStorage {
         delete registry.projects[oldId];
         registry.projects[newId] = entry;
         await writeRegistry(registry);
+
+        for (const projectId of Object.keys(registry.projects)) {
+            const manifestId = projectId === newId ? oldId : projectId;
+            const manifest = await readProjectManifest(manifestId);
+            if (!manifest) continue;
+
+            let changed = false;
+            if (projectId === newId && manifest.id !== newId) {
+                manifest.id = newId;
+                changed = true;
+            }
+
+            if (Array.isArray(manifest.relations)) {
+                const relations = manifest.relations.map((relation) => {
+                    if (relation.targetId !== oldId) return relation;
+                    changed = true;
+                    return { ...relation, targetId: newId };
+                });
+                manifest.relations = relations;
+            }
+
+            if (changed) {
+                await fs.writeFile(
+                    NexusPaths.projectManifestPath(manifestId),
+                    JSON.stringify(manifest, null, 2),
+                    "utf-8"
+                );
+            }
+        }
+
         return 1;
     }
 }

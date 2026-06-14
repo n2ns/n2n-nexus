@@ -71,7 +71,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. Instead of each a
 
 - **Daemon is the source of truth**: start it once and keep it running.
 - **MCP adapters are stateless**: each IDE starts an adapter through `npx`, then forwards tool calls to the daemon.
-- **Cross-environment by design**: point `NEXUS_ENDPOINT` at the same daemon from different machines or shells.
+- **Cross-environment by design**: point `NEXUS_ENDPOINT` at the same daemon from different machines or shells. The daemon binds to localhost by default; use `--host 0.0.0.0` only on a trusted network.
 
 ## Quick Start
 
@@ -196,7 +196,7 @@ Project IDs follow `[prefix]_[name]`.
 
 ```bash
 # Start daemon
-n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus]
+n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus] [--host 127.0.0.1]
 
 # Start MCP adapter
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
@@ -208,6 +208,7 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 | --- | --- | --- |
 | `NEXUS_ENDPOINT` | Daemon URL for MCP adapter | `http://127.0.0.1:5688` |
 | `NEXUS_ROOT` | Storage root for daemon | `~/.n2n-nexus` |
+| `NEXUS_HOST` | Daemon bind host | `127.0.0.1` |
 | `NEXUS_INSTANCE_ID` | Override MCP instance ID | auto-generated |
 
 ## Security and governance notes
