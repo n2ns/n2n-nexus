@@ -1,0 +1,46 @@
+# n2n-nexus
+
+n2n-nexus is a local-first Model Context Protocol (MCP) coordination hub from N2NS Lab for multi-AI assistant collaboration. It uses a long-running local daemon as the source of truth and stateless MCP adapters for IDEs and AI coding assistants.
+
+## Core positioning
+
+- Local MCP coordination hub for multi-AI assistant collaboration.
+- Shared project context, meetings, messages, tasks, project manifests, docs, and assets.
+- Designed for Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, JetBrains, and other MCP-enabled clients.
+- Useful when several AI assistants or IDEs need to coordinate around the same local project state.
+
+## What it is not
+
+- Not a project management SaaS.
+- Not a vector database.
+- Not a source code indexer.
+- Not a cloud sync service.
+- Not a replacement for repository-local memory tools such as n2n-memory.
+
+## Install
+
+Start the daemon:
+
+```bash
+npx n2n-nexus daemon --port 5688
+```
+
+Configure MCP adapters with:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "n2n-nexus", "mcp"],
+  "env": {
+    "NEXUS_ENDPOINT": "http://127.0.0.1:5688"
+  }
+}
+```
+
+## Storage
+
+Default storage root is `~/.n2n-nexus`, containing global docs, project manifests, project assets, registry metadata, and SQLite state.
+
+## Brand
+
+Built by N2NS Lab, short for Next-to-Native Systems Lab, Datafrog's open-source lab for practical AI developer tools.

@@ -1,64 +1,89 @@
 {
-    "name": "n2n-nexus",
-    "version": "0.4.2",
-    "description": "Modular MCP Server for multi-AI assistant coordination",
-    "main": "build/index.js",
-    "type": "module",
-    "bin": {
-        "n2n-nexus": "build/index.js"
-    },
-    "files": [
-        "build",
-        "README.md",
-        "README_zh.md",
-        "docs",
-        "LICENSE"
-    ],
-    "keywords": [
-        "mcp",
-        "mcp-server",
-        "ai-agent",
-        "agent-coordination",
-        "project-management",
-        "local-first",
-        "collaboration"
-    ],
-    "author": "datafrog.io",
-    "license": "Apache-2.0",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/n2ns/n2n-nexus.git"
-    },
-    "homepage": "https://github.com/n2ns/n2n-nexus",
-    "bugs": {
-        "url": "https://github.com/n2ns/n2n-nexus/issues"
-    },
-    "engines": {
-        "node": ">=18.0.0"
-    },
-    "scripts": {
-        "build": "tsc",
-        "start": "node build/index.js",
-        "daemon": "node build/index.js daemon",
-        "dev": "tsc -w",
-        "test": "vitest run",
-        "test:integration": "vitest run tests/integration.test.ts tests/failover.test.ts tests/meeting.test.ts tests/guest_connection.test.ts",
-        "lint": "eslint src/**",
-        "prepublishOnly": "npm run build"
-    },
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "1.25.1",
-        "better-sqlite3": "^12.5.0",
-        "zod": "^4.3.2"
-    },
-    "devDependencies": {
-        "@eslint/js": "^9.39.2",
-        "@types/better-sqlite3": "^7.6.13",
-        "@types/node": "^25.0.3",
-        "eslint": "^9.39.2",
-        "lefthook": "^2.0.15",
-        "typescript": "^5.9.3",
-        "typescript-eslint": "^8.51.0",
-        "vitest": "^4.0.16"
-    }
+  "name": "n2n-nexus",
+  "version": "0.4.2",
+  "description": "Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaboration.",
+  "main": "build/index.js",
+  "type": "module",
+  "bin": {
+    "n2n-nexus": "build/index.js"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "llms.txt",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/README_zh.md",
+    "docs/ARCHITECTURE.md",
+    "docs/ARCHITECTURE_zh.md",
+    "docs/ASSISTANT_GUIDE.md"
+  ],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "modelcontextprotocol",
+    "multi-agent",
+    "multi-agent-coordination",
+    "multi-ai",
+    "ai-agent",
+    "ai-agent-coordination",
+    "ai-assistant",
+    "ai-assistant-collaboration",
+    "coding-agent",
+    "coding-assistant",
+    "project-coordination",
+    "project-context",
+    "project-registry",
+    "local-first",
+    "local-first-mcp",
+    "cross-ide",
+    "ide-collaboration",
+    "claude",
+    "claude-desktop",
+    "cursor",
+    "vscode",
+    "windsurf",
+    "jetbrains",
+    "developer-tools",
+    "ai-developer-tools"
+  ],
+  "author": "N2NS Lab",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/n2ns/n2n-nexus.git"
+  },
+  "homepage": "https://github.com/n2ns/n2n-nexus#readme",
+  "bugs": {
+    "url": "https://github.com/n2ns/n2n-nexus/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "daemon": "node build/index.js daemon",
+    "dev": "tsc -w",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/integration.test.ts tests/failover.test.ts tests/meeting.test.ts tests/guest_connection.test.ts",
+    "lint": "eslint src/**",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.25.1",
+    "better-sqlite3": "^12.5.0",
+    "zod": "^4.3.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.0.3",
+    "eslint": "^9.39.2",
+    "lefthook": "^2.0.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.51.0",
+    "vitest": "^4.0.16"
+  }
 }

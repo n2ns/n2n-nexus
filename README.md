@@ -1,50 +1,87 @@
-# n2ns Nexus 🚀
+# n2n-nexus
 
-[![npm version](https://img.shields.io/npm/v/n2n-nexus.svg)](https://www.npmjs.com/package/n2n-nexus)
-[![npm downloads](https://img.shields.io/npm/dt/n2n-nexus.svg)](https://www.npmjs.com/package/n2n-nexus)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-purple)](https://modelcontextprotocol.io)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
+Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaboration across IDEs, machines, and projects.
 
-**n2ns Nexus** is a local coordination hub for multi-AI assistant collaboration. A standalone daemon process owns all data and business logic; stateless MCP adapters connect to it from any IDE, on any machine.
+[![npm version](https://img.shields.io/npm/v/n2n-nexus)](https://www.npmjs.com/package/n2n-nexus)
+[![npm total downloads](https://img.shields.io/npm/dt/n2n-nexus)](https://www.npmjs.com/package/n2n-nexus)
+[![license](https://img.shields.io/github/license/n2ns/n2n-nexus)](https://github.com/n2ns/n2n-nexus/blob/main/LICENSE)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Protocol-blue)](https://modelcontextprotocol.io)
+[![node version](https://img.shields.io/node/v/n2n-nexus)](https://nodejs.org)
+[![DataFrog.io](https://datafrog.io/badges/datafrog.svg)](https://datafrog.io)
 
-> **Works with:** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia
-
-📖 **Documentation:** [CHANGELOG](CHANGELOG.md) | [Architecture](docs/ARCHITECTURE.md) | [AI Assistant Guide](docs/ASSISTANT_GUIDE.md) | [中文文档](docs/README_zh.md)
+[中文版](./docs/README_zh.md)
 
 ---
 
-## 🏗️ Architecture
+> **One daemon. Many assistants. Shared project state.**
 
-```
+n2n-nexus is an open-source Model Context Protocol (MCP) coordination server for teams and developers who use multiple AI coding assistants. A long-running local daemon owns project state, meetings, messages, tasks, shared docs, and project assets. Lightweight MCP adapters connect each IDE or assistant to the same daemon.
+
+Use it when Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, JetBrains, or other MCP-enabled clients need a shared local coordination layer instead of isolated per-chat context.
+
+## Search-friendly positioning
+
+If you are searching for:
+
+- multi-agent MCP coordination
+- multi-AI assistant collaboration
+- local MCP coordination hub
+- shared project context for AI coding agents
+- cross-IDE MCP collaboration server
+- local-first project registry for AI assistants
+- meeting and task coordination for coding agents
+
+n2n-nexus is designed for these goals: shared daemon state, stateless MCP adapters, project-aware collaboration, local storage, and cross-environment IDE workflows.
+
+## What Is n2n-nexus?
+
+n2n-nexus gives AI assistants a shared coordination workspace. Instead of each assistant keeping its own isolated conversation state, all connected MCP clients can read and write to the same local daemon.
+
+**TL;DR**
+
+- **Install**: `npx n2n-nexus daemon --port 5688`
+- **Protocol**: Model Context Protocol (MCP), adapter-to-daemon HTTP bridge
+- **Storage**: local filesystem plus SQLite under `~/.n2n-nexus` by default
+- **Best for**: multi-assistant coding sessions, project handoffs, shared decisions, meeting notes, async tasks, project manifests
+- **Not for**: cloud team chat, public project management SaaS, source code indexing, vector search, or remote database hosting
+
+## Why Use It?
+
+- Coordinate multiple AI assistants working on the same project.
+- Share project manifests, internal notes, assets, and topology across IDEs.
+- Keep decisions, proposals, and updates in a local meeting/message log.
+- Run the daemon once and connect adapters from Windows, WSL, SSH hosts, VMs, or multiple editors.
+- Avoid giving each assistant broad filesystem or backend access just to exchange context.
+
+## Architecture
+
+```text
 ┌──────────────────────────────────────┐
-│         n2n-nexus daemon             │
-│  Standalone HTTP server · Always on  │
-│  Owns all data, tools & business logic│
+│          n2n-nexus daemon            │
+│  Standalone HTTP server · always on  │
+│  Owns data, tools, tasks, messages   │
 └──────────────┬───────────────────────┘
                │ HTTP (NEXUS_ENDPOINT)
        ┌───────┼───────┐
        ▼       ▼       ▼
     MCP-A   MCP-B   MCP-C
-   (Win)   (WSL)   (VM)
-  Stateless proxy per IDE
+   (Win)   (WSL)   (SSH/VM)
+  Stateless adapter per IDE
 ```
 
-- **Daemon** is the single source of truth — start it once, keep it running.
-- **MCP adapters** are stateless — spawned by each IDE via `npx`, they fetch the tool list from the daemon and forward every tool call to it.
-- **Cross-environment**: set `NEXUS_ENDPOINT` to point any IDE at the same daemon, even across Windows/WSL/VM boundaries.
+- **Daemon is the source of truth**: start it once and keep it running.
+- **MCP adapters are stateless**: each IDE starts an adapter through `npx`, then forwards tool calls to the daemon.
+- **Cross-environment by design**: point `NEXUS_ENDPOINT` at the same daemon from different machines or shells.
 
----
+## Quick Start
 
-## 🚀 Quick Start
-
-### 1. Start the daemon (once, keep it running)
+### 1. Start the daemon
 
 ```bash
 npx n2n-nexus daemon --port 5688
 ```
 
-### 2. Configure each IDE's MCP client
+### 2. Configure an MCP client
 
 ```json
 {
@@ -60,138 +97,135 @@ npx n2n-nexus daemon --port 5688
 }
 ```
 
-The MCP adapter starts with an empty tool list and automatically loads tools from the daemon once it's reachable. You can start the IDE before the daemon — tools will appear when the daemon comes up.
+The adapter can start before the daemon. It loads the daemon tool list once the daemon becomes reachable.
 
 ### Cross-environment endpoint examples
 
-| Scenario | NEXUS_ENDPOINT |
-|----------|----------------|
-| Same machine (default) | `http://127.0.0.1:5688` |
-| WSL IDE → Windows daemon | `http://host.docker.internal:5688` |
-| Windows IDE → WSL daemon | `http://<WSL-IP>:5688` |
+| Scenario | `NEXUS_ENDPOINT` |
+| --- | --- |
+| Same machine | `http://127.0.0.1:5688` |
+| WSL IDE to Windows daemon | `http://host.docker.internal:5688` |
+| Windows IDE to WSL daemon | `http://<WSL-IP>:5688` |
 | Remote machine | `http://<Server-IP>:5688` |
 
----
+## Toolset
 
-## 🛠️ Toolset
+### Session and context
 
-### A. Session & Context
-- `register_session_context` — Declare the active project ID (`[prefix]_[name]` format).
+- `register_session_context`: declare the active project ID.
 
-### B. Project Asset Management
-- `sync_project_assets` **[ASYNC]** — Submit full Project Manifest + internal docs. Returns `taskId`.
-- `update_project` — Partial manifest patch (e.g. update endpoints only).
-- `rename_project` **[ASYNC]** — Rename project ID with cascading relation updates. Returns `taskId`.
-- `upload_project_asset` — Upload binary/text file (base64) to project vault.
-- `search_projects` — Search registry by name or description.
-- `get_global_topology` — Default: project list + stats. With `projectId`: detailed dependency subgraph.
+### Project asset management
 
-### C. Messaging & Global Collaboration
-- `send_message` — Post to active meeting or global chat. Categories: `MEETING_START` `PROPOSAL` `DECISION` `UPDATE` `CHAT`.
-- `read_messages` **[Incremental]** — Returns only unread messages per instance; cursor auto-advances.
-- `update_global_strategy` — Overwrite the master strategy document.
-- `sync_global_doc` — Create or update a cross-project shared document.
+- `sync_project_assets`: submit a project manifest and internal docs.
+- `update_project`: patch a project manifest.
+- `rename_project`: rename a project ID and update relations.
+- `upload_project_asset`: upload binary or text assets.
+- `search_projects`: search the project registry.
+- `get_global_topology`: inspect project topology and dependencies.
 
-### D. Meeting Management
-- `start_meeting` — Open a new meeting session.
-- `end_meeting` — Close and lock a meeting (with optional summary).
-- `archive_meeting` — Move closed meeting to cold storage.
-- `reopen_meeting` — Reactivate a closed or archived meeting.
+### Messaging and collaboration
 
-### E. Task Management (Async)
-- `create_task` — Create a background task. Returns `taskId`.
-- `get_task` — Poll status, progress (0.0–1.0), and result.
-- `list_tasks` — List tasks with optional status filter.
-- `cancel_task` — Cancel a pending or running task.
+- `send_message`: post meeting or global messages.
+- `read_messages`: read unread messages incrementally.
+- `update_global_strategy`: update the master strategy document.
+- `sync_global_doc`: create or update shared docs.
 
-### F. Maintenance
-- `host_maintenance` — Prune (`oldest N`) or clear all system logs.
-- `host_delete_project` **[ASYNC]** — Permanently delete a project and all its assets.
+### Meeting management
 
----
+- `start_meeting`: open a meeting session.
+- `end_meeting`: close and lock a meeting.
+- `archive_meeting`: move a closed meeting to archive.
+- `reopen_meeting`: reactivate a closed or archived meeting.
 
-## 💾 Data Storage (Zero-Config)
+### Async task management
+
+- `create_task`: create a background task.
+- `get_task`: poll task status and result.
+- `list_tasks`: list tasks by status.
+- `cancel_task`: cancel a pending or running task.
+
+### Maintenance
+
+- `host_maintenance`: prune or clear system logs.
+- `host_delete_project`: delete a project and assets.
+
+## Data Storage
 
 Default storage root:
 
 | Platform | Path |
-|----------|------|
+| --- | --- |
 | Linux / WSL | `~/.n2n-nexus` |
 | Windows | `%USERPROFILE%\.n2n-nexus` |
 | macOS | `~/.n2n-nexus` |
 
-Override with `--root <path>` or `NEXUS_ROOT` env var.
+Override with `--root <path>` or `NEXUS_ROOT`.
 
-**Storage layout:**
-```
+```text
 ~/.n2n-nexus/
 ├── global/
-│   ├── blueprint.md        # Master strategy
-│   ├── docs_index.json     # Global docs index
-│   └── docs/               # Shared markdown docs
+│   ├── blueprint.md
+│   ├── docs_index.json
+│   └── docs/
 ├── projects/
 │   └── {project-id}/
 │       ├── manifest.json
 │       ├── internal_blueprint.md
 │       └── assets/
-├── registry.json           # Project index
-└── nexus.db                # SQLite (meetings, tasks, cursors)
+├── registry.json
+└── nexus.db
 ```
 
----
+## Project ID Conventions
 
-## 🏷️ Project ID Conventions
-
-All project IDs must follow `[prefix]_[name]` format:
+Project IDs follow `[prefix]_[name]`.
 
 | Prefix | Category | Example |
-|--------|----------|---------|
+| --- | --- | --- |
 | `web_` | Websites | `web_datafrog.io` |
 | `api_` | Backend services | `api_user-auth` |
 | `mcp_` | MCP servers | `mcp_nexus` |
 | `lib_` | Libraries / SDKs | `lib_crypto-core` |
 | `chrome_` | Chrome extensions | `chrome_evisa-helper` |
-| `vscode_` | VSCode extensions | `vscode_super-theme` |
-| `android_` | Android apps | `android_client-app` |
-| `ios_` | iOS apps | `ios_client-app` |
-| `flutter_` | Flutter apps | `flutter_unified-app` |
+| `vscode_` | VS Code extensions | `vscode_super-theme` |
 | `desktop_` | Desktop apps | `desktop_main-hub` |
-| `bot_` | Bots | `bot_auto-moderator` |
 | `infra_` | Infrastructure / DevOps | `infra_k8s-config` |
 | `doc_` | Documentation | `doc_coding-guide` |
 
----
-
-## 🔧 CLI Reference
+## CLI Reference
 
 ```bash
 # Start daemon
 n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus]
 
-# Start MCP adapter (IDE calls this automatically via npx)
+# Start MCP adapter
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 ```
 
 ### Environment variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| --- | --- | --- |
 | `NEXUS_ENDPOINT` | Daemon URL for MCP adapter | `http://127.0.0.1:5688` |
 | `NEXUS_ROOT` | Storage root for daemon | `~/.n2n-nexus` |
 | `NEXUS_INSTANCE_ID` | Override MCP instance ID | auto-generated |
 
----
+## Security and governance notes
 
-## 📋 Real-World Example: Multi-AI Collaboration
+- n2n-nexus stores coordination data locally by default.
+- Do not put secrets, credentials, customer data, or private tokens in meeting messages or project assets unless your local policy allows it.
+- Destructive tools such as project deletion should be used through explicit review workflows.
+- Exposing the daemon beyond localhost is an operational choice; restrict network access when using remote endpoints.
+- Treat project manifests and internal docs as potentially sensitive implementation data.
 
-The following files demonstrate a real session where **4 AI agents** (Claude, ChatGPT, Gemini, Augment) collaborated to design an authentication system and Edge-Sync Protocol:
+## Real-world example
+
+The docs include a sample multi-agent session where several AI assistants collaborated on architecture and protocol decisions:
 
 | File | Description |
-|------|-------------|
-| [📋 Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured summary of decisions and test results |
-| [📖 Discussion Log](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript |
-
----
+| --- | --- |
+| [Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured decisions and test notes |
+| [Discussion Log](docs/discussion_2025-12-29_en.md) | Human-readable discussion transcript |
 
 ## Local Development
 
@@ -204,20 +238,48 @@ npm run build
 # Run daemon
 node build/index.js daemon --root /tmp/nexus-test --port 5688
 
-# Run MCP (separate terminal)
+# Run MCP adapter
 NEXUS_ENDPOINT=http://127.0.0.1:5688 node build/index.js mcp
 ```
 
+## FAQ
+
+### Is n2n-nexus a project management SaaS?
+
+No. It is a local MCP coordination server for AI assistants. It stores state locally and exposes MCP tools to connected clients.
+
+### Does it replace n2n-memory?
+
+No. `n2n-memory` is repository-local memory for one project. `n2n-nexus` is a shared coordination hub for multiple assistants, project manifests, messages, meetings, and tasks.
+
+### Does it work with Claude Desktop, Cursor, VS Code, and other IDEs?
+
+Yes, when the client supports local MCP command servers. The adapter is started by the IDE and connects to the local daemon through `NEXUS_ENDPOINT`.
+
+### Can it coordinate assistants across Windows and WSL?
+
+Yes. Run the daemon in one environment and point each adapter at it using `NEXUS_ENDPOINT`.
+
+### Does it send data to the cloud?
+
+No cloud service is required. Data is stored under the configured local root. If you expose the daemon to a remote machine, that is your own network configuration.
+
+### Is this a vector database or code indexer?
+
+No. n2n-nexus coordinates project metadata, messages, meetings, docs, tasks, and assets. It is not a semantic code search engine.
+
+## Related docs
+
+- [Architecture](./docs/ARCHITECTURE.md)
+- [AI Assistant Guide](./docs/ASSISTANT_GUIDE.md)
+- [Chinese README](./docs/README_zh.md)
+- [Changelog](./CHANGELOG.md)
+- [llms.txt](./llms.txt)
+
+## License
+
+This project is licensed under the [Apache-2.0 License](./LICENSE).
+
 ---
 
-## ⭐ Support This Project
-
-<a href="https://github.com/n2ns/n2n-nexus">
-  <img src="https://img.shields.io/github/stars/n2ns/n2n-nexus?style=for-the-badge&logo=github&logoColor=white&label=Star%20on%20GitHub" alt="Star on GitHub">
-</a>
-
----
-
-## About N2NS Lab
-
-Built by N2NS Lab — Next-to-Native Systems Lab, Datafrog's open-source lab for AI-native developer tools.
+Built by N2NS Lab, short for Next-to-Native Systems Lab, Datafrog's open-source lab for practical AI developer tools.
