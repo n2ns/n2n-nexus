@@ -37,7 +37,7 @@ n2n-nexus 面向这些场景设计：共享 daemon 状态、无状态 MCP 适配
 
 n2n-nexus 为 AI 助手提供共享协作空间。不同助手不再只依赖自己的聊天上下文，而是可以通过 MCP 读取和更新同一个本地 daemon 中的项目状态。
 
-**TL;DR**
+**Quick summary**
 
 - **安装**：`npx n2n-nexus daemon --port 5688`
 - **协议**：Model Context Protocol (MCP)，适配器通过 HTTP 连接 daemon

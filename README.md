@@ -37,7 +37,7 @@ n2n-nexus is designed for these goals: shared daemon state, stateless MCP adapte
 
 n2n-nexus gives AI assistants a shared coordination workspace. Instead of each assistant keeping its own isolated conversation state, all connected MCP clients can read and write to the same local daemon.
 
-**TL;DR**
+**Quick summary**
 
 - **Install**: `npx n2n-nexus daemon --port 5688`
 - **Protocol**: Model Context Protocol (MCP), adapter-to-daemon HTTP bridge

@@ -1,6 +1,6 @@
 {
   "name": "n2n-nexus",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaboration.",
   "main": "build/index.js",
   "type": "module",
@@ -67,10 +67,14 @@
     "daemon": "node build/index.js daemon",
     "dev": "tsc -w",
     "test": "vitest run",
+    "audit": "npm audit",
+    "audit:prod": "npm audit --omit=dev",
+    "pack:dry-run": "npm pack --dry-run",
+    "check": "npm run lint && npm test && npm run build && npm run audit && npm run pack:dry-run",
     "test:publish": "npm run build && npm test && npm pack --dry-run",
     "test:integration": "vitest run tests/daemon_projects.test.ts tests/daemon_messages.test.ts tests/message_cursor.test.ts",
     "lint": "eslint src/**",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
