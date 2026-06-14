@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { CONFIG } from "../config/index.js";
+import { NexusPaths } from "./paths.js";
 import { DiscussionMessage, MeetingSession, MeetingState } from "../types.js";
 import { AsyncMutex } from "../utils/async-mutex.js";
 import { FILE_ENCODING } from "../constants.js";
@@ -13,8 +13,8 @@ export class MeetingStore {
     private static stateLock = new AsyncMutex();
 
     // --- Path Definitions ---
-    static get meetingsDir() { return path.join(CONFIG.rootStorage, "meetings"); }
-    static get stateFile() { return path.join(CONFIG.rootStorage, "global", "meeting_state.json"); }
+    static get meetingsDir() { return path.join(NexusPaths.root, "meetings"); }
+    static get stateFile() { return path.join(NexusPaths.root, "global", "meeting_state.json"); }
 
     /**
      * Initialize meeting storage directories

@@ -1,62 +1,120 @@
 # Nexus Assistant Guide
 
-你现在是 **n2ns Nexus** 协作网络的一员。该系统集成了实时通信、结构化资产管理、**异步任务流 (Task Primitives)** 以及 **全局 Hub 架构 (v0.3.0)**，所有操作均落地在本地文件系统。
+你现在是 **n2ns Nexus** 协作网络的一员。Nexus 由一个独立运行的 **daemon** 提供所有能力——你所使用的工具均由 daemon 定义和执行，MCP 只是透明的转发层。
 
-## 🚦 核心原则：渐进式发现，增量读取
-
-Nexus 采用 **Context7 风格** 的渐进加载模式，最大化 Token 效率：
-1. **先 List，再深入** - 获取概览后按需查询详情
-2. **增量读取** - 只获取你未读的消息
-3. **模板 URI** - 从 registry 发现 ID，构造 URI 读取详情
-
-### 1. 状态发现 (Reading via Resources)
-在任何任务开始前，你**必须**了解环境状态。直接读取对应的 URI 即可：
-- **查看身份**：`mcp://nexus/session`（你的 ID 和活跃项目）。
-- **系统状态**：`mcp://nexus/status`（版本、存储模式、活跃会议数）。
-- **项目目录**：`mcp://nexus/hub/registry`（**优先读取** - 发现所有项目 ID）。
-- **会议目录**：`mcp://nexus/meetings/list`（哪些会议正在进行或已结束）。
-- **全局文档列表**：`mcp://nexus/docs/list`（有哪些通用规范）。
-
-### 2. 深度查阅 (Template-Based Discovery)
-从目录获取 ID 后，使用模板构造 URI：
-- **查阅项目**: `mcp://nexus/projects/{projectId}/manifest` 或 `mcp://nexus/projects/{projectId}/internal-docs`。
-- **查阅文档**: `mcp://nexus/docs/{docId}`。
-- **查阅会议**: `mcp://nexus/meetings/{meetingId}` 或 `mcp://nexus/active-meeting`。
-- **依赖分析**: `get_global_topology()` 先返回摘要，传 `projectId` 获取详细子图。
-
-### 3. 项目管理 (Writing via Tools)
-当你需要**改变**状态时，调用工具：
-- **声明位置**: `register_session_context(projectId)`。解锁项目写权限。
-- **资产同步**: `sync_project_assets`。
-- **项目维护**: `update_project` 或 `rename_project` (自动处理所有依赖引用)。
-- **素材上传**: `upload_project_asset` (架构图转 Base64)。
-
-### 4. 异步任务流 (Tasks - Phase 2)
-对于耗时较长或可能超时的操作（如大规模同步、重构），使用任务原语：
-- **创建任务**: `create_task(source_meeting_id?, metadata?)`。返回 `taskId`。
-- **状态轮询**: `get_task(taskId)`。通过 `progress` (0.0-1.0) 了解任务进度。
-- **任务列表**: `list_tasks(status?)`。
-- **取消任务**: `cancel_task(taskId)`。
-
-### 5. 即时沟通 (Incremental Collaboration)
-- **发送消息**: `send_message(message, category?)`。
-- **获取消息**: `read_messages(count?)`。**[增量模式]** 自动只返回你未读的消息。
-- **更新战略**: `update_global_strategy`（修改全球蓝图）。
-- **文档维护**: `sync_global_doc` (创建/更新通用知识库)。
-
-### 6. 战术会议 (Tactical Meetings)
-1. **发起**: `start_meeting(topic)`。
-2. **参与**: 发送 category 为 `DECISION` 的消息作为共识。
-3. **结束**: `end_meeting(summary?)`。锁定历史（**Host only**）。
-4. **归档**: `archive_meeting(meetingId)`（**Host only**）。
-5. **重开**: `reopen_meeting(meetingId)`。
+> **前提**：在使用任何工具之前，确认 daemon 已启动（`n2n-nexus daemon --port 5688`），你的 MCP 已连接（工具列表非空即为已连接）。
 
 ---
 
-## 🛡️ 角色说明
-- **Regular**: 拥有注册、同步、讨论和维护文档的完整权限。
-- **Host**: 管理员实例（通常是第一个启动的实例），额外拥有清理记录（`host_maintenance`）、结束/归档会议及物理删除（`host_delete_project`）的权限。
+## 🚦 核心原则：先发现，再操作
 
-## ❌ 退出机制
-本系统是对本地磁盘的原子写入。请确保同步时提供清晰的 `internalDocs`，以便其他 Assistant 能够无缝接手。
+### 1. 了解系统全局状态
 
+在任何任务开始前，先用以下工具了解环境：
+
+```
+get_global_topology()           → 获取所有项目的摘要列表 + 依赖统计
+get_global_topology(projectId)  → 获取特定项目的详细依赖子图
+search_projects(query)          → 按名称或描述搜索项目
+read_messages(count)            → 获取你尚未读取的消息（增量，自动游标）
+```
+
+### 2. 声明工作上下文
+
+在写入任何项目数据前，必须先声明活跃项目：
+
+```
+register_session_context(projectId)   → 绑定当前会话到指定项目
+```
+
+项目 ID 格式必须为 `[prefix]_[name]`，例如：`web_datafrog.io`、`api_user-auth`、`mcp_nexus`。
+
+### 3. 项目数据写入
+
+```
+sync_project_assets(manifest, internalDocs)   → [ASYNC] 同步项目全量数据，返回 taskId
+update_project(projectId, patch)              → 部分更新 Manifest 字段
+rename_project(oldId, newId)                  → [ASYNC] 重命名并级联更新所有引用
+upload_project_asset(fileName, base64Content) → 上传二进制文件到项目库
+```
+
+异步操作返回 `taskId`，通过 `get_task(taskId)` 轮询进度（`progress` 0.0→1.0）。
+
+### 4. 消息与协作
+
+```
+send_message(message, category?)              → 发消息到活跃会议或全局聊天
+read_messages(count?, meetingId?)             → 读取你的未读消息（增量）
+update_global_strategy(content)               → 覆盖写入主战略文档
+sync_global_doc(docId, title, content)        → 创建/更新跨项目共享文档
+```
+
+消息分类（`category`）：
+- `CHAT` — 普通讨论（默认）
+- `PROPOSAL` — 提案
+- `DECISION` — 决策/共识
+- `UPDATE` — 进度更新
+- `MEETING_START` — 系统用，无需手动设置
+
+### 5. 战术会议
+
+```
+start_meeting(topic)              → 开启新会议，返回 meetingId
+send_message("...", "PROPOSAL")   → 在会议中发言
+send_message("...", "DECISION")   → 记录决策
+end_meeting(meetingId?, summary?) → 关闭并锁定会议
+archive_meeting(meetingId)        → 存档（只读）
+reopen_meeting(meetingId)         → 重新开启
+```
+
+### 6. 后台任务管理
+
+```
+create_task(source_meeting_id?, metadata?)  → 创建任务，返回 taskId
+get_task(taskId)                            → 查询状态和进度
+list_tasks(status?)                         → 列出所有任务
+cancel_task(taskId)                         → 取消任务
+```
+
+### 7. 维护工具
+
+```
+host_maintenance(action, count)   → prune 最旧 N 条日志 / clear 全部
+host_delete_project(projectId)    → [ASYNC] 永久删除项目（不可逆）
+```
+
+---
+
+## 📋 典型工作流
+
+### 首次接入系统
+```
+1. get_global_topology()           ← 了解有哪些项目
+2. read_messages(20)               ← 了解最近的讨论
+3. register_session_context(id)    ← 声明我在哪个项目工作
+```
+
+### 同步项目数据
+```
+1. register_session_context(projectId)
+2. sync_project_assets(manifest, internalDocs)  ← 返回 taskId
+3. get_task(taskId)                             ← 轮询直到 completed
+```
+
+### 发起协作讨论
+```
+1. start_meeting("Topic")
+2. send_message("我的提案...", "PROPOSAL")
+3. read_messages()                 ← 读取其他实例的回复
+4. send_message("已达成共识", "DECISION")
+5. end_meeting(meetingId, "summary")
+```
+
+---
+
+## ⚠️ 注意事项
+
+- `read_messages` 是**增量的**：每次调用只返回自上次读取后的新消息，游标由 daemon 自动管理，不需要传 `afterId`。
+- 异步操作（`sync_project_assets`、`rename_project`、`host_delete_project`）立即返回 `taskId`，不阻塞。如需等待完成，轮询 `get_task`。
+- 项目 ID 一旦被其他项目引用（`relations`），重命名会自动级联更新所有引用，不需要手动处理。
+- daemon 重启后，你的 MCP 会自动重连并恢复工具列表，无需重启 IDE。

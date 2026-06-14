@@ -15,7 +15,7 @@ export interface ProjectManifest {
     apiDependencies?: Record<string, string>; // Map of projectId to version constraint (e.g., ">=v2.1")
     gatewayCompatibility?: string; // Gateway version compatibility (e.g., ">=v2.1")
     api_versions?: Record<string, string>; // Feature-level API versions (e.g., "client_id_alias": "v3.6.20")
-    feature_tier?: "free" | "pro" | "enterprise"; // Feature tier declaration for capability detection
+    feature_tier?: "standard" | "advanced" | "team"; // Capability level declaration for integration interoperability
 }
 
 export interface DiscussionMessage {
@@ -76,4 +76,6 @@ export interface ToolContext {
     notifyResourceUpdate: (uri: string) => void;
     requestId?: string | number;
     isGuest?: boolean;
+    endpoint?: string;
+    instanceId?: string;
 }

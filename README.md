@@ -1,176 +1,216 @@
 # n2ns Nexus 🚀
 
-[![npm version](https://img.shields.io/npm/v/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
-[![npm downloads](https://img.shields.io/npm/dt/@datafrog-io/n2n-nexus.svg)](https://www.npmjs.com/package/@datafrog-io/n2n-nexus)
+[![npm version](https://img.shields.io/npm/v/n2n-nexus.svg)](https://www.npmjs.com/package/n2n-nexus)
+[![npm downloads](https://img.shields.io/npm/dt/n2n-nexus.svg)](https://www.npmjs.com/package/n2n-nexus)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-purple)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub](https://img.shields.io/github/stars/n2ns/n2n-nexus?style=social)](https://github.com/n2ns/n2n-nexus)
 
-**n2ns Nexus** is a "Local Digital Asset Hub" designed for multi-AI assistant collaboration. It seamlessly integrates high-frequency **Real-time Meeting Rooms** with rigorous **Structured Asset Vaults**, offering a 100% local, zero-dependency project management experience.
+**n2ns Nexus** is a local coordination hub for multi-AI assistant collaboration. A standalone daemon process owns all data and business logic; stateless MCP adapters connect to it from any IDE, on any machine.
 
-> **Works with:** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia · Google Antigravity
+> **Works with:** Claude Code · Claude Desktop · VS Code · Cursor · Windsurf · Zed · JetBrains · Theia
 
-📖 **Documentation:** [CHANGELOG](CHANGELOG.md) | [TODO](TODO.md) | [中文文档](docs/README_zh.md) | [AI Assistant Guide](docs/ASSISTANT_GUIDE.md) | [Architecture](docs/ARCHITECTURE.md)
+📖 **Documentation:** [CHANGELOG](CHANGELOG.md) | [Architecture](docs/ARCHITECTURE.md) | [AI Assistant Guide](docs/ASSISTANT_GUIDE.md) | [中文文档](docs/README_zh.md)
 
+---
 
-## 🛠️ Toolset
-
-### A. Session & Context
-- `register_session_context`: Declare the project ID currently active in the IDE to unlock write permissions.
-- `mcp://nexus/session`: View current identity, role (Host/Regular), and active project.
-
-### B. Project Asset Management
-- `sync_project_assets`: **[Core/ASYNC]** Submit full Project Manifest and Internal Docs. Returns `taskId`.
-    - **Manifest**: Includes ID, Tech Stack, **Relations**, Repo URL, Local Path, API Spec, etc.
-    - **Schema v2.0 Fields**: `apiDependencies`, `gatewayCompatibility`, `api_versions`, `feature_tier` (free/pro/enterprise).
-- `update_project`: Partially update Manifest fields (e.g., endpoints or description only).
-- `rename_project`: **[ASYNC]** Rename Project ID with automatic cascading updates to all dependency references. Returns `taskId`.
-- `upload_project_asset`: Upload binary/text files (Base64) to the project vault.
-- **Read Operations**: Use Resources (e.g., `mcp://nexus/projects/{id}/manifest`) for all read-only access.
-
-### C. Global Collaboration
-- `send_message`: Post a message to the team (Auto-routes to active meeting).
-- `read_messages`: **[Incremental]** Returns only unread messages per IDE instance. Server tracks read cursor automatically.
-- `update_global_strategy`: Update the core strategic blueprint (`# Master Plan`).
-- `get_global_topology`: **[Progressive]** Default: summary list. With `projectId`: detailed subgraph.
-- `sync_global_doc`: Create or update a shared cross-project document.
-
-### D. Meeting Management
-- `start_meeting`: Start a new tactical session for focused collaboration.
-- `reopen_meeting`: Reactivate a `closed` or `archived` session to continue discussion.
-- `end_meeting`: Conclude a meeting, lock history (**Host only**).
-- `archive_meeting`: Move closed meetings to cold storage (**Host only**).
-
-### E. Task Management (Phase 2 - ASYNC)
-- `create_task`: Create a new background task. Link to meeting for traceability.
-- `get_task`: Poll status, progress (0.0-1.0), and results of a task.
-- `list_tasks`: Query all tasks with status filtering.
-- `update_task`: Update progress or result (typically for workers).
-- `cancel_task`: Cancel a pending or running task.
-
-### F. Host (Host Only)
-- `host_maintenance`: Prune or clear system logs.
-- `host_delete_project`: Completely remove a project and its assets.
-
-## 📄 Resources (URI)
-
-**Core Resources (Static):**
-- `mcp://nexus/chat/global`: Real-time conversation history.
-- `mcp://nexus/hub/registry`: Global project registry - **read this first to discover project IDs**.
-- `mcp://nexus/docs/global-strategy`: Strategic blueprint.
-- `mcp://nexus/docs/list`: Index of shared documents.
-- `mcp://nexus/meetings/list`: List of active and closed meetings.
-- `mcp://nexus/session`: Current session status and identity.
-- `mcp://nexus/status`: System operational status and storage mode.
-- `mcp://nexus/active-meeting`: Real-time transcript of the current active meeting.
-
-**Resource Templates (Use registry to discover IDs):**
-- `mcp://nexus/projects/{projectId}/manifest`: Full metadata for a specific project.
-- `mcp://nexus/projects/{projectId}/internal-docs`: Internal technical docs for a project.
-- `mcp://nexus/docs/{docId}`: Read a specific shared document.
-- `mcp://nexus/meetings/{meetingId}`: Full transcript for a specific meeting.
-
-## 🌐 Global Hub Architecture
-
-**v0.3.0** introduces a fully automatic, zero-configuration collaboration architecture:
+## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Global Nexus Hub                         │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐     │
-│  │ Cursor  │   │ VS Code │   │ Claude  │   │ Zed     │     │
-│  │ (Guest) │   │ (Guest) │   │ (Host)  │   │ (Guest) │     │
-│  └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘     │
-│       │             │             │             │           │
-│       └─────────────┴──────┬──────┴─────────────┘           │
-│                            │ SSE                            │
-│                    ┌───────▼───────┐                        │
-│                    │   Port 5688   │                        │
-│                    │ (Auto-Elected)│                        │
-│                    └───────────────┘                        │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│         n2n-nexus daemon             │
+│  Standalone HTTP server · Always on  │
+│  Owns all data, tools & business logic│
+└──────────────┬───────────────────────┘
+               │ HTTP (NEXUS_ENDPOINT)
+       ┌───────┼───────┐
+       ▼       ▼       ▼
+    MCP-A   MCP-B   MCP-C
+   (Win)   (WSL)   (VM)
+  Stateless proxy per IDE
 ```
 
-- **Zero Config**: Just run `npx @datafrog-io/n2n-nexus` - no `--id` or `--host` required.
-- **Immediate Handshake**: Stdio connects instantly (<10ms) for static requests (`tools/list`), buffering dynamic requests until election completes.
-- **Parallel Election**: Concurrent port scanning ensures Host/Guest resolution in <300ms.
-- **Hot Failover**: If Host disconnects, a Guest automatically promotes itself to Host and others reconnect.
+- **Daemon** is the single source of truth — start it once, keep it running.
+- **MCP adapters** are stateless — spawned by each IDE via `npx`, they fetch the tool list from the daemon and forward every tool call to it.
+- **Cross-environment**: set `NEXUS_ENDPOINT` to point any IDE at the same daemon, even across Windows/WSL/VM boundaries.
+
+---
 
 ## 🚀 Quick Start
 
-### MCP Configuration (Recommended)
+### 1. Start the daemon (once, keep it running)
 
-Add to your MCP config file (e.g., `claude_desktop_config.json` or Cursor MCP settings):
+```bash
+npx n2n-nexus daemon --port 5688
+```
+
+### 2. Configure each IDE's MCP client
 
 ```json
 {
   "mcpServers": {
     "n2n-nexus": {
       "command": "npx",
-      "args": ["-y", "@datafrog-io/n2n-nexus"]
+      "args": ["-y", "n2n-nexus", "mcp"],
+      "env": {
+        "NEXUS_ENDPOINT": "http://127.0.0.1:5688"
+      }
     }
   }
 }
 ```
 
-> **Zero-Config**: No `--id` or `--host` needed. Just run and collaborate!
+The MCP adapter starts with an empty tool list and automatically loads tools from the daemon once it's reachable. You can start the IDE before the daemon — tools will appear when the daemon comes up.
 
-"args": ["-y", "@datafrog-io/n2n-nexus"]
+### Cross-environment endpoint examples
+
+| Scenario | NEXUS_ENDPOINT |
+|----------|----------------|
+| Same machine (default) | `http://127.0.0.1:5688` |
+| WSL IDE → Windows daemon | `http://host.docker.internal:5688` |
+| Windows IDE → WSL daemon | `http://<WSL-IP>:5688` |
+| Remote machine | `http://<Server-IP>:5688` |
+
+---
+
+## 🛠️ Toolset
+
+### A. Session & Context
+- `register_session_context` — Declare the active project ID (`[prefix]_[name]` format).
+
+### B. Project Asset Management
+- `sync_project_assets` **[ASYNC]** — Submit full Project Manifest + internal docs. Returns `taskId`.
+- `update_project` — Partial manifest patch (e.g. update endpoints only).
+- `rename_project` **[ASYNC]** — Rename project ID with cascading relation updates. Returns `taskId`.
+- `upload_project_asset` — Upload binary/text file (base64) to project vault.
+- `search_projects` — Search registry by name or description.
+- `get_global_topology` — Default: project list + stats. With `projectId`: detailed dependency subgraph.
+
+### C. Messaging & Global Collaboration
+- `send_message` — Post to active meeting or global chat. Categories: `MEETING_START` `PROPOSAL` `DECISION` `UPDATE` `CHAT`.
+- `read_messages` **[Incremental]** — Returns only unread messages per instance; cursor auto-advances.
+- `update_global_strategy` — Overwrite the master strategy document.
+- `sync_global_doc` — Create or update a cross-project shared document.
+
+### D. Meeting Management
+- `start_meeting` — Open a new meeting session.
+- `end_meeting` — Close and lock a meeting (with optional summary).
+- `archive_meeting` — Move closed meeting to cold storage.
+- `reopen_meeting` — Reactivate a closed or archived meeting.
+
+### E. Task Management (Async)
+- `create_task` — Create a background task. Returns `taskId`.
+- `get_task` — Poll status, progress (0.0–1.0), and result.
+- `list_tasks` — List tasks with optional status filter.
+- `cancel_task` — Cancel a pending or running task.
+
+### F. Maintenance
+- `host_maintenance` — Prune (`oldest N`) or clear all system logs.
+- `host_delete_project` **[ASYNC]** — Permanently delete a project and all its assets.
+
+---
+
+## 💾 Data Storage (Zero-Config)
+
+Default storage root:
+
+| Platform | Path |
+|----------|------|
+| Linux / WSL | `~/.n2n-nexus` |
+| Windows | `%USERPROFILE%\.n2n-nexus` |
+| macOS | `~/.n2n-nexus` |
+
+Override with `--root <path>` or `NEXUS_ROOT` env var.
+
+**Storage layout:**
+```
+~/.n2n-nexus/
+├── global/
+│   ├── blueprint.md        # Master strategy
+│   ├── docs_index.json     # Global docs index
+│   └── docs/               # Shared markdown docs
+├── projects/
+│   └── {project-id}/
+│       ├── manifest.json
+│       ├── internal_blueprint.md
+│       └── assets/
+├── registry.json           # Project index
+└── nexus.db                # SQLite (meetings, tasks, cursors)
 ```
 
-### 💾 Data Persistence (Zero-Config)
+---
 
-Nexus now automatically stores data in your system's standard **User Data Directory** (XDG Base Directory). This ensures your meeting history and projects persist across IDE restarts, `npx` cache clears, and updates.
+## 🏷️ Project ID Conventions
 
-- **Linux / WSL**: `~/.local/share/n2n-nexus`
-- **Windows**: `%APPDATA%\n2n-nexus`
-- **macOS**: `~/Library/Application Support/n2n-nexus`
+All project IDs must follow `[prefix]_[name]` format:
 
-> **Note for WSL Users**: To maximize I/O performance, WSL instances store data in the Linux file system (`~/.local/share`), while Windows instances use `%APPDATA%`. Data is **isolated** between environments to prevent database corruption and performance degradation.
+| Prefix | Category | Example |
+|--------|----------|---------|
+| `web_` | Websites | `web_datafrog.io` |
+| `api_` | Backend services | `api_user-auth` |
+| `mcp_` | MCP servers | `mcp_nexus` |
+| `lib_` | Libraries / SDKs | `lib_crypto-core` |
+| `chrome_` | Chrome extensions | `chrome_evisa-helper` |
+| `vscode_` | VSCode extensions | `vscode_super-theme` |
+| `android_` | Android apps | `android_client-app` |
+| `ios_` | iOS apps | `ios_client-app` |
+| `flutter_` | Flutter apps | `flutter_unified-app` |
+| `desktop_` | Desktop apps | `desktop_main-hub` |
+| `bot_` | Bots | `bot_auto-moderator` |
+| `infra_` | Infrastructure / DevOps | `infra_k8s-config` |
+| `doc_` | Documentation | `doc_coding-guide` |
 
-### CLI Arguments
-| Argument | Description | Default |
-|----------|-------------|---------|
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `--root` | Override storage path (advanced use only) | System User Data Dir |
+---
 
-> **Note:** Host identity and Instance ID are determined automatically based on the project folder name and startup order.
+## 🔧 CLI Reference
 
-### Local Development
 ```bash
-git clone https://github.com/n2ns/n2n-nexus.git
-cd n2n-nexus
-npm install
-npm run build
-npm start -- --root ./my-storage
+# Start daemon
+n2n-nexus daemon [--port 5688] [--root ~/.n2n-nexus]
+
+# Start MCP adapter (IDE calls this automatically via npx)
+NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 ```
+
+### Environment variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NEXUS_ENDPOINT` | Daemon URL for MCP adapter | `http://127.0.0.1:5688` |
+| `NEXUS_ROOT` | Storage root for daemon | `~/.n2n-nexus` |
+| `NEXUS_INSTANCE_ID` | Override MCP instance ID | auto-generated |
 
 ---
 
 ## 📋 Real-World Example: Multi-AI Collaboration
 
-The following files demonstrate a real orchestration session where **4 AI agents** (Claude, ChatGPT, Gemini, Augment) collaborated to design and implement an authentication system and Edge-Sync Protocol:
+The following files demonstrate a real session where **4 AI agents** (Claude, ChatGPT, Gemini, Augment) collaborated to design an authentication system and Edge-Sync Protocol:
 
 | File | Description |
 |------|-------------|
-| [📋 Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured summary of decisions, action items, and test results |
-| [📖 Discussion Log (Markdown)](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript with formatting |
-| [📦 Discussion Log (JSON)](docs/discussion_2025-12-29_en.json) | Raw meeting room data for programmatic access |
+| [📋 Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured summary of decisions and test results |
+| [📖 Discussion Log](docs/discussion_2025-12-29_en.md) | Human-readable meeting transcript |
 
-**Highlights from this session**:
-- 🔐 OAuth authentication chain debugging across 4 projects
-- 📜 Edge-Sync Protocol v1.1.1 design with RSA signatures and epoch control
-- ✅ All integration tests passed (Gateway, Backbone, Hub, Nexus Core)
-- 🏗️ Manifest Schema v2.0 with `apiDependencies` tracking
+---
 
-> *This is what AI-native development looks like.*
+## Local Development
+
+```bash
+git clone https://github.com/n2ns/n2n-nexus.git
+cd n2n-nexus
+npm install
+npm run build
+
+# Run daemon
+node build/index.js daemon --root /tmp/nexus-test --port 5688
+
+# Run MCP (separate terminal)
+NEXUS_ENDPOINT=http://127.0.0.1:5688 node build/index.js mcp
+```
 
 ---
 
 ## ⭐ Support This Project
-
-If **n2ns Nexus** helps you build better AI workflows, consider giving it a star!
 
 <a href="https://github.com/n2ns/n2n-nexus">
   <img src="https://img.shields.io/github/stars/n2ns/n2n-nexus?style=for-the-badge&logo=github&logoColor=white&label=Star%20on%20GitHub" alt="Star on GitHub">
@@ -178,4 +218,6 @@ If **n2ns Nexus** helps you build better AI workflows, consider giving it a star
 
 ---
 
-© 2026 datafrog.io. Built for Local-Only AI Workflows.
+## About N2NS Lab
+
+Built by N2NS Lab — Next-to-Native Systems Lab, Datafrog's open-source lab for AI-native developer tools.

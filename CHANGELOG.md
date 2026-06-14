@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-06-14
+
+### 🏗️ Daemon + MCP Architecture (Breaking Refactor)
+
+Complete architectural rewrite. The old Host/Guest election mechanism is replaced by a standalone HTTP daemon as the single source of truth.
+
+**Why**: The election model assumed all AI instances share the same `localhost`. This fails across Windows/WSL/VM environments (different localhost namespaces) and whenever the "Host" IDE is closed. Split-brain risk was unacceptable.
+
+#### New Architecture
+- **`n2n-nexus daemon`** — standalone HTTP server; user starts it manually; owns all data, tool definitions, and business logic; never dies when an IDE closes
+- **`n2n-nexus mcp`** — stateless MCP proxy; IDE starts it via `npx`; fetches tool list from daemon (`GET /api/tools`), forwards every tool call (`POST /api/tools/call`)
+- **Cross-environment**: set `NEXUS_ENDPOINT` to bridge Windows/WSL/VM or remote machines
+
+#### MCP Behavior
+- Starts with empty tool list; background retry loop (every 3 s) until daemon is reachable
+- On connect: sends `notifications/tools/list_changed` → IDE reloads tools automatically
+- On daemon disconnect: clears tool list, notifies IDE, resumes retry loop
+- No hardcoded tool names in MCP — daemon upgrades are transparent
+
+#### Deleted (not needed in new architecture)
+- `src/network/` — election, Host, Guest
+- `src/auth/` — Host/Guest permission gates
+- `src/tools/handlers/`, `src/tools/definitions.ts`, `src/tools/schemas/`
+- `src/resources/` — MCP Resources layer
+- `src/server/resources.ts`, `src/server/tools.ts`
+
+#### Storage layer unchanged
+`src/storage/` is kept as-is. SQLite WAL mode is safe because only the daemon process writes directly; MCP processes go through HTTP, serializing all writes naturally.
+
+---
+
 ## [0.4.2] - 2026-01-14
 ### 🛡️ Stability & Automation
 - **Lefthook Integration**: Added high-performance Git hooks. Now automatically runs `lint` on commit and `build + test` on push to ensure zero regressions.
@@ -102,7 +133,7 @@ This release introduces a fully automatic Host election and Global Hub architect
 #### Zero-Config Experience
 - **`--id` Deprecated**: Instance ID now auto-derived from project folder name.
 - **`--host` Removed**: Host role determined automatically by port binding.
-- **Simplified CLI**: Just `npx @datafrog-io/n2n-nexus` to get started.
+- **Simplified CLI**: Just `npx n2n-nexus` to get started.
 
 | Metric | Before | After |
 |--------|--------|-------|
@@ -242,11 +273,11 @@ This release focuses on reducing context window consumption when AI loads the MC
   - Registry: `saveProjectManifest()`, `renameProject()`, `deleteProject()`
 
 ### 📦 Schema v2.0
-- **Manifest Schema Enhancements**: Added new optional fields for enterprise coordination:
+- **Manifest Schema Enhancements**: Added new optional fields for cross-project collaboration and compatibility:
   - `apiDependencies`: Map of projectId to version constraint (e.g., `">=v2.1"`)
   - `gatewayCompatibility`: Gateway version compatibility string
   - `api_versions`: Feature-level API versions
-  - `feature_tier`: Capability tier declaration (`"free"` | `"pro"` | `"enterprise"`)
+  - `feature_tier`: Capability category declaration for interoperability
 
 ## [v0.1.5] - 2025-12-29
 
@@ -296,7 +327,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 ## [v0.1.1] - 2025-12-29
 
 ### 📦 npm Release
-- Published to npm as `@datafrog-io/n2n-nexus`.
+- Published to npm as `n2n-nexus`.
 - Updated README with `npx` configuration for easy MCP integration.
 - Added CLI arguments documentation table.
 

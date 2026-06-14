@@ -1,5 +1,4 @@
 import { promises as fs } from "fs";
-import { CONFIG } from "../config/index.js";
 import { ProjectManifest } from "../types.js";
 import { FILE_ENCODING } from "../constants.js";
 
@@ -23,7 +22,7 @@ export class StorageManager {
     static async init() {
         if (this.initialized) return;
 
-        await fs.mkdir(CONFIG.rootStorage, { recursive: true });
+        await fs.mkdir(NexusPaths.root, { recursive: true });
         await fs.mkdir(this.globalDir, { recursive: true });
         await fs.mkdir(this.projectsRoot, { recursive: true });
         await fs.mkdir(this.archivesDir, { recursive: true });
@@ -41,7 +40,9 @@ export class StorageManager {
         try {
             const { initTasksTable } = await import("./tasks.js");
             initTasksTable();
-        } catch { }
+        } catch {
+            /* tasks module is optional */
+        }
 
         this.initialized = true;
     }
@@ -58,7 +59,7 @@ export class StorageManager {
             }
             const content = await fs.readFile(filePath, FILE_ENCODING);
             return JSON.parse(content.replace(/^\uFEFF/, '').trim());
-        } catch (e) {
+        } catch {
             console.warn(`[Nexus Storage] Repairing corrupted file: ${filePath}`);
             await fs.writeFile(filePath, JSON.stringify(defaultValue, null, 2), FILE_ENCODING);
             return defaultValue;
@@ -80,11 +81,26 @@ export class StorageManager {
     static getProjectDocs(id: string) { return ProjectStorage.getProjectDocs(id); }
     static saveProjectDocs(id: string, content: string) { return ProjectStorage.saveProjectDocs(id, content); }
     static saveAsset(id: string, fileName: string, content: string | Buffer) { return ProjectStorage.saveAsset(id, fileName, content); }
-    static deleteProject(id: string) { return ProjectStorage.deleteProject(id); }
-    static renameProject(oldId: string, newId: string) { return ProjectStorage.renameProject(oldId, newId); }
+    static async deleteProject(id: string) {
+        await ProjectStorage.deleteProject(id);
+        await RegistryStorage.deleteProject(id);
+    }
+    static async renameProject(oldId: string, newId: string) {
+        await RegistryStorage.renameProject(oldId, newId);
+        try {
+            const result = await ProjectStorage.renameProject(oldId, newId);
+            if (result === 0) {
+                await RegistryStorage.renameProject(newId, oldId);
+            }
+            return result;
+        } catch (error) {
+            await RegistryStorage.renameProject(newId, oldId).catch(() => { });
+            throw error;
+        }
+    }
 
     // --- Log Methods ---
-    static addGlobalLog(from: string, text: string, category?: any) { return LogStorage.addLog(from, text, category); }
+    static addGlobalLog(from: string, text: string, category?: string) { return LogStorage.addLog(from, text, category); }
     static getRecentLogs(count: number = 10) { return LogStorage.getLogs(count); }
     static pruneGlobalLogs(count: number) { return LogStorage.pruneLogs(count); }
     static clearGlobalLogs() { return LogStorage.clearLogs(); }

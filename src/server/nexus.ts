@@ -2,172 +2,118 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
     CallToolRequestSchema,
-    ListResourcesRequestSchema,
     ListToolsRequestSchema,
-    ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-import { CONFIG, pkg, setHostServer, isHostAutoElection, updateConfig } from "../config/index.js";
-import { TOOL_DEFINITIONS } from "../tools/index.js";
-import { listResources } from "../resources/index.js";
-import { SERVICE_NAME } from "../constants.js";
-import { startHost, createGuestClient } from "../network/index.js";
+import { NexusClient, ToolDefinition } from "../client/nexus-client.js";
+import { pkg } from "../config/index.js";
 
-import { ToolDispatcher } from "./tools.js";
-import { ResourceHandler } from "./resources.js";
-import { RequestOrigin } from "../auth/index.js";
-
-type PendingRequest = {
-    method: string;
-    params?: any;
-    requestId?: string | number;
-    resolve: (result: any) => void;
-    reject: (error: any) => void;
-};
+const RETRY_INTERVAL_MS = 3000;
+const SERVICE_NAME = "n2n-nexus";
 
 export class NexusServer {
     private server: Server;
-    private currentProject: string | null = null;
-    private sseTransports = new Map<string, SSEServerTransport>();
-
-    private isElectionDone = false;
-    private role: "HOST" | "GUEST" | "PENDING" = "PENDING";
-    private requestBuffer: PendingRequest[] = [];
-    private guestClient: any = null;
+    private client: NexusClient;
+    private instanceId: string;
+    private cachedTools: ToolDefinition[] = [];
+    private retryTimer: NodeJS.Timeout | null = null;
+    private connected = false;
 
     constructor() {
+        const endpoint = process.env.NEXUS_ENDPOINT || "http://127.0.0.1:5688";
+        const instanceId = process.env.NEXUS_INSTANCE_ID ||
+            process.argv.find((_, i) => process.argv[i - 1] === "--id") ||
+            `mcp-${Math.random().toString(36).slice(2, 6)}`;
+
+        this.instanceId = instanceId;
+        this.client = new NexusClient({ endpoint, timeoutMs: 5000 });
+
         this.server = new Server(
             { name: SERVICE_NAME, version: pkg.version },
-            { capabilities: { resources: {}, tools: {}, prompts: {}, logging: {} } }
+            { capabilities: { tools: { listChanged: true } } }
         );
+
         this.setupHandlers();
     }
 
-    private log(message: string, level: "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency" = "info") {
-        console.error(message);
-        try {
-            this.server.sendLoggingMessage({ level, data: message });
-        } catch { }
-    }
-
     private setupHandlers() {
-        // 1. Tool Listing
-        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
+        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+            tools: this.cachedTools
+        }));
 
-        // 2. Resource Listing
-        this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-            try { return await listResources(); }
-            catch (e: any) { throw new Error(`Nexus Resource List Error: ${e.message}`); }
-        });
+        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+            if (!this.connected) {
+                return {
+                    content: [{ type: "text", text: "Daemon is not ready yet. Please wait a moment and retry." }],
+                    isError: true
+                };
+            }
 
-        // 3. Resource Reading
-        this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-            return ResourceHandler.read(request.params.uri, this.currentProject);
-        });
-
-        // 4. Tool Execution
-        this.server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
-            const reqId = (extra as any)?.requestId || "unknown";
-            if (this.role === "HOST") {
-                const sessionId = (extra as any)?.sessionId;
-                let originOverride: RequestOrigin | undefined;
-                if (sessionId && this.sseTransports.has(sessionId)) {
-                    originOverride = RequestOrigin.REMOTE_GUEST;
+            try {
+                const result = await this.client.callTool(
+                    request.params.name,
+                    request.params.arguments,
+                    this.instanceId
+                );
+                return {
+                    content: [{
+                        type: "text",
+                        text: typeof result === "string" ? result : JSON.stringify(result, null, 2)
+                    }]
+                };
+            } catch (e) {
+                const message = e instanceof Error ? e.message : String(e);
+                // Daemon went away — start retry loop
+                if (this.connected) {
+                    this.connected = false;
+                    this.cachedTools = [];
+                    await this.server.sendToolListChanged();
+                    this.scheduleRetry();
                 }
-
-                return ToolDispatcher.execute(request.params.name, request.params.arguments, reqId, extra, {
-                    currentProject: this.currentProject,
-                    setCurrentProject: (id) => { this.currentProject = id; }
-                }, originOverride);
-            } else if (this.role === "GUEST") {
-                return this.forwardToHost("tools/call", request.params);
-            } else {
-                return new Promise((resolve, reject) => {
-                    this.requestBuffer.push({ method: "tools/call", params: request.params, requestId: reqId, resolve, reject });
-                });
+                return {
+                    content: [{ type: "text", text: `Daemon unavailable: ${message}. Reconnecting...` }],
+                    isError: true
+                };
             }
         });
     }
 
-    private async forwardToHost(method: string, params: any) {
-        if (!this.guestClient) throw new Error("Guest Client not initialized");
-        return this.guestClient.sendRequest(method, params);
-    }
-
-    private handleReElection() {
-        this.log(`[Nexus Hub] Host lost. Starting Re-Election...`, "warning");
-        this.role = "PENDING";
-        this.isElectionDone = false;
-        updateConfig({ isHost: false });
-        if (this.guestClient) {
-            this.guestClient.close();
-            this.guestClient = null;
+    private async tryConnect(): Promise<boolean> {
+        try {
+            const tools = await this.client.fetchTools();
+            this.cachedTools = tools;
+            this.connected = true;
+            console.error(`[n2n-nexus] Connected to daemon. ${tools.length} tools loaded.`);
+            await this.server.sendToolListChanged();
+            return true;
+        } catch {
+            return false;
         }
-        this.run();
     }
 
-    private async startAsHost(election: any) {
-        this.role = "HOST";
-        updateConfig({ isHost: true });
-        this.isElectionDone = true;
-        setHostServer(election.server);
-        await startHost(election.server, {
-            config: CONFIG,
-            pkg,
-            mcpServer: this.server,
-            sseTransports: this.sseTransports
-        });
-        this.flushBufferAsHost();
-    }
-
-    private startAsGuest(election: any) {
-        this.role = "GUEST";
-        updateConfig({ isHost: false });
-        this.isElectionDone = true;
-        this.guestClient = createGuestClient(election.port, CONFIG.instanceId, () => this.handleReElection());
-        this.flushBufferAsGuest();
-    }
-
-    private flushBufferAsHost() {
-        this.log(`[Nexus Hub] Host Active. Flushing ${this.requestBuffer.length} requests...`);
-        while (this.requestBuffer.length > 0) {
-            const req = this.requestBuffer.shift()!;
-            if (req.method === "tools/call") {
-                ToolDispatcher.execute(req.params.name, req.params.arguments, req.requestId, null, {
-                    currentProject: this.currentProject,
-                    setCurrentProject: (id) => { this.currentProject = id; }
-                }).then(req.resolve).catch(req.reject);
-            } else {
-                req.reject(new Error(`Unknown buffered method: ${req.method}`));
+    private scheduleRetry() {
+        if (this.retryTimer) return;
+        const endpoint = process.env.NEXUS_ENDPOINT || "http://127.0.0.1:5688";
+        this.retryTimer = setInterval(async () => {
+            console.error(`[n2n-nexus] Waiting for daemon at ${endpoint}...`);
+            const ok = await this.tryConnect();
+            if (ok && this.retryTimer) {
+                clearInterval(this.retryTimer);
+                this.retryTimer = null;
             }
-        }
-    }
-
-    private flushBufferAsGuest() {
-        this.log(`[Nexus Hub] Guest Active. Flushing ${this.requestBuffer.length} requests...`);
-        while (this.requestBuffer.length > 0) {
-            const req = this.requestBuffer.shift()!;
-            this.forwardToHost(req.method, req.params).then(req.resolve).catch(req.reject);
-        }
+        }, RETRY_INTERVAL_MS);
     }
 
     async run() {
         const transport = new StdioServerTransport();
-        (transport as any)._isStdio = true;
-        this.server.connect(transport).catch(err => {
-            this.log(`[Nexus FATAL] Stdio transport failed: ${err}`, "error");
-        });
+        await this.server.connect(transport);
 
-        isHostAutoElection(CONFIG.rootStorage).then(async (election) => {
-            if (election.isHost && election.server) {
-                await this.startAsHost(election);
-            } else {
-                this.startAsGuest(election);
-            }
-        }).catch(err => {
-            this.log(`[Nexus FATAL] Election error: ${err}`, "error");
-            process.exit(1);
-        });
+        // Try to connect immediately; if not ready, start retry loop
+        const ok = await this.tryConnect();
+        if (!ok) {
+            const endpoint = process.env.NEXUS_ENDPOINT || "http://127.0.0.1:5688";
+            console.error(`[n2n-nexus] Daemon not available at ${endpoint}. Will retry every ${RETRY_INTERVAL_MS / 1000}s...`);
+            this.scheduleRetry();
+        }
     }
 }

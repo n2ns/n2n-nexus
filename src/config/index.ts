@@ -1,104 +1,17 @@
-/**
- * Config Module - Central Configuration
- */
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { HubConfig } from "../types.js";
-import { FILE_ENCODING, PACKAGE_JSON } from "../constants.js";
-import { getArg, hasFlag } from "./cli.js";
-import { getRootPath } from "./paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkgPath = path.resolve(__dirname, "../../package.json");
+export const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { name: string; version: string };
 
-// Load version from package.json
-const pkgPath = path.resolve(__dirname, `../../${PACKAGE_JSON}`);
-const pkg = JSON.parse(fs.readFileSync(pkgPath, FILE_ENCODING));
-
-export { pkg };
-
-// --- CLI Commands Handlers ---
-if (hasFlag("--help") || hasFlag("-h")) {
-  console.error(`
-n2ns Nexus 🚀 - Local Digital Asset Hub (MCP Server) v${pkg.version}
-
-USAGE:
-  npx -y @datafrog-io/n2n-nexus [options]
-
-DESCRIPTION:
-  A local-first project management and collaboration hub designed for 
-  multi-AI assistant coordination across different IDEs (Cursor, VS Code, etc.).
-
-OPTIONS:
-  --root <path>     Directory for data persistence. Default: ~/.n2n-nexus
-  --version, -v     Show version number.
-  --help, -h        Show this message.
-
-MCP CONFIG EXAMPLE (claude_desktop_config.json):
-  {
-    "mcpServers": {
-      "n2n-nexus": {
-        "command": "npx",
-        "args": ["-y", "@datafrog-io/n2n-nexus", "--root", "/path/to/storage"]
-      }
+export function getRootPath(): string {
+    // Priority: --root CLI arg → NEXUS_ROOT env → ~/.n2n-nexus
+    const argIndex = process.argv.indexOf("--root");
+    if (argIndex !== -1 && process.argv[argIndex + 1]) {
+        return process.argv[argIndex + 1];
     }
-  }
-
-ENVIRONMENT VARIABLES:
-  NEXUS_ROOT        Override default storage path.
-    `);
-  process.exit(0);
+    if (process.env.NEXUS_ROOT) return process.env.NEXUS_ROOT;
+    return path.join(process.env.HOME || process.env.USERPROFILE || ".", ".n2n-nexus");
 }
-
-if (hasFlag("--version") || hasFlag("-v")) {
-  console.error(pkg.version);
-  process.exit(0);
-}
-
-/**
- * Automatic Project Name Detection
- */
-function getAutoProjectName(): string {
-  try {
-    const localPkgPath = path.join(process.cwd(), PACKAGE_JSON);
-    if (fs.existsSync(localPkgPath)) {
-      const localPkg = JSON.parse(fs.readFileSync(localPkgPath, FILE_ENCODING));
-      if (localPkg.name) return localPkg.name.split("/").pop() || localPkg.name;
-    }
-  } catch { /* ignore */ }
-  const base = path.basename(process.cwd()) || "Assistant";
-  const suffix = Math.random().toString(36).substring(2, 6);
-  return `${base}-${suffix}`;
-}
-
-// Run election at module load - REMOVED for Online First architecture
-// const rootPath = getRootPath();
-// const election = await isHostAutoElection(rootPath);
-// const projectName = getAutoProjectName();
-
-// export const hostServer = election.server;
-
-// Mutable Config for Online First
-const rootPath = getRootPath();
-const projectName = getAutoProjectName();
-
-export const CONFIG: HubConfig = {
-  instanceId: getArg("--id") || projectName,
-  isHost: false, // Default to Guest until elected
-  rootStorage: rootPath, // Default to local until updated
-  port: parseInt(getArg("--port") || "0")
-};
-
-// Export mutable hostServer container
-export let hostServer: import("http").Server | undefined;
-
-export function updateConfig(update: Partial<HubConfig>) {
-  Object.assign(CONFIG, update);
-}
-
-export function setHostServer(server: import("http").Server) {
-  hostServer = server;
-}
-
-// Re-export for Guest reconnection
-export { isHostAutoElection } from "../network/election.js";

@@ -1,7 +1,6 @@
 import Database from "better-sqlite3";
-import path from "path";
 import { createRequire } from "module";
-import { CONFIG } from "../config/index.js";
+import { NexusPaths } from "./paths.js";
 
 let db: Database.Database | null = null;
 
@@ -68,7 +67,7 @@ CREATE TABLE IF NOT EXISTS read_cursors (
  * Get the database file path
  */
 export function getDbPath(): string {
-    return path.join(CONFIG.rootStorage, "nexus.db");
+    return NexusPaths.dbFile;
 }
 
 /**
