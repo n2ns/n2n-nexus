@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/n2n-nexus-logo.png" width="128" alt="n2n-nexus logo">
+</p>
+
 # n2n-nexus
 
 Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaboration across IDEs, machines, and projects.

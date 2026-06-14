@@ -9,6 +9,7 @@
   },
   "files": [
     "build",
+    "assets",
     "README.md",
     "llms.txt",
     "CHANGELOG.md",
