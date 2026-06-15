@@ -43,4 +43,4 @@ Default storage root is `~/.n2n-nexus`, containing global docs, project manifest
 
 ## Brand
 
-Built by N2NS Lab, Datafrog's open-source lab for AI applications.
+Built by N2NS Lab, Datafrog's open-source lab for practical AI developer tools.
