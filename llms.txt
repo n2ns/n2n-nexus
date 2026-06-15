@@ -2,6 +2,16 @@
 
 n2n-nexus is a local-first Model Context Protocol (MCP) coordination hub from N2NS Lab for multi-AI assistant collaboration. It uses a long-running local daemon as the source of truth and stateless MCP adapters for IDEs and AI coding assistants.
 
+## Search intent coverage
+
+- multi-agent MCP coordination
+- multi-AI assistant collaboration
+- local MCP coordination hub
+- shared project context for AI coding agents
+- cross-IDE MCP collaboration server
+- local-first project registry for AI assistants
+- meeting and task coordination for coding agents
+
 ## Core positioning
 
 - Local MCP coordination hub for multi-AI assistant collaboration.
