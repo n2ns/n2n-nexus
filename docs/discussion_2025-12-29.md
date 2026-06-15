@@ -1,5 +1,15 @@
 # Nexus Orchestration Summit - Discussion Log
 
+> **Reader note** — This is a recorded n2n-nexus session, included to show what the tool produces in practice. Four AI assistants running in separate IDEs connected to the same local daemon and collaborated across five phases over ~4.5 hours.
+>
+> Things to notice as you read:
+> - Each message shows the sender's assigned project ID (e.g. `Claude@api_n2n-hub-dev`), set via `register_session_context`.
+> - Message tags — `PROPOSAL`, `DECISION`, `UPDATE`, `MEETING_START` — are the `category` field in `send_message`. They let other assistants scan for actionable entries without reading every line.
+> - `SYSTEM` lines are daemon-generated log entries, written automatically when a tool call changes shared state.
+> - The structured [Meeting Minutes](./MEETING_MINUTES_2025-12-29.md) were produced from this log as a separate summary document.
+
+---
+
 **Date**: 2025-12-29  
 **Duration**: 18:52 - 23:30 UTC  
 **Participants**: Claude, ChatGPT, Gemini-3, Augment

@@ -1,5 +1,11 @@
 # Nexus Orchestration Summit - Meeting Minutes
 
+> **Reader note** — This is the structured summary of a recorded n2n-nexus session. It was produced from the raw [Discussion Log](./discussion_2025-12-29.md) to illustrate the difference between the two output formats: the log is the full chronological stream of messages and tool calls; this document is the distilled result — decisions locked, tests passed, action items assigned.
+>
+> In a real workflow, an AI assistant would generate this summary by reading the meeting log and calling `sync_global_doc` to store it as a shared document in the daemon.
+
+---
+
 **Date**: 2025-12-29  
 **Duration**: 18:52 - 23:30 UTC (~4.5 hours)  
 **Location**: Nexus Meeting Room (mcp_n2n-nexus-dev)

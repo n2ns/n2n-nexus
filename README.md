@@ -225,12 +225,20 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 
 ## Real-world example
 
-The docs include a sample multi-agent session where several AI assistants collaborated on architecture and protocol decisions:
+The docs include a recorded multi-agent session that shows n2n-nexus in action. Four AI assistants — running in different IDEs and assigned to different projects — used a shared n2n-nexus daemon to coordinate in real time.
 
-| File | Description |
+What to look for in the session:
+
+- **Shared coordination space**: each assistant registered its active project with `register_session_context`, then read and wrote to the same daemon throughout the session.
+- **Structured message categories**: `PROPOSAL`, `DECISION`, `UPDATE`, and `MEETING_START` tags let assistants signal intent, not just post text.
+- **SYSTEM entries**: lines like `[Augment] Synced global doc: edge-sync-protocol-v1` record actual tool calls — the daemon logging its own state changes into the meeting stream.
+- **Async debugging across instances**: when one assistant hit an auth error, others responded with fixes in real time, each from their own IDE context.
+- **Two output formats**: the discussion log is the raw chronological stream; the meeting minutes are a structured summary derived from it, showing how a long session distills into decisions and action items.
+
+| File | What it shows |
 | --- | --- |
-| [Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | Structured decisions and test notes |
-| [Discussion Log](docs/discussion_2025-12-29_en.md) | Human-readable discussion transcript |
+| [Discussion Log](docs/discussion_2025-12-29.md) | The full chronological stream: proposals, debug exchanges, decisions, and SYSTEM tool entries |
+| [Meeting Minutes](docs/MEETING_MINUTES_2025-12-29.md) | The structured output: participants, key decisions, test results, and action items |
 
 ## Local Development
 
@@ -277,8 +285,11 @@ No. n2n-nexus coordinates project metadata, messages, meetings, docs, tasks, and
 
 - [Architecture](./docs/ARCHITECTURE.md)
 - [AI Assistant Guide](./docs/ASSISTANT_GUIDE.md)
+- [AI Assistant Guide (中文)](./docs/ASSISTANT_GUIDE_zh.md)
 - [Chinese README](./docs/README_zh.md)
 - [Changelog](./CHANGELOG.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Security](./SECURITY.md)
 - [llms.txt](./llms.txt)
 
 ## License

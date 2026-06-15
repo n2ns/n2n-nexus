@@ -226,7 +226,7 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp
 | 文件 | 说明 |
 | --- | --- |
 | [会议纪要](./MEETING_MINUTES_2025-12-29.md) | 结构化决策和测试记录 |
-| [讨论日志](./discussion_2025-12-29_en.md) | 可读的讨论记录 |
+| [讨论日志](./discussion_2025-12-29.md) | 可读的讨论记录 |
 
 ## 本地开发
 
@@ -272,7 +272,7 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 node build/index.js mcp
 ## 相关文档
 
 - [架构文档](./ARCHITECTURE_zh.md)
-- [AI 助手指南](./ASSISTANT_GUIDE.md)
+- [AI 助手指南](./ASSISTANT_GUIDE_zh.md)
 - [英文 README](../README.md)
 - [llms.txt](../llms.txt)
 

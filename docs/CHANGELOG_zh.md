@@ -2,6 +2,37 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.5.0] - 2026-06-14
+
+### 🏗️ Daemon + MCP 架构（破坏性重构）
+
+架构全面重写。旧的 Host/Guest 选举机制被独立 HTTP daemon 取代，daemon 成为唯一的真相来源。
+
+**原因**：选举模型假设所有 AI 实例共享同一个 `localhost`。这在 Windows/WSL/VM 跨环境场景下完全失效（各自处于不同的 localhost 命名空间），且在"Host" IDE 关闭时会导致其他实例无法访问数据。Split-brain 风险不可接受。
+
+#### 新架构
+- **`n2n-nexus daemon`** — 独立 HTTP 服务器；用户手动启动，持续运行；持有所有数据、工具定义和业务逻辑；不随 IDE 关闭而消亡
+- **`n2n-nexus mcp`** — 无状态 MCP 代理；由 IDE 通过 `npx` 启动；从 daemon 拉取工具列表（`GET /api/tools`），转发每个工具调用（`POST /api/tools/call`）
+- **跨环境支持**：通过配置 `NEXUS_ENDPOINT` 桥接 Windows/WSL/VM 或远程机器
+
+#### MCP 行为
+- 启动时工具列表为空；后台重试循环（每 3 秒）直到 daemon 可达
+- 连接成功后：发送 `notifications/tools/list_changed` → IDE 自动重新加载工具列表
+- daemon 断开后：清空工具列表，通知 IDE，重新进入重试循环
+- MCP 内不含任何 hardcode 工具名——daemon 升级新工具后所有 MCP 实例无需更新即可获得新能力
+
+#### 已删除（新架构不再需要）
+- `src/network/` — 选举、Host、Guest 逻辑
+- `src/auth/` — Host/Guest 权限门控
+- `src/tools/handlers/`、`src/tools/definitions.ts`、`src/tools/schemas/`
+- `src/resources/` — MCP Resources 层
+- `src/server/resources.ts`、`src/server/tools.ts`
+
+#### 存储层不变
+`src/storage/` 保持原样。SQLite WAL 模式是安全的，因为只有 daemon 进程直接写入；MCP 进程通过 HTTP 间接访问，天然串行，无并发冲突。
+
+---
+
 ## [0.4.2] - 2026-01-14
 ### 🛡️ 稳定性与自动化 (Stability & Automation)
 - **Lefthook Integration**: 引入高性能 Git 钩子。现在提交时自动运行 `lint`，推送时自动运行 `build + test`，确保零回归。

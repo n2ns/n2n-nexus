@@ -50,6 +50,10 @@
     "ai-developer-tools"
   ],
   "author": "N2NS Lab",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/n2ns"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
