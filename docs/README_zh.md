@@ -282,4 +282,4 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 node build/index.js mcp
 
 ---
 
-Built by N2NS Lab, short for Next-to-Native Systems Lab, Datafrog's open-source lab for practical AI developer tools.
+Built by N2NS Lab, Datafrog's open-source lab for AI applications.
