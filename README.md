@@ -20,6 +20,20 @@ Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaborat
 
 n2n-nexus is an open-source Model Context Protocol (MCP) coordination server for developers and teams who use multiple AI coding assistants across IDEs, machines, and projects. Use it when Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, JetBrains, or other MCP-enabled clients need a shared local coordination layer instead of isolated per-chat context.
 
+## 📚 Contents
+
+- [What is n2n-nexus?](#-what-is-n2n-nexus)
+- [Architecture](#️-architecture)
+- [Quick start](#-quick-start)
+- [Toolset](#️-toolset)
+- [Data storage](#-data-storage)
+- [Project ID conventions](#️-project-id-conventions)
+- [CLI reference](#-cli-reference)
+- [Security and governance notes](#-security-and-governance-notes)
+- [Real-world example](#-real-world-example)
+- [Local development](#-local-development)
+- [Related docs](#-related-docs)
+
 ## 💡 What is n2n-nexus?
 
 n2n-nexus gives AI assistants a shared coordination workspace. A long-running local daemon owns project state, meetings, messages, tasks, shared docs, and project assets. Lightweight MCP adapters connect each IDE or assistant to the same daemon.
@@ -87,14 +101,19 @@ The adapter can start before the daemon. It loads the daemon tool list once the 
 
 ## 🛠️ Toolset
 
-- **Session**: declare active project context before using other tools.
-- **Project assets**: manage project manifests, internal docs, and binary assets.
-- **Messaging**: post and read meeting and global messages.
-- **Meetings**: open, close, archive, and reopen meeting sessions.
-- **Tasks**: create and poll async background tasks.
-- **Maintenance**: prune system logs and delete projects.
+The daemon exposes 21 tools, grouped by purpose:
 
-See [Tools reference](./docs/TOOLS_REFERENCE.md) for the full tool list and parameters.
+| Group | Tools | Purpose |
+| --- | --- | --- |
+| **Session & topology** | `register_session_context`, `get_global_topology` | Declare the active project before other calls; read the project list or a detailed per-project subgraph. |
+| **Projects & assets** | `search_projects`, `update_project`, `rename_project`, `sync_project_assets`, `upload_project_asset` | Find, update, and rename projects; sync manifests and internal docs; upload binary assets. |
+| **Global docs** | `sync_global_doc`, `update_global_strategy` | Create or update shared global documents and the master strategy document. |
+| **Messaging** | `send_message`, `read_messages` | Post and read meeting and global messages. |
+| **Meetings** | `start_meeting`, `end_meeting`, `archive_meeting`, `reopen_meeting` | Open, close, archive, and reopen meeting sessions. |
+| **Tasks** | `create_task`, `get_task`, `list_tasks`, `cancel_task` | Create and poll async background tasks. |
+| **Maintenance** | `host_maintenance`, `host_delete_project` | Prune or clear system logs; delete a project. |
+
+See [Tools reference](./docs/TOOLS_REFERENCE.md) for parameter schemas and call examples.
 
 ## 💾 Data storage
 
