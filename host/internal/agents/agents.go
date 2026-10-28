@@ -695,6 +695,12 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 		}
 		if reply {
 			lines = append(lines, h.Texts.MessageTrustNote+" "+closing)
+			// Claude Code names an MCP tool mcp__<server>__<tool>; the full name saves the model a lookup.
+			if s, err := getSession(a.db(), sessionID); err != nil {
+				return "", err
+			} else if s != nil && s.Client == "claude" {
+				lines = append(lines, fmt.Sprintf(h.Texts.ReplyTool, "mcp__"+h.MCPServerName+"__reply"))
+			}
 		} else {
 			lines = append(lines, h.Texts.MessageInfoNote)
 		}

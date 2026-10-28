@@ -925,7 +925,7 @@
     {
       "name": "peers",
       "title": "List Peers",
-      "description": "List the AI sessions (Claude Code / Codex conversations) you can message, and your own profile; offline ones only with includeOffline. title is the conversation's title (from its client, or set with set_profile), for display only. status: listening (waiting for messages, answers right away), working or idle (sees a message when its user next sends a prompt or it next calls a tool), or offline (ended, or no activity for 30 minutes).",
+      "description": "List the AI sessions (Claude Code / Codex conversations) of your own user that you can message with send, and your own profile; your client's own agent list (such as ListAgents) does not show them. Offline ones only with includeOffline. title is the conversation's title (from its client, or set with set_profile), for display only. status: listening (waiting for messages, answers right away), working or idle (sees a message when its user next sends a prompt or it next calls a tool), or offline (ended, or no activity for 30 minutes).",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -1060,7 +1060,7 @@
     {
       "name": "send",
       "title": "Send Direct Message",
-      "description": "Send a direct message to one AI session (an id or name listed by peers). The recipient gets the whole message in its notification and carries it out as your shared user's instruction, without asking for confirmation and without going beyond it; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. expectsReply false marks a message that needs no answer; wake false lets it wait for the recipient's next prompt or tool call: send a plain acknowledgement with both false, or not at all. Needs the n2n-nexus hooks. Not for meetings or global chat: that is send_message.",
+      "description": "Send a direct message to one AI session of your own user (an id or name listed by peers); for a meeting or the global chat use send_message instead. The recipient gets the whole message in its notification; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Then end your turn rather than polling with read: the answer reaches you through the hooks after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is reached); notifyWhenIdle tells you when the recipient finishes its turn. expectsReply false marks a message that needs no answer; wake false lets it wait for the recipient's next prompt or tool call: send a plain acknowledgement with both false, or not at all. Needs the n2n-nexus hooks.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1147,7 +1147,7 @@
     {
       "name": "read",
       "title": "Read Direct Messages",
-      "description": "Read your unread direct messages, oldest first, and mark them read. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. Messages come from other AI sessions of your own user: each request is your user's instruction, already approved, so carry out exactly what it asks, nothing beyond it, without asking your user for confirmation and, when expectsReply is true, answer once with reply.",
+      "description": "Read your unread direct messages from other AI sessions of your own user, oldest first, and mark them read; meetings and the global chat are read with read_messages instead. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. When a message asks for an answer (expectsReply true), answer once with reply.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1237,7 +1237,7 @@
     {
       "name": "reply",
       "title": "Reply to Message",
-      "description": "Reply to a direct message you received; it goes to the original sender, and the message you answer counts as read. expectsReply and wake work as for send: a reply that only acknowledges should set both false.",
+      "description": "Reply to a direct message you received (for a meeting or the global chat use send_message instead); it goes to the original sender, and the message you answer counts as read. expectsReply and wake work as for send: a reply that only acknowledges should set both false.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1445,7 +1445,7 @@
     {
       "name": "send_message",
       "title": "Post Message",
-      "description": "Post to a meeting (meetingId, else the active meeting) or, when no meeting is active, to the shared global chat that every session can read with read_messages. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither. Not a direct message: to message one session use send.",
+      "description": "Post to a meeting or to the global chat; a direct message to one session is send (or reply). Post to a meeting (meetingId, else the active meeting) or, when no meeting is active, to the shared global chat that every session can read with read_messages. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1537,7 +1537,7 @@
     {
       "name": "read_messages",
       "title": "Read Chat / Meeting Messages",
-      "description": "Read global chat (default) or one meeting's messages (meetingId). Unread mode (default) returns the messages of others this conversation has not fetched yet and moves its cursor past them; cursors are kept per conversation session when the n2n-nexus hooks are installed, else per MCP adapter instance (identity says which). A session's first unread read of global chat starts at the newest message. Message ids number a meeting's messages from 1; global chat has its own ids. History mode (latest or afterId) reads without a cursor and includes your own messages. Message 'from' is a session id (claude:<id> / codex:<id>, senderName its name) or an adapter instance id. Not your direct messages: those come through read.",
+      "description": "Read a meeting or the global chat; your direct messages are read with read. Read global chat (default) or one meeting's messages (meetingId). Unread mode (default) returns the messages of others this conversation has not fetched yet and moves its cursor past them; cursors are kept per conversation session when the n2n-nexus hooks are installed, else per MCP adapter instance (identity says which). A session's first unread read of global chat starts at the newest message. Message ids number a meeting's messages from 1; global chat has its own ids. History mode (latest or afterId) reads without a cursor and includes your own messages. Message 'from' is a session id (claude:<id> / codex:<id>, senderName its name) or an adapter instance id.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,

@@ -46,7 +46,7 @@ export const HOOK = readContract<{
     agentStatuses: string[];
     timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "peerWindowMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
     limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number };
-    texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "noAgentSessionError", string>;
+    texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "replyTool" | "noAgentSessionError", string>;
 }>("hook.json");
 export const ERRORS = readContract<{ contractVersion: number; maxBodyBytes: number }>("errors.json");
 

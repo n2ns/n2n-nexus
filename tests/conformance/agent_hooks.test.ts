@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost, type ToolReply } from "./harness.js";
 import {
-    BACKGROUND_WAIT_EVENT, COLLABORATION_RULES, MESSAGE_CUT, MESSAGE_END, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, READ_REST, REPLY_INSTRUCTION, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
+    BACKGROUND_WAIT_EVENT, COLLABORATION_RULES, MESSAGE_CUT, MESSAGE_END, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, READ_REST, REPLY_INSTRUCTION, REPLY_TOOL, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
     agentKit, context, ids
 } from "./agents.js";
 
@@ -152,7 +152,7 @@ describe("POST /api/hook: notifications", () => {
         expect(text).toContain("\nmessage 5\n");
         expect(text).not.toContain("\nmessage 6\n");
         expect(text).toContain("...and 2 more");
-        expect(text).toContain(`${MESSAGE_TRUST_NOTE} ${NOTIFY_CLOSING}\n${READ_REST}`);
+        expect(text).toContain(`${MESSAGE_TRUST_NOTE} ${NOTIFY_CLOSING}\n${REPLY_TOOL.replace("%s", "mcp__n2n-nexus__reply")}\n${READ_REST}`);
         expect(await status(`claude:${s("rcv")}`)).toBe("working");
 
         // Every unread message was marked notified, so a tool call adds nothing.

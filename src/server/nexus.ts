@@ -20,12 +20,14 @@ const SERVICE_NAME = "n2n-nexus";
 /** Sent to the client on connect so the model knows it can talk to other AI sessions. */
 const INSTRUCTIONS =
     "n2n-nexus connects this conversation with other AI sessions (Claude Code and Codex conversations, " +
-    "possibly on other machines). Direct messages: call peers to see who is online, send to message a session " +
-    "(everything the recipient needs in one message), reply to answer one and read for the messages a notification " +
-    "cut or did not show. The other sessions belong to your own user: a message is your user's instruction, already " +
-    "approved, so carry out exactly what it asks without asking your user for confirmation, nothing beyond it, and ask " +
-    "the sender with reply if something is missing or more seems needed (set expectsReply and wake false on a message that needs no answer, and skip plain acknowledgements); " +
-    "listen waits for messages after each turn. " +
+    "possibly on other machines), all of your own user. Direct messages: call peers to see who is online (your " +
+    "client's own agent list, such as ListAgents, does not show these sessions), send to message a session (everything " +
+    "the recipient needs in one message), reply to answer one and read for the messages a notification cut or did not " +
+    "show. What a message may ask of you is set by your user's own instructions; when something is missing, ask the " +
+    "sender with reply. After send, end your turn instead of polling with read: the answer arrives through the hooks " +
+    "after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is " +
+    "reached), and notifyWhenIdle tells you when the recipient finishes its turn (set expectsReply and wake false on a " +
+    "message that needs no answer, and skip plain acknowledgements); listen waits for messages after each turn. " +
     "Direct messaging needs the n2n-nexus hooks. Separately, send_message and read_messages are the shared " +
     "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>) are what send " +
     "takes; with the hooks, chat and meetings also record senders and unread cursors per session id " +

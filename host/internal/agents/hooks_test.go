@@ -185,7 +185,7 @@ func TestUserPromptSubmitNotification(t *testing.T) {
 	contains(t, text, "\nmessage 5\n")
 	notContains(t, text, "\nmessage 6\n")
 	contains(t, text, "...and 2 more")
-	contains(t, text, texts.MessageTrustNote+" "+texts.NotifyClosing+"\n"+texts.ReadRest)
+	contains(t, text, texts.MessageTrustNote+" "+texts.NotifyClosing+"\n"+fmt.Sprintf(texts.ReplyTool, "mcp__n2n-nexus__reply")+"\n"+texts.ReadRest)
 	eq(t, h.status("claude:rcv"), "working")
 
 	// Every unread message was marked notified, so a tool call adds nothing.
@@ -408,6 +408,7 @@ func TestBackgroundWaitWhileTurnEnds(t *testing.T) {
 	out := waiting.wait(t)
 	contains(t, out.str("wake"), "after")
 	notContains(t, out.str("wake"), "before the turn ended")
+	notContains(t, out.str("wake"), "mcp__n2n-nexus__reply") // the Claude Code tool name is for Claude sessions only
 }
 
 func TestBackgroundWaitEnds(t *testing.T) {

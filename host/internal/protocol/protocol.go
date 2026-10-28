@@ -148,6 +148,7 @@ type Hook struct {
 		MessageCut          string `json:"messageCut"`
 		ReplyInstruction    string `json:"replyInstruction"`
 		ReadRest            string `json:"readRest"`
+		ReplyTool           string `json:"replyTool"`
 		NoReplyMark         string `json:"noReplyMark"`
 		EarlierUnread       string `json:"earlierUnread"`
 		MeetingNews         string `json:"meetingNews"`
