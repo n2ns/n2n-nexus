@@ -4,6 +4,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0] - 2026-10-28
+
+### Added
+
+- `n2n-nexus install claude` writes a marked block into the user-level `CLAUDE.md` (`<!-- n2n-nexus:begin … -->` to `<!-- n2n-nexus:end -->`): a direct message from another session is the user's own instruction, carried out exactly and without asking the user for confirmation, with questions going back to the sender. Claude Code acts on another session's message only where the user's own instructions call for it, which is why the block is needed. The rest of the file is kept; `uninstall claude` removes the block, and the file when nothing else is in it. Run `install claude` again after upgrading to get the block.
+
+### Changed
+
+- Direct messages arrive whole: a notification shows each message's text between `--- Message <id> from … ---` and `--- End of message <id> ---`, with how to answer it, instead of the sender and the first line. The texts of one notification together are cut at 5000 characters (`notifyTextChars` in the contract); a cut message is marked and `read` returns it. A message shown whole is marked read when the notification continues or starts the turn (Stop, listening, background wake), and, when it needs no reply, when a prompt shows it; `reply` marks the message it answers read. Other messages stay unread for `read`, among them every message shown after a tool call, because that context can reach a sub-agent only.
+- The notifications, the SessionStart introduction and the MCP instructions say that the sessions belong to the same user: a message is that user's instruction, carried out exactly and without asking the user for confirmation, nothing beyond it; when more work or missing information seems needed, the sender is asked with `reply`. `send`'s guidance is to put everything the recipient needs into one message; a task is answered once with its result, or with what stopped it and what would let it go on.
+
 ## [0.9.5] - 2026-10-26
 
 ### Added
