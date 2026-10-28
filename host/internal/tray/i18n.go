@@ -8,10 +8,9 @@ import (
 // texts are the tray's user-facing strings.
 type texts struct {
 	Tooltip          string
-	StatusInProcess  string // %s: address
-	StatusService    string // %s: address
-	LANSuffix        string // after the address of a host reachable from the LAN
-	StatusStopped    string // %s: error
+	StatusRunning    string // the host runs in this tray
+	StatusService    string // the host runs in the background service
+	StatusStopped    string // no host answers; the error is on the next line
 	OnlineSessions   string // %d: agent sessions not offline
 	ServiceDown      string
 	ServiceNotBack   string // %d: seconds waited
@@ -29,10 +28,9 @@ type texts struct {
 
 var english = texts{
 	Tooltip:          "n2n-nexus host",
-	StatusInProcess:  "Running: http://%s",
-	StatusService:    "Running (background service): http://%s",
-	LANSuffix:        " (LAN)",
-	StatusStopped:    "Not running: %s",
+	StatusRunning:    "Running",
+	StatusService:    "Running · background service",
+	StatusStopped:    "Not running",
 	OnlineSessions:   "Online sessions: %d",
 	ServiceDown:      "the background service does not answer",
 	ServiceNotBack:   "The background service did not answer within %d s of the restart; see the log folder.",
@@ -50,10 +48,9 @@ var english = texts{
 
 var chinese = texts{
 	Tooltip:          "n2n-nexus host",
-	StatusInProcess:  "运行中：http://%s",
-	StatusService:    "运行中（后台服务）：http://%s",
-	LANSuffix:        "（局域网）",
-	StatusStopped:    "未运行：%s",
+	StatusRunning:    "运行中",
+	StatusService:    "运行中 · 后台服务",
+	StatusStopped:    "未运行",
 	OnlineSessions:   "在线会话：%d",
 	ServiceDown:      "后台服务无响应",
 	ServiceNotBack:   "重启后后台服务在 %d 秒内没有响应，请查看日志目录。",

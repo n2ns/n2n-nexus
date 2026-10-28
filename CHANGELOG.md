@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The tray menu's first line says only whether the host runs (`Running`, `Running · background service` or `Not running`); the address is on its own line, and the error takes that line when no host answers. The `(LAN)` suffix is gone: the **Allow LAN access** item shows the same.
+
 ## [0.11.0] - 2026-10-29
 
 Upgrade the host and the client on every machine together, and delete `nexus.db` from the host's data directory before the new host starts: this release starts a new database and contract version, and an older host or client no longer works with it.

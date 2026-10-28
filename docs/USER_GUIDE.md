@@ -6,7 +6,7 @@ This guide covers using n2n-nexus once it is installed: the tray, which conversa
 
 ## 1. The tray
 
-The tray menu shows the address the host listens on and the number of online sessions, opens the log and data folders, switches LAN access on and off, restarts the host and turns **Start at login** on or off (`n2n-nexus-host autostart on|off` does the same). The menu is in Chinese on a Chinese system and in English otherwise.
+The tray menu shows whether the host runs, the address it listens on and the number of online sessions, opens the log and data folders, switches LAN access on and off, restarts the host and turns **Start at login** on or off (`n2n-nexus-host autostart on|off` does the same). The menu is in Chinese on a Chinese system and in English otherwise.
 
 - **Allow LAN access** makes this host reachable from other machines: [Installation guide](INSTALL.md#6-several-machines-and-environments).
 - **Restart** applies an edited `settings.json`. While the background service runs the host, the tray only controls it: **Restart** restarts the service's host.

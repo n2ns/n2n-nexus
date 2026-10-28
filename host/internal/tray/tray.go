@@ -40,7 +40,7 @@ type app struct {
 	online   int // agent sessions not offline, as last read
 	settings config.Settings
 
-	status, sessions, lan, autostart, restart *systray.MenuItem
+	status, address, sessions, lan, autostart, restart *systray.MenuItem
 }
 
 // Run shows the tray until Quit; it blocks. The tray logs to tray.log; only
@@ -67,6 +67,8 @@ func (a *app) ready() {
 	systray.SetTooltip(a.t.Tooltip)
 	a.status = systray.AddMenuItem("…", "")
 	a.status.Disable()
+	a.address = systray.AddMenuItem("…", "")
+	a.address.Disable()
 	a.sessions = systray.AddMenuItem("…", "")
 	a.sessions.Disable()
 	systray.AddSeparator()
@@ -194,37 +196,54 @@ func (a *app) poll() {
 	}
 }
 
-// statusTitle (a.mu held) is the status line of a running host: the address
-// it listens on, not the loopback address the tray probes a LAN host on.
+// running (a.mu held) reports whether a host answers: this tray's own, or the
+// service's with no error since.
+func (a *app) running() bool { return a.h != nil || (a.external != "" && a.lastErr == nil) }
+
+// statusTitle (a.mu held) is the status line: running (and where), or not.
 func (a *app) statusTitle() string {
-	if a.h != nil {
-		return fmt.Sprintf(a.t.StatusInProcess, a.h.Addr.String()) + a.lanSuffix(a.h.Addr.IP.String())
+	switch {
+	case a.h != nil:
+		return a.t.StatusRunning
+	case a.running():
+		return a.t.StatusService
+	}
+	return a.t.StatusStopped
+}
+
+// addressURL (a.mu held) is the URL of a running host: the address it listens
+// on, not the loopback address the tray probes a LAN host on; "" when none runs.
+func (a *app) addressURL() string {
+	switch {
+	case a.h != nil:
+		return "http://" + a.h.Addr.String()
+	case !a.running():
+		return ""
 	}
 	addr := a.external
 	if _, port, err := net.SplitHostPort(a.external); err == nil && a.settings.Host != "" {
 		addr = net.JoinHostPort(a.settings.Host, port)
 	}
-	return fmt.Sprintf(a.t.StatusService, addr) + a.lanSuffix(a.settings.Host)
+	return "http://" + addr
 }
 
-func (a *app) lanSuffix(host string) string {
-	if isLAN(config.Settings{Host: host}) {
-		return a.t.LANSuffix
+// addressTitle (a.mu held) is the line under the status: the URL, or the
+// error when no host answers.
+func (a *app) addressTitle() string {
+	if !a.running() {
+		if a.lastErr == nil {
+			return ""
+		}
+		return a.lastErr.Error()
 	}
-	return ""
+	return a.addressURL()
 }
 
 // refresh (a.mu held) updates the menu from the state.
 func (a *app) refresh() {
-	running := true
-	switch {
-	case a.h != nil, a.external != "" && a.lastErr == nil:
-		a.status.SetTitle(a.statusTitle())
-	default:
-		a.status.SetTitle(fmt.Sprintf(a.t.StatusStopped, a.lastErr))
-		running = false
-	}
-	if running {
+	a.status.SetTitle(a.statusTitle())
+	a.address.SetTitle(a.addressTitle())
+	if a.running() {
 		a.sessions.SetTitle(fmt.Sprintf(a.t.OnlineSessions, a.online))
 		a.sessions.Show()
 	} else {
