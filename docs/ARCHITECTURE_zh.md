@@ -124,12 +124,18 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 ### 清理与保留期
 
-启动时一次，之后每小时一次，host 会：
+启动时一次，之后每小时一次，host 按 `settings.json` 的两个保留期设置（[使用手册](USER_GUIDE_zh.md#settingsjson)）清理：`retentionDays`（默认 7）和 `meetingRetentionDays`（默认 30）：
 
-- 把超过 TTL 的待处理或运行中任务标为 `failed`，删除结束（`completed`、`failed`、`cancelled`）7 天后的任务；
-- 删除 30 天前的事件；
-- 让超过 24 小时有效期的未读直接消息过期（通知发送方），删除 30 天前已读或已过期的直接消息和已发出的通知；
+- 把超过 TTL 的待处理或运行中任务标为 `failed`，删除结束（`completed`、`failed`、`cancelled`）`retentionDays` 天后的任务和 `retentionDays` 天前的事件；
+- 让超过 24 小时有效期的未读直接消息过期（通知发送方），删除 `retentionDays` 天前已读或已过期的直接消息和已发出的通知；
+- 删除 `retentionDays` 天没有活动的会话，连同它的通知、空闲订阅、工具调用绑定和读取游标；仍被直接消息引用或正挂着等待的会话不删；`retentionDays` 天没出现的适配器实例不再记录；
+- 连续 `meetingRetentionDays` 天没有发言（从最后一条消息、开始或重新开启算起）的进行中会议以 `endReason: expired` 关闭并通知成员，不产生决议；
+- 删除关闭或归档 `meetingRetentionDays` 天的会议，连同消息、决议、表态、成员、认可人和读取游标；
 - 删除已过期（5 分钟）的工具调用绑定。
+
+每一部分的筛选和删除在同一个事务里完成。有改动的清理记一条 `maintenance.cleanup` 事件，带各项数量和删掉的会议、会话。`host_maintenance` 可以立即执行清理（`cleanup`，加 `dryRun` 先看会删什么），也可以在会议被删前把它导出为 markdown（`export`）。
+
+会议消息、全局聊天消息和会议成员在写入时保存会话的名字和机器（成员还保存标题），会话被删后记录仍然可读。有这些列之前写入的行在升级时按会话当时的样子补填，标为 `senderBackfilled` / `backfilled`。
 
 日志（文件和位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）：只有持有 `host.lock` 的一方写 `host.log`；托盘自己的日志写到 `tray.log`。
 
@@ -139,7 +145,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 两个程序的命令见[使用手册](USER_GUIDE_zh.md#6-参考)。
 
-**Host**：以托盘程序或开机服务方式运行；适配器和 hooks 从不自己启动它，连不上时只报告。配置只来自 `<数据目录>/settings.json`（`host`、`port`、`discoveryPort`、`allowedHosts`、`rateLimit`、`rateBurst`、`maxAutoTurns`、`stanceReminderMinutes`），命令行参数覆盖；host 只读取 `NEXUS_ROOT` 一个环境变量。服务拿不到安装终端的环境变量，所以这个文件是托盘、服务和命令行共用的唯一来源。
+**Host**：以托盘程序或开机服务方式运行；适配器和 hooks 从不自己启动它，连不上时只报告。配置只来自 `<数据目录>/settings.json`（`host`、`port`、`discoveryPort`、`allowedHosts`、`rateLimit`、`rateBurst`、`maxAutoTurns`、`stanceReminderMinutes`、`meetingRetentionDays`、`retentionDays`），命令行参数覆盖；host 只读取 `NEXUS_ROOT` 一个环境变量。服务拿不到安装终端的环境变量，所以这个文件是托盘、服务和命令行共用的唯一来源。
 
 **局域网独立 host**：一个开启局域网访问的 host 为所有机器服务，不依赖任何 IDE；每台客户端机器只需要客户端，它通过 UDP 广播找到 host（`--endpoint discover`）。配置步骤见[安装手册](INSTALL_zh.md#6-多台机器和多个环境)。
 

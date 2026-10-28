@@ -128,6 +128,8 @@ cancel_task(taskId)                         → 取消任务
 
 ```
 host_maintenance(action, count)   → prune 最旧 N 条（至少 1 条）全局消息 / clear 全部
+host_maintenance("cleanup", dryRun?) → 立即按保留期清理（dryRun：只列出会删什么）
+host_maintenance("export", meetingId) → 把会议导出为 markdown
 host_delete_project(projectId)    → 永久删除项目（不可逆）
 ```
 

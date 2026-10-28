@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
 )
@@ -74,8 +73,9 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 		if a.Draft {
 			return api.Errorf("A draft is published to a meeting: give meetingId, or start one; no meeting is active.")
 		}
-		res, err := tx.Exec(`INSERT INTO global_messages (sender, text, category, timestamp) VALUES (?, ?, ?, ?)`,
-			id.ID, a.Message, nullString(a.Category), c.now())
+		res, err := tx.Exec(`INSERT INTO global_messages (sender, text, category, timestamp, sender_name, sender_machine)
+			VALUES (?, ?, ?, ?, `+snapshotName+`, `+snapshotMachine+`)`,
+			id.ID, a.Message, nullString(a.Category), c.now(), id.ID, id.ID)
 		if err != nil {
 			return err
 		}
@@ -116,8 +116,9 @@ func (c *Core) addMeetingMessage(tx *sql.Tx, meetingID, from, text, category str
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM meeting_messages WHERE meeting_id = ?`, meetingID).Scan(&seq); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(`INSERT INTO meeting_messages (meeting_id, seq, sender, text, category, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
-		meetingID, seq, from, text, nullString(category), now); err != nil {
+	if _, err := tx.Exec(`INSERT INTO meeting_messages (meeting_id, seq, sender, text, category, timestamp, sender_name, sender_machine)
+		VALUES (?, ?, ?, ?, ?, ?, `+snapshotName+`, `+snapshotMachine+`)`,
+		meetingID, seq, from, text, nullString(category), now, from, from); err != nil {
 		return 0, err
 	}
 	var participants []string
@@ -152,20 +153,37 @@ type readMessagesArgs struct {
 	AfterID   *int64 `json:"afterId"`
 }
 
+// machineSQL is a session's machine as shown, "<label or hostname> ·
+// <platform>[ <environment>]", for the agent_sessions row aliased s.
+const machineSQL = `CASE WHEN s.label != '' THEN s.label ELSE s.hostname END || ' · ' ||
+	CASE s.platform WHEN 'darwin' THEN 'macOS' WHEN 'linux' THEN 'Linux' WHEN 'wsl' THEN 'WSL' WHEN 'win32' THEN 'Windows' END ||
+	CASE WHEN s.environment != '' THEN ' ' || s.environment ELSE '' END`
+
+// Snapshots of a session (its id the argument), NULL for an adapter instance:
+// what a row shows of who wrote it, kept after the session is deleted.
+const (
+	snapshotName    = `(SELECT s.name FROM agent_sessions s WHERE s.id = ?)`
+	snapshotTitle   = `(SELECT s.title FROM agent_sessions s WHERE s.id = ?)`
+	snapshotMachine = `(SELECT ` + machineSQL + ` FROM agent_sessions s WHERE s.id = ?)`
+)
+
 // chatMessage is a global or meeting message. ID is its number: the global
 // chat id, or its number in the meeting; row is the table id, which orders
-// messages and keeps read cursors. SenderName is the sending session's name
-// and SenderMachine its machine ("<label or hostname> · <platform>"), null for
-// an instance or when unknown; Category is null when none was given.
+// messages and keeps read cursors. SenderName and SenderMachine are the
+// sending session's name and machine when it wrote the message, null for an
+// instance; SenderBackfilled says they were filled in later, when the
+// database was upgraded, from the session as it was then. Category is null
+// when none was given.
 type chatMessage struct {
-	row           int64
-	ID            int64   `json:"id"`
-	From          string  `json:"from"`
-	SenderName    *string `json:"senderName"`
-	SenderMachine *string `json:"senderMachine"`
-	Text          string  `json:"text"`
-	Category      *string `json:"category"`
-	Timestamp     string  `json:"timestamp"`
+	row              int64
+	ID               int64   `json:"id"`
+	From             string  `json:"from"`
+	SenderName       *string `json:"senderName"`
+	SenderMachine    *string `json:"senderMachine"`
+	SenderBackfilled bool    `json:"senderBackfilled"`
+	Text             string  `json:"text"`
+	Category         *string `json:"category"`
+	Timestamp        string  `json:"timestamp"`
 }
 
 // firstGlobalReadNote is returned by the first unread read of global chat as a session.
@@ -192,11 +210,8 @@ func sourceOf(meetingID string) messageSource {
 
 // query selects the context's messages matching cond (with its arguments appended).
 func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chatMessage, error) {
-	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, s.name,
-		CASE WHEN s.label != '' THEN s.label ELSE s.hostname END,
-		CASE s.platform WHEN 'darwin' THEN 'macOS' WHEN 'linux' THEN 'Linux' WHEN 'wsl' THEN 'WSL' WHEN 'win32' THEN 'Windows' ELSE '' END
-			|| CASE WHEN s.environment != '' THEN ' ' || s.environment ELSE '' END
-		FROM `+s.table+` m LEFT JOIN agent_sessions s ON s.id = m.sender
+	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, m.sender_name, m.sender_machine, m.snapshot_backfilled
+		FROM `+s.table+` m
 		WHERE `+s.where+cond+` `+tail, append(append([]any{}, s.args...), args...)...)
 	if err != nil {
 		return nil, err
@@ -205,19 +220,11 @@ func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chat
 	var out []chatMessage
 	for rows.Next() {
 		var m chatMessage
-		var category, name, host, plat sql.NullString
-		if err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name, &host, &plat); err != nil {
+		var category, name, machine sql.NullString
+		if err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name, &machine, &m.SenderBackfilled); err != nil {
 			return nil, err
 		}
-		if category.Valid {
-			m.Category = &category.String
-		}
-		if name.Valid {
-			m.SenderName = &name.String
-		}
-		if machine := strings.Trim(host.String+" · "+plat.String, " ·"); machine != "" {
-			m.SenderMachine = &machine
-		}
+		m.Category, m.SenderName, m.SenderMachine = nullable(category), nullable(name), nullable(machine)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -385,11 +392,38 @@ func (c *Core) listEvents(call api.Call, a listEventsArgs) (any, error) {
 // host_maintenance
 
 type maintenanceArgs struct {
-	Action string `json:"action"`
-	Count  int64  `json:"count"`
+	Action    string `json:"action"`
+	Count     int64  `json:"count"`
+	DryRun    bool   `json:"dryRun"`
+	MeetingID string `json:"meetingId"`
 }
 
 func (c *Core) hostMaintenance(call api.Call, a maintenanceArgs) (any, error) {
+	switch a.Action {
+	case "cleanup":
+		r, err := c.Cleanup(call.Ctx, call.Actor(), a.DryRun)
+		if err != nil {
+			return nil, err
+		}
+		verb := "Removed or changed"
+		if a.DryRun {
+			verb = "Dry run, nothing changed; would remove or change"
+		}
+		return map[string]any{"ok": true, "message": verb + ": " + r.Counts.String() + ".", "cleanup": r}, nil
+	case "export":
+		if a.MeetingID == "" {
+			return nil, api.Errorf("host_maintenance export needs meetingId.")
+		}
+		var md string
+		err := c.tx(call, func(tx *sql.Tx) (err error) {
+			md, err = exportMeeting(tx, a.MeetingID)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "message": fmt.Sprintf("Meeting %s as markdown.", a.MeetingID), "markdown": md}, nil
+	}
 	if a.Action == "prune" && a.Count < 1 {
 		return nil, api.Errorf("host_maintenance prune needs count ≥ 1 (the number of oldest global messages to remove); use action \"clear\" to remove all.")
 	}

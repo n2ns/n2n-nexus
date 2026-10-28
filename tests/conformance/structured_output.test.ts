@@ -56,6 +56,7 @@ describe("tool results", () => {
         const meeting = await call("start_meeting", { topic: "Plan" });
         await call("send_message", { message: "in meeting", category: "DECISION" });
         await call("read_messages", { meetingId: meeting.meetingId, count: 5 });
+        await call("host_maintenance", { action: "export", meetingId: meeting.meetingId });
         await call("read_messages", { meetingId: meeting.meetingId, afterId: 0 }, "peer");
         await call("join_meeting", { meetingId: meeting.meetingId, mode: "async", since: "beginning" }, "peer");
         const draft = await call("send_message", { meetingId: meeting.meetingId, message: "the plan", draft: true });
@@ -80,6 +81,8 @@ describe("tool results", () => {
         await call("rename_project", { oldId: "web_b", newId: "web_c" });
         await call("host_maintenance", { action: "prune", count: 1 });
         await call("host_maintenance", { action: "clear" });
+        await call("host_maintenance", { action: "cleanup", dryRun: true });
+        await call("host_maintenance", { action: "cleanup" });
         await call("host_delete_project", { projectId: "web_c" });
 
         const expected = TOOLS_CONTRACT.tools.map((t) => t.name);

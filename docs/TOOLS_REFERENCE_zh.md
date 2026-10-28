@@ -210,7 +210,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 未读模式按对话增量进行（没装 hooks 时按适配器实例）：每次调用返回尚未返回给它的他人消息，最早的在前，游标越过这些消息和它自己发的消息。
 - 对话第一次以未读模式读全局聊天时从最新消息开始：本次不返回消息，带一条 `note`；更早的消息用 `latest` 或 `afterId` 读。第一次读某个会议时从该会议的第一条开始。
 - 历史模式不动游标，包含自己的消息，也不需要识别身份。
-- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`）或实例 ID（`senderName` 和 `senderMachine` 为 null）；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
+- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`，两者都是写这条消息时的样子，会话被清理后仍保留）或实例 ID（`senderName` 和 `senderMachine` 为 null）；`senderBackfilled` 为 true 表示 host 开始保存这两项之前写的消息，名字和机器是升级数据库时按会话当时的样子补填的；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
 - 没装 hooks 时未读模式需要调用方实例：没有 `instanceId` 的调用会失败，并返回 `read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically); unread cursors are kept per instance.` MCP 适配器总会带上它。
 
 ### `list_events`
@@ -292,8 +292,8 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 行为：
 
 - 返回 `{ count, activeMeetingId, meetings: [{ id, topic, status, initiator, startTime, endTime?, participants, members, messageCount, decisionCount, wakes, summary?, endReason, proposal }] }`。
-- `endReason` 为 `consensus`（由 [`stance`](#stance) 自动结案）、`manual`（`end_meeting`）或 null。`proposal` 是当前待决稿，没有时为 null：`{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }] }`。
-- `participants` 是所有发过言的人；`members` 是加入了且没有离开的成员：`[{ id, name, title, mode, approver, status, joinedAt, wakes, lastWokenAt }]`，`name` 和 `status` 取自会话（适配器实例为 null）。`wakes` 统计这个会议引起的叫醒和拦住结束的次数，按成员和按会议各一个；它只用于展示，不会因此结束会议。
+- `endReason` 为 `consensus`（由 [`stance`](#stance) 自动结案）、`manual`（`end_meeting`）、`expired`（连续 `meetingRetentionDays` 天没有发言，被 host 的清理关闭）或 null。`proposal` 是当前待决稿，没有时为 null：`{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }] }`。
+- `participants` 是所有发过言的人；`members` 是加入了且没有离开的成员：`[{ id, name, title, machine, backfilled, mode, approver, status, joinedAt, wakes, lastWokenAt }]`，`name`、`title`、`machine` 是会话加入时的样子（适配器实例为 null；升级数据库时补填的 `backfilled` 为 true），`status` 是会话现在的状态（适配器实例或已被清理的会话为 null）。`wakes` 统计这个会议引起的叫醒和拦住结束的次数，按成员和按会议各一个；它只用于展示，不会因此结束会议。
 - 用 `read_messages(meetingId)` 读取会议的消息。
 
 ### `start_meeting`
@@ -400,7 +400,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 | --- | --- | --- | --- |
 | `source_meeting_id` | string | 否 | 把任务关联到某个会议，便于追溯。该会议必须存在。 |
 | `metadata` | object | 否 | 任意元数据对象。 |
-| `ttl` | integer | 否 | 存活时间，单位毫秒。超过 TTL 的待处理或运行中任务会在每小时一次的维护中被标为 `failed`（`TTL expired`）；结束的任务 7 天后清除。 |
+| `ttl` | integer | 否 | 存活时间，单位毫秒。超过 TTL 的待处理或运行中任务会在每小时一次的清理中被标为 `failed`（`TTL expired`）；结束的任务在最后一次更新 `retentionDays` 天后清除（host `settings.json`，默认 7）。 |
 
 行为：
 
@@ -454,16 +454,20 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 
 ### `host_maintenance`
 
-修剪或清空全局聊天流。
+修剪或清空全局聊天流，立即执行清理，或把会议导出为 markdown。
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `action` | string | 是 | `prune` 或 `clear`。 |
-| `count` | integer | `prune` 时必填 | 要删除的最旧消息数；`prune` 时至少为 `1`。`clear` 会忽略它。 |
+| `action` | string | 是 | `prune`、`clear`、`cleanup` 或 `export`。 |
+| `count` | integer | `prune` 时必填 | 要删除的最旧消息数；`prune` 时至少为 `1`。其他 action 忽略它。 |
+| `dryRun` | boolean | 否 | `cleanup`：只报告会删除或改动什么，不做任何改动。 |
+| `meetingId` | string | `export` 时必填 | 要导出的会议。 |
 
 行为：
 
-- 返回 `{ ok, removed, remaining }`。
+- `prune` 和 `clear` 返回 `{ ok, message, removed, remaining }`。
+- `cleanup` 立即执行每小时一次的清理（清理什么见[架构](ARCHITECTURE_zh.md#清理与保留期)），返回 `{ ok, message, cleanup: { dryRun, counts, meetings: [{ id, topic, action }], sessions: [{ id, name }] } }`。`counts` 含 `tasksExpired`、`tasks`、`events`、`meetingsExpired`、`meetings`、`messagesExpired`、`messages`、`notices`、`toolUseBindings`、`sessions`、`instances`；会议的 `action` 为 `expire`（关闭）或 `delete`（删除）。有改动的清理记一条 `maintenance.cleanup` 事件，带同样的清单。
+- `export` 返回 `{ ok, message, markdown }`：会议的主题、状态、时间和总结，成员（含已离开的）及其机器，决议，以及每条消息的发言人、机器、时间和类别。升级数据库时补填的名字标 `*`。会议不存在时失败。
 
 ### `host_delete_project`
 

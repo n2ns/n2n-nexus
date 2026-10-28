@@ -124,12 +124,18 @@ Meeting members and stances store their resolved identity kind; draft eligibilit
 
 ### Maintenance and retention
 
-At startup and then every hour the host:
+At startup and then every hour the host cleans up, with the two retention settings of `settings.json` ([User guide](USER_GUIDE.md#settingsjson)), `retentionDays` (default 7) and `meetingRetentionDays` (default 30):
 
-- marks pending or running tasks past their TTL as `failed` and deletes tasks 7 days after they finished (`completed`, `failed`, `cancelled`);
-- deletes events older than 30 days;
-- expires unread direct messages past their 24-hour lifetime (telling the senders), and deletes read or expired direct messages and delivered notices after 30 days;
+- marks pending or running tasks past their TTL as `failed`, and deletes finished tasks (`completed`, `failed`, `cancelled`) and events `retentionDays` after;
+- expires unread direct messages past their 24-hour lifetime (telling the senders), and deletes read or expired direct messages and delivered notices `retentionDays` after;
+- deletes sessions not active for `retentionDays`, with their notices, idle subscriptions, tool-use bindings and read cursors, unless a direct message still references them or they hold a wait; adapter instances not seen for `retentionDays` are forgotten;
+- closes an active meeting without a message for `meetingRetentionDays` (counted from its last message, its start or its reopening) with `endReason: expired`, telling its members; it makes no decision;
+- deletes meetings closed or archived `meetingRetentionDays` ago, with their messages, decisions, stances, members, approvers and read cursors;
 - deletes tool-use bindings once they have expired (5 minutes).
+
+Selection and deletion of each part run in one transaction. A cleanup that changed something is recorded as a `maintenance.cleanup` event with the counts and the meetings and sessions it removed. `host_maintenance` runs it at once (`cleanup`, with `dryRun` to see what would go) and exports a meeting as markdown before it goes (`export`).
+
+Meeting messages, global chat messages and meeting members store the session's name and machine (members also its title) when written, so they stay readable after the session is deleted. Rows written before these columns existed were filled in from the sessions as they were at the upgrade and are marked `senderBackfilled` / `backfilled`.
 
 Logs (files and locations: [User guide](USER_GUIDE.md#data-and-logs)): only the holder of `host.lock` writes `host.log`; the tray's own lines go to `tray.log`.
 
@@ -139,7 +145,7 @@ Logs (files and locations: [User guide](USER_GUIDE.md#data-and-logs)): only the 
 
 The commands of both programs are listed in the [User guide](USER_GUIDE.md#6-reference).
 
-**Host**: started as a tray app or a boot service; the adapter and the hooks never start one, they report that none answers. Configuration comes only from `<data dir>/settings.json` (`host`, `port`, `discoveryPort`, `allowedHosts`, `rateLimit`, `rateBurst`, `maxAutoTurns`, `stanceReminderMinutes`), overridden by command-line flags; the only environment variable the host reads is `NEXUS_ROOT`. A service does not get the environment of the terminal that installed it, so the file is the one source the tray, the service and the command line share.
+**Host**: started as a tray app or a boot service; the adapter and the hooks never start one, they report that none answers. Configuration comes only from `<data dir>/settings.json` (`host`, `port`, `discoveryPort`, `allowedHosts`, `rateLimit`, `rateBurst`, `maxAutoTurns`, `stanceReminderMinutes`, `meetingRetentionDays`, `retentionDays`), overridden by command-line flags; the only environment variable the host reads is `NEXUS_ROOT`. A service does not get the environment of the terminal that installed it, so the file is the one source the tray, the service and the command line share.
 
 **Standalone host on a LAN**: one host with LAN access on serves every machine, independent of any IDE; each client machine needs only the client, which finds the host by UDP broadcast (`--endpoint discover`). Setup: [Installation guide](INSTALL.md#6-several-machines-and-environments).
 
@@ -175,7 +181,7 @@ host/
     ├── agents/           conversations: hooks, direct-message tools, waits, their tables
     ├── api/              HTTP server: the 4 endpoints, Host / Origin guard, body limit, rate limits
     ├── discovery/        UDP LAN discovery responder
-    ├── host/             assembles one host: lock, database, tools, server, discovery, hourly maintenance, logs
+    ├── host/             assembles one host: lock, database, tools, server, discovery, hourly cleanup, logs
     ├── tray/             tray menu and its English / Chinese texts
     ├── service/          boot service, tray autostart, the `serve --supervise` supervisor, firewall script
     ├── clock/            system clock and the settable test clock

@@ -60,7 +60,7 @@ func (a *Agents) news(sessionID string) ([]meetingNews, error) {
 			continue
 		}
 		n.first, n.last, n.upTo = first.Int64, last.Int64, upTo.Int64
-		senders, err := a.db().QueryContext(bg, `SELECT COALESCE(s.name, mm.sender) FROM meeting_messages mm LEFT JOIN agent_sessions s ON s.id = mm.sender
+		senders, err := a.db().QueryContext(bg, `SELECT COALESCE(MAX(mm.sender_name), mm.sender) FROM meeting_messages mm
 			WHERE mm.meeting_id = ? AND mm.id > ? AND mm.sender != ? GROUP BY mm.sender ORDER BY MIN(mm.id)`, m.id, m.notified, sessionID)
 		if err != nil {
 			return nil, err

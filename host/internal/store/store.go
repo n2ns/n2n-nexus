@@ -97,6 +97,13 @@ func (s *Store) migrate() error {
 	if err := s.DB.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
 		return err
 	}
+	// Foreign keys are off while migrating, as SQLite requires for a migration
+	// that rebuilds a table others refer to (dropping the old table would
+	// otherwise cascade); each migration is checked before it commits.
+	if _, err := s.DB.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+	defer s.DB.Exec("PRAGMA foreign_keys = ON")
 	for i, m := range list {
 		if m.version != i+1 {
 			return fmt.Errorf("migrations must be numbered 1, 2, 3...: found %s", m.name)
@@ -112,7 +119,16 @@ func (s *Store) migrate() error {
 			if _, err := tx.Exec(string(body)); err != nil {
 				return fmt.Errorf("migration %s: %w", m.name, err)
 			}
-			_, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version))
+			rows, err := tx.Query("PRAGMA foreign_key_check")
+			if err != nil {
+				return err
+			}
+			broken := rows.Next()
+			rows.Close()
+			if broken {
+				return fmt.Errorf("migration %s leaves rows that break a foreign key", m.name)
+			}
+			_, err = tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version))
 			return err
 		})
 		if err != nil {

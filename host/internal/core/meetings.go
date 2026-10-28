@@ -110,8 +110,9 @@ func (c *Core) startMeeting(call api.Call, a startMeetingArgs) (any, error) {
 			return err
 		}
 		// The initiator takes part as an active member whose approval is required.
-		if _, err := tx.Exec(`INSERT INTO meeting_members (meeting_id, member_id, identity_kind, mode, approver, joined_at) VALUES (?, ?, ?, 'active', 'required', ?)`,
-			id, who.ID, who.Kind, c.now()); err != nil {
+		if _, err := tx.Exec(`INSERT INTO meeting_members (meeting_id, member_id, identity_kind, mode, approver, joined_at, name, title, machine)
+			VALUES (?, ?, ?, 'active', 'required', ?, `+snapshotName+`, `+snapshotTitle+`, `+snapshotMachine+`)`,
+			id, who.ID, who.Kind, c.now(), who.ID, who.ID, who.ID); err != nil {
 			return err
 		}
 		return c.recordEvent(tx, who.ID, "meeting.start", id, map[string]any{"topic": a.Topic})
@@ -225,7 +226,7 @@ func (c *Core) reopenMeeting(call api.Call, a meetingIDArgs) (any, error) {
 		}
 		// The draft was settled or abandoned when the meeting ended: a reopened meeting needs a new one.
 		if _, err := tx.Exec(`UPDATE meetings SET status = 'active', closed_at = NULL, end_reason = NULL, current_proposal_id = NULL,
-			active_order = (SELECT MAX(active_order) + 1 FROM meetings) WHERE id = ?`, a.MeetingID); err != nil {
+			active_order = (SELECT MAX(active_order) + 1 FROM meetings), reopened_at = ? WHERE id = ?`, c.now(), a.MeetingID); err != nil {
 			return err
 		}
 		if err := makeDefault(tx, a.MeetingID); err != nil {
@@ -279,9 +280,12 @@ type proposalSummary struct {
 // meetingMember is a member that has not left. Name and Status are the
 // session's, null for an instance member.
 type meetingMember struct {
-	ID          string  `json:"id"`
-	Name        *string `json:"name"`
-	Title       *string `json:"title"`
+	ID    string  `json:"id"`
+	Name  *string `json:"name"`
+	Title *string `json:"title"`
+	// Machine, like Name and Title, is the session as it was when it joined; Backfilled: filled in when the database was upgraded.
+	Machine     *string `json:"machine"`
+	Backfilled  bool    `json:"backfilled"`
 	Mode        string  `json:"mode"`
 	Approver    string  `json:"approver"`
 	Status      *string `json:"status"`
@@ -293,7 +297,7 @@ type meetingMember struct {
 // loadMembers lists the members of a meeting that have not left, in the order they joined.
 func loadMembers(tx *sql.Tx, meetingID string) ([]meetingMember, error) {
 	rows, err := tx.Query(`
-		SELECT mm.member_id, s.name, s.title, mm.mode, mm.approver, s.status, mm.joined_at, mm.wakes, mm.last_woken_at
+		SELECT mm.member_id, mm.name, mm.title, mm.machine, mm.snapshot_backfilled, mm.mode, mm.approver, s.status, mm.joined_at, mm.wakes, mm.last_woken_at
 		FROM meeting_members mm LEFT JOIN agent_sessions s ON s.id = mm.member_id
 		WHERE mm.meeting_id = ? AND mm.left_at IS NULL
 		ORDER BY mm.joined_at, mm.rowid`, meetingID)
@@ -304,11 +308,11 @@ func loadMembers(tx *sql.Tx, meetingID string) ([]meetingMember, error) {
 	members := []meetingMember{}
 	for rows.Next() {
 		var m meetingMember
-		var name, title, status, woken sql.NullString
-		if err := rows.Scan(&m.ID, &name, &title, &m.Mode, &m.Approver, &status, &m.JoinedAt, &m.Wakes, &woken); err != nil {
+		var name, title, machine, status, woken sql.NullString
+		if err := rows.Scan(&m.ID, &name, &title, &machine, &m.Backfilled, &m.Mode, &m.Approver, &status, &m.JoinedAt, &m.Wakes, &woken); err != nil {
 			return nil, err
 		}
-		m.Name, m.Title, m.Status, m.LastWokenAt = nullable(name), nullable(title), nullable(status), nullable(woken)
+		m.Name, m.Title, m.Machine, m.Status, m.LastWokenAt = nullable(name), nullable(title), nullable(machine), nullable(status), nullable(woken)
 		members = append(members, m)
 	}
 	return members, rows.Err()
@@ -442,16 +446,21 @@ func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
 			}
 		}
 		// Messages from before the join are not announced to the member; a member
-		// that only changes how it takes part keeps what it was told and when it
-		// joined, while one that comes back after leaving joins anew.
+		// that only changes how it takes part keeps what it was told, when it
+		// joined and how it was then, while one that comes back after leaving joins anew.
 		if _, err := tx.Exec(`
-			INSERT INTO meeting_members (meeting_id, member_id, identity_kind, mode, approver, joined_at, notified_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO meeting_members (meeting_id, member_id, identity_kind, mode, approver, joined_at, notified_id, name, title, machine)
+			VALUES (?, ?, ?, ?, ?, ?, ?, `+snapshotName+`, `+snapshotTitle+`, `+snapshotMachine+`)
 			ON CONFLICT (meeting_id, member_id) DO UPDATE SET mode = excluded.mode, approver = excluded.approver,
 				identity_kind = excluded.identity_kind,
+				name = CASE WHEN left_at IS NULL THEN name ELSE excluded.name END,
+				title = CASE WHEN left_at IS NULL THEN title ELSE excluded.title END,
+				machine = CASE WHEN left_at IS NULL THEN machine ELSE excluded.machine END,
+				snapshot_backfilled = CASE WHEN left_at IS NULL THEN snapshot_backfilled ELSE 0 END,
 				draft_eligible = CASE WHEN left_at IS NULL THEN draft_eligible ELSE 0 END,
 				notified_id = CASE WHEN left_at IS NULL THEN notified_id ELSE excluded.notified_id END,
 				joined_at = CASE WHEN left_at IS NULL THEN joined_at ELSE excluded.joined_at END, left_at = NULL`,
-			a.MeetingID, who.ID, who.Kind, a.Mode, a.Approver, c.now(), newest); err != nil {
+			a.MeetingID, who.ID, who.Kind, a.Mode, a.Approver, c.now(), newest, who.ID, who.ID, who.ID); err != nil {
 			return err
 		}
 		if err := c.recordEvent(tx, who.ID, "meeting.join", a.MeetingID, map[string]any{"mode": a.Mode, "approver": a.Approver}); err != nil {

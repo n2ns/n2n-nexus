@@ -3,10 +3,8 @@
 package core
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"math/rand/v2"
 	"strings"
@@ -18,12 +16,6 @@ import (
 	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
-// TaskRetention is how long a finished task is kept.
-const TaskRetention = 7 * 24 * time.Hour
-
-// EventRetention is how long an event is kept.
-const EventRetention = 30 * 24 * time.Hour
-
 // Deps are what the core tools need.
 type Deps struct {
 	Store    *store.Store
@@ -34,6 +26,10 @@ type Deps struct {
 	Identities api.IdentityResolver
 	// Meetings is told about meeting changes after they are committed; nil = nobody.
 	Meetings api.MeetingNotifier
+	// Cleaner cleans up the conversations' rows with the core's; nil = nothing.
+	Cleaner api.Cleaner
+	// MeetingRetentionDays and RetentionDays are the settings of the same names.
+	MeetingRetentionDays, RetentionDays int
 }
 
 // Core holds the core tools.
@@ -93,32 +89,6 @@ func tool[A any](defaults A, fn func(c api.Call, args A) (any, error)) api.ToolF
 		}
 		return fn(c, args)
 	}
-}
-
-// Maintain expires and purges old core rows (events after 30 days, tasks per
-// their TTL and 7 days after they finish); it returns a log line or "".
-func (c *Core) Maintain(ctx context.Context) (string, error) {
-	now := c.d.Clock.Now()
-	var expired, removed, events int64
-	err := c.d.Store.Tx(ctx, func(tx *sql.Tx) error {
-		var err error
-		if expired, err = expireTasks(tx, now); err != nil {
-			return err
-		}
-		if removed, err = exec(tx, `DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') AND updated_at < ?`,
-			store.ISO(now.Add(-TaskRetention))); err != nil {
-			return err
-		}
-		events, err = exec(tx, `DELETE FROM events WHERE timestamp < ?`, store.ISO(now.Add(-EventRetention)))
-		return err
-	})
-	if err != nil {
-		return "", err
-	}
-	if expired+removed+events == 0 {
-		return "", nil
-	}
-	return fmt.Sprintf("maintenance: %d tasks expired, %d finished tasks removed, %d events removed", expired, removed, events), nil
 }
 
 // tx runs fn in one transaction of the call.

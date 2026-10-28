@@ -118,6 +118,8 @@ Read when the host starts; command-line flags override it. A missing file or fie
 | `rateBurst` | Calls a conversation (an instance without the hooks) may make at once before the per-second limit applies (minimum 1) | `60` |
 | `maxAutoTurns` | Automatic turns a conversation may take between its user's prompts (wakes, listening and Stops held open for messages); past it, direct messages wait until the user prompts. Meeting news is not counted or limited. `0` disables the limit | `0` |
 | `stanceReminderMinutes` | Minutes a meeting may stay quiet while required approvers have not taken a stance on its current draft; then each of them is reminded once and the draft's author is told who is missing. Reminders never end a meeting. `0` turns them off | `10` |
+| `meetingRetentionDays` | Days a meeting is kept after it was closed or archived (then it goes with its messages and decisions; `host_maintenance` `export` saves it as markdown first), and days without a message after which an active meeting is closed with `endReason: expired`. At least `1` | `30` |
+| `retentionDays` | Days kept: read or expired direct messages, delivered notices, events, finished tasks, sessions without activity (unless a direct message still references them) and adapter instances not seen. At least `1` | `7` |
 
 After editing the file, restart the host (tray **Restart**, or restart `serve` or the service).
 

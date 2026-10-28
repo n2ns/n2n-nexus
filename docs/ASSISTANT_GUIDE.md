@@ -129,6 +129,8 @@ cancel_task(taskId)                         → cancel a pending or running task
 
 ```
 host_maintenance(action, count)   → prune the oldest N (at least 1) global messages / clear all
+host_maintenance("cleanup", dryRun?) → run the retention cleanup now (dryRun: only list what would go)
+host_maintenance("export", meetingId) → a meeting as markdown
 host_delete_project(projectId)    → permanently delete a project (irreversible)
 ```
 

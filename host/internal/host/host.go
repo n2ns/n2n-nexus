@@ -23,7 +23,7 @@ import (
 	"github.com/n2ns/n2n-nexus/host/internal/testhooks"
 )
 
-// MaintainInterval is how often old rows are purged.
+// MaintainInterval is how often the cleanup runs.
 const MaintainInterval = time.Hour
 
 // RemindInterval is how often meetings are checked for missing stances on their drafts.
@@ -94,7 +94,7 @@ func start(o Options, lock *Lock) (*Host, error) {
 	if o.Test.ListenWaitMs > 0 {
 		listenWait = time.Duration(o.Test.ListenWaitMs) * time.Millisecond
 	}
-	ag, err := agents.New(agents.Options{Store: st, Clock: clk, Contract: contract, Logger: o.Logger, ListenWait: listenWait, MaxAutoTurns: o.Settings.MaxAutoTurns})
+	ag, err := agents.New(agents.Options{Store: st, Clock: clk, Contract: contract, Logger: o.Logger, ListenWait: listenWait, MaxAutoTurns: o.Settings.MaxAutoTurns, RetentionDays: o.Settings.RetentionDays})
 	if err != nil {
 		st.Close()
 		return nil, err
@@ -104,7 +104,8 @@ func start(o Options, lock *Lock) (*Host, error) {
 		AllowedHosts: o.Settings.AllowedHosts, RateLimit: o.Settings.RateLimit, RateBurst: o.Settings.RateBurst,
 		Logger: o.Logger, Health: ag.Health, SessionOf: ag.SessionOf,
 	})
-	c := core.New(core.Deps{Store: st, Clock: clk, Contract: contract, Logger: o.Logger, Identities: ag, Meetings: ag})
+	c := core.New(core.Deps{Store: st, Clock: clk, Contract: contract, Logger: o.Logger, Identities: ag, Meetings: ag,
+		Cleaner: ag, MeetingRetentionDays: o.Settings.MeetingRetentionDays, RetentionDays: o.Settings.RetentionDays})
 	c.Register(srv)
 	ag.Register(srv)
 	if missing := srv.Missing(); len(missing) > 0 {
@@ -121,13 +122,11 @@ func start(o Options, lock *Lock) (*Host, error) {
 	h.server = &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 
 	maintain := func() {
-		for _, m := range []func(context.Context) (string, error){c.Maintain, ag.Maintain} {
-			line, err := m(ctx)
-			if err != nil {
-				o.Logger.Printf("maintenance: %v", err)
-			} else if line != "" {
-				o.Logger.Print(line)
-			}
+		line, err := c.Maintain(ctx)
+		if err != nil {
+			o.Logger.Printf("maintenance: %v", err)
+		} else if line != "" {
+			o.Logger.Print(line)
 		}
 	}
 	h.stopDiscovery = func() {}

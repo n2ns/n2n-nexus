@@ -16,6 +16,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -38,10 +39,10 @@ type Options struct {
 	ListenWait time.Duration
 	// MaxAutoTurns limits automatic turns between user prompts; 0 = no limit.
 	MaxAutoTurns int
+	// RetentionDays: read or expired direct messages, delivered notices,
+	// sessions offline and adapter instances not seen are kept this long.
+	RetentionDays int
 }
-
-// RetentionDays: read or expired direct messages and delivered notices are kept this long.
-const RetentionDays = 30
 
 // Agents is the conversation state of one host.
 type Agents struct {
@@ -168,44 +169,103 @@ func (a *Agents) Close() {
 	}
 }
 
-// Maintain expires unread messages past their expiry (telling the senders),
-// deletes read or expired direct messages and delivered notices after
-// RetentionDays and tool-use bindings past their TTL; it returns a log line or "".
-func (a *Agents) Maintain(ctx context.Context) (string, error) {
+// errDryRun rolls back the transaction of a dry-run cleanup.
+var errDryRun = errors.New("dry run")
+
+// Cleanup (api.Cleaner) expires unread messages past their expiry (telling
+// the senders), deletes tool-use bindings past their TTL and, after
+// RetentionDays, read or expired direct messages, delivered notices, adapter
+// instances not seen and sessions not active (with their notices, idle
+// subscriptions, bindings and read cursors) that no direct message references
+// and that hold no wait. With dryRun it changes nothing and reports what it would do.
+func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	var out api.Cleanup
 	now := a.o.Clock.Now()
-	senders, expired, err := a.expireMessages(now)
-	if err != nil {
-		return "", err
+	if dryRun {
+		if err := a.db().QueryRowContext(ctx, "SELECT COUNT(*) FROM agent_messages WHERE status = 'unread' AND expires_at <= ?", a.iso(now)).Scan(&out.MessagesExpired); err != nil {
+			return out, err
+		}
+	} else {
+		senders, expired, err := a.expireMessages(now)
+		if err != nil {
+			return out, err
+		}
+		out.MessagesExpired = int64(expired)
+		a.wake(senders...)
 	}
-	a.wake(senders...)
-	cutoff := a.iso(now.AddDate(0, 0, -RetentionDays))
+	cutoff := a.iso(now.AddDate(0, 0, -a.o.RetentionDays))
 	bindingCutoff := a.iso(now.Add(-ms(a.o.Contract.Hook.Timing.ToolUseBindingTtlMs)))
-	var messages, notices, bindings int64
-	err = a.o.Store.Tx(ctx, func(tx *sql.Tx) error {
+	err := a.o.Store.Tx(ctx, func(tx *sql.Tx) error {
 		old := "(status = 'read' AND read_at < ?) OR (status = 'expired' AND expires_at < ?)"
 		// Replies keep their text when the message they answer goes.
 		if _, err := tx.ExecContext(ctx, "UPDATE agent_messages SET reply_to = NULL WHERE reply_to IN (SELECT id FROM agent_messages WHERE "+old+")", cutoff, cutoff); err != nil {
 			return err
 		}
 		var err error
-		if messages, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_messages WHERE "+old, cutoff, cutoff)); err != nil {
+		if out.Messages, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_messages WHERE "+old, cutoff, cutoff)); err != nil {
 			return err
 		}
-		if notices, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_notices WHERE notified_at IS NOT NULL AND notified_at < ?", cutoff)); err != nil {
+		if out.Notices, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_notices WHERE notified_at IS NOT NULL AND notified_at < ?", cutoff)); err != nil {
 			return err
 		}
-		bindings, err = affected(tx.ExecContext(ctx, "DELETE FROM tool_use_bindings WHERE created_at <= ?", bindingCutoff))
-		return err
+		if out.ToolUseBindings, err = affected(tx.ExecContext(ctx, "DELETE FROM tool_use_bindings WHERE created_at <= ?", bindingCutoff)); err != nil {
+			return err
+		}
+		if out.Instances, err = affected(tx.ExecContext(ctx, "DELETE FROM hooked_instances WHERE last_seen_at < ?", cutoff)); err != nil {
+			return err
+		}
+		if out.Sessions, err = a.oldSessions(ctx, tx, cutoff); err != nil {
+			return err
+		}
+		for _, s := range out.Sessions {
+			for _, q := range []string{
+				"DELETE FROM agent_notices WHERE session_id = ?1",
+				"DELETE FROM agent_idle_subscriptions WHERE subscriber_id = ?1 OR target_id = ?1",
+				"DELETE FROM tool_use_bindings WHERE session_id = ?1",
+				"DELETE FROM read_cursors WHERE instance_id = ?1",
+				"DELETE FROM agent_sessions WHERE id = ?1",
+			} {
+				if _, err := tx.ExecContext(ctx, q, s.ID); err != nil {
+					return err
+				}
+			}
+		}
+		if dryRun {
+			return errDryRun
+		}
+		return nil
 	})
+	if err != nil && !errors.Is(err, errDryRun) {
+		return out, err
+	}
+	return out, nil
+}
+
+// oldSessions lists the sessions not active since cutoff that no direct
+// message references and that hold no wait (mu held).
+func (a *Agents) oldSessions(ctx context.Context, tx *sql.Tx, cutoff string) ([]api.CleanedSession, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.id, s.name FROM agent_sessions s
+		WHERE s.last_active_at < ?
+			AND NOT EXISTS (SELECT 1 FROM agent_messages m WHERE m.from_id = s.id OR m.to_id = s.id)
+		ORDER BY s.last_active_at, s.id`, cutoff)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if expired == 0 && messages == 0 && notices == 0 && bindings == 0 {
-		return "", nil
+	defer rows.Close()
+	list := []api.CleanedSession{}
+	for rows.Next() {
+		var s api.CleanedSession
+		if err := rows.Scan(&s.ID, &s.Name); err != nil {
+			return nil, err
+		}
+		if len(a.waiters[s.ID]) == 0 {
+			list = append(list, s)
+		}
 	}
-	return fmt.Sprintf("agents: %d messages expired; deleted %d messages, %d notices, %d tool-use bindings", expired, messages, notices, bindings), nil
+	return list, rows.Err()
 }
 
 func affected(r sql.Result, err error) (int64, error) {

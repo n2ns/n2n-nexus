@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/n2ns/n2n-nexus/host/internal/api"
 	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
@@ -227,51 +228,69 @@ func TestReply(t *testing.T) {
 	}
 }
 
-func TestMaintain(t *testing.T) {
+func TestCleanup(t *testing.T) {
 	h := start(t)
 	ctx := context.Background()
-	line, err := h.ag.Maintain(ctx)
-	if err != nil || line != "" {
-		t.Fatalf("empty database: %q %v", line, err)
+	clean := func(dryRun bool) api.Cleanup {
+		t.Helper()
+		r, err := h.ag.Cleanup(ctx, dryRun)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if r := clean(false); !reflect.DeepEqual(r, api.Cleanup{Sessions: []api.CleanedSession{}}) {
+		t.Fatalf("empty database: %+v", r)
 	}
 	h.hook("codex", "SessionStart", "s")
 	h.hook("codex", "SessionStart", "r")
+	h.hook("codex", "SessionStart", "gone")
+	h.hook("codex", "Stop", "gone")
+	h.exec("INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES ('codex:gone', 'global', 'global', 1, '')")
+	h.exec("INSERT INTO hooked_instances (instance_id, last_seen_at) VALUES ('mcp-old', ?)", store.ISO(h.t0))
 	read := h.send("s", "codex:r", "read me", false)
 	h.codex("r", "read", nil)
 	stale := h.send("s", "codex:r", "never read", false)
 	h.hook("codex", "PreToolUse", "s", map[string]any{"tool_use_id": "toolu_old"})
 
 	// Past the message TTL: the unread message expires, its sender gets a
-	// notice (which wakes its listening Stop) and the binding is gone.
+	// notice (which wakes its listening Stop) and the binding is gone. A dry
+	// run before changes nothing.
 	h.codex("s", "listen", map[string]any{"on": true})
 	waiting := h.openHook("codex", "Stop", "s", stopActive)
 	h.untilStatus("codex:s", "listening")
 	ttl := ms(timing.MessageTtlMs)
 	h.at(ttl + time.Second)
-	line, err = h.ag.Maintain(ctx)
-	if err != nil {
-		t.Fatal(err)
+	if r := clean(true); r.MessagesExpired != 1 || r.ToolUseBindings != 1 {
+		t.Fatalf("dry run: %+v", r)
 	}
-	eq(t, line, "agents: 1 messages expired; deleted 0 messages, 0 notices, 1 tool-use bindings")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE status = 'expired'"), 0)
+	eq(t, h.count("SELECT COUNT(*) FROM tool_use_bindings"), 1)
+	if r := clean(false); r.MessagesExpired != 1 || r.ToolUseBindings != 1 || r.Messages+r.Notices+r.Instances != 0 || len(r.Sessions) != 0 {
+		t.Fatalf("%+v", r)
+	}
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'expired'", stale), 1)
 	contains(t, waiting.wait(t).str("reason"), "expired unread")
 	eq(t, h.count("SELECT COUNT(*) FROM tool_use_bindings"), 0)
 	answer := h.codex("r", "reply", map[string]any{"messageId": read, "text": "answer"}).result["messageId"].(string)
 
-	// 30 days later: the read and the expired message and the delivered notice
-	// go; the newer reply stays, without its link to the deleted original.
-	h.at(ttl + RetentionDays*24*time.Hour + 2*time.Second)
-	line, err = h.ag.Maintain(ctx)
-	if err != nil {
-		t.Fatal(err)
+	// 7 days later: the read and the expired message and the delivered notice
+	// go, and the session no message references, with its cursor; the newer
+	// reply stays, without its link to the deleted original, and so do its
+	// sessions.
+	h.at(ttl + 7*24*time.Hour + 2*time.Second)
+	r := clean(false)
+	if r.Messages != 2 || r.Notices != 1 || r.Instances != 1 ||
+		!reflect.DeepEqual(r.Sessions, []api.CleanedSession{{ID: "codex:gone", Name: "codex@proj#gone"}}) {
+		t.Fatalf("%+v", r)
 	}
-	eq(t, line, "agents: 1 messages expired; deleted 2 messages, 1 notices, 0 tool-use bindings")
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages"), 1)
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND reply_to IS NULL", answer), 1)
 	eq(t, h.count("SELECT COUNT(*) FROM agent_notices WHERE notified_at IS NULL"), 1)
 	eq(t, h.count("SELECT COUNT(*) FROM agent_notices"), 1)
-	line, err = h.ag.Maintain(ctx)
-	if err != nil || line != "" {
-		t.Fatalf("nothing left to do: %q %v", line, err)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_sessions"), 2)
+	eq(t, h.count("SELECT COUNT(*) FROM read_cursors"), 0)
+	if r := clean(false); r.MessagesExpired+r.Messages+r.Notices+r.ToolUseBindings+r.Instances != 0 || len(r.Sessions) != 0 {
+		t.Fatalf("nothing left to do: %+v", r)
 	}
 }

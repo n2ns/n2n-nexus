@@ -79,7 +79,7 @@
 |---|---|
 | `contract/tools.json` | `start_meeting` / `join_meeting` 加 `seat`；`send_message`、`stance` 的描述写明未读检查和拒绝返回（返回加 `unread` 数组、`refused: true`）；`list_meetings` 的 meeting 加 `seat`、`hadSeat`；`stance` 的 approvals 加 `seat` |
 | `contract/hook.json` | 会议通知文本改为带正文的格式（`meetingNews` 改为每条一段，加截断提示） |
-| `host/internal/store/migrations/0004_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.had_seat`；`meeting_stances.changes`；`meeting_members.last_send_refused` |
+| `host/internal/store/migrations/0005_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.had_seat`；`meeting_stances.changes`；`meeting_members.last_send_refused` |
 | `host/internal/core/meetings.go` | `seat` 参数、接管、席位消息、`end_meeting` 的席位校验与"提议结束" |
 | `host/internal/core/stances.go` | 依据格式检查、改口计数、席位 endorse → DECISION、席位 object → 清草案、共识提示的状态变化 |
 | `host/internal/core/messages.go` | 发送前未读检查、拒绝附回、放行附注、游标推进规则 |
@@ -98,4 +98,4 @@ Go（`host/internal/core`、`host/internal/agents`）与 conformance 各覆盖�
 2. 第 2–4、6 节（席位）。
 3. 第 7 节（GUIDE）与前两步同一版本发布。
 
-每步按高风险走独立评审。待用户定：版本号；0.11.0 库里已有会议记录的快照回填方式（TODO 清理一节的遗留项，和本方案的迁移一起做）。
+每步按高风险走独立评审。待用户定：版本号。（0.11.0 库里已有记录的快照已定为按迁移时的会话补填，随清理机制在 `0004_retention.sql` 实现。）

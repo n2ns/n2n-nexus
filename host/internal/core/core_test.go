@@ -51,7 +51,7 @@ func newHarnessWith(t *testing.T, ids api.IdentityResolver, meetings ...api.Meet
 	clk.Set(start)
 	logger := log.New(io.Discard, "", 0)
 	srv := api.New(api.Options{Version: "test", Contract: contract, Clock: clk, Logger: logger})
-	d := Deps{Store: st, Clock: clk, Contract: contract, Logger: logger, Identities: ids}
+	d := Deps{Store: st, Clock: clk, Contract: contract, Logger: logger, Identities: ids, MeetingRetentionDays: 30, RetentionDays: 7}
 	if len(meetings) > 0 {
 		d.Meetings = meetings[0]
 	}
@@ -177,7 +177,7 @@ func TestMaintainExpiresAndPurges(t *testing.T) {
 	// TTL boundary to the millisecond: created at .900, ttl 1000 expires only after +1001 ms.
 	h.clock.Set(start.Add(900 * time.Millisecond))
 	overdue := h.ok("create_task", map[string]any{"ttl": 1000}, "")["task_id"].(string)
-	fresh := h.ok("create_task", map[string]any{"ttl": 3600_000}, "")["task_id"].(string)
+	fresh := h.ok("create_task", map[string]any{"ttl": 30 * 24 * 3600_000}, "")["task_id"].(string)
 	noTTL := h.ok("create_task", map[string]any{}, "")["task_id"].(string)
 	for _, elapsed := range []time.Duration{200, 999, 1000} {
 		h.clock.Set(start.Add(900*time.Millisecond + elapsed*time.Millisecond))
@@ -187,8 +187,11 @@ func TestMaintainExpiresAndPurges(t *testing.T) {
 	}
 	h.clock.Set(start.Add(1901 * time.Millisecond))
 	line, err := h.core.Maintain(ctx)
-	if err != nil || !strings.Contains(line, "1 tasks expired") {
+	if err != nil {
 		t.Fatalf("got %q %v", line, err)
+	}
+	if line != "cleanup: 1 tasksExpired" {
+		t.Fatalf("got %q", line)
 	}
 	task := h.ok("get_task", map[string]any{"taskId": overdue}, "")
 	if task["status"] != "failed" || task["error_message"] != "TTL expired" {
@@ -200,21 +203,28 @@ func TestMaintainExpiresAndPurges(t *testing.T) {
 		}
 	}
 
-	// Finished tasks go 7 days after their last update, events after 30 days.
+	// Finished tasks and events go retentionDays (7) after their last update;
+	// the cleanup that removed them is recorded.
+	h.clock.Set(start.Add(3 * 24 * time.Hour))
 	h.ok("sync_global_doc", map[string]any{"docId": "d", "title": "t", "content": "c"}, "a")
-	h.clock.Set(start.Add(TaskRetention + time.Hour))
-	if line, _ := h.core.Maintain(ctx); !strings.Contains(line, "1 finished tasks removed") || !strings.Contains(line, "0 events removed") {
+	h.clock.Set(start.Add(7*24*time.Hour + 1901*time.Millisecond))
+	if line, _ := h.core.Maintain(ctx); line != "" {
+		t.Fatalf("at the boundary: %q", line)
+	}
+	h.clock.Set(start.Add(7*24*time.Hour + 1902*time.Millisecond))
+	// The event is the cleanup that expired the task.
+	if line, _ := h.core.Maintain(ctx); line != "cleanup: 1 tasks, 1 events" {
 		t.Fatalf("got %q", line)
 	}
 	h.fails(400, "not found", "get_task", map[string]any{"taskId": overdue}, "")
 	if n := h.count(`SELECT COUNT(*) FROM tasks`); n != 2 {
 		t.Fatalf("%d tasks left", n)
 	}
-	h.clock.Set(start.Add(EventRetention + time.Hour))
-	if line, _ := h.core.Maintain(ctx); !strings.Contains(line, "1 events removed") {
+	h.clock.Set(start.Add(10*24*time.Hour + time.Hour))
+	if line, _ := h.core.Maintain(ctx); line != "cleanup: 1 events" {
 		t.Fatalf("got %q", line)
 	}
-	if got := h.eventActions(""); len(got) != 0 {
+	if got := h.eventActions(""); !slices.Equal(got, []string{"maintenance.cleanup", "maintenance.cleanup"}) {
 		t.Fatalf("events left: %v", got)
 	}
 }

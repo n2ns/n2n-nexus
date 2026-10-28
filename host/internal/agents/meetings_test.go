@@ -25,7 +25,7 @@ func (h *harness) meeting(id string, members map[string]string) {
 func (h *harness) postInMeeting(meetingID, sender, text string) {
 	h.t.Helper()
 	seq := h.count(`SELECT COALESCE(MAX(seq), 0) + 1 FROM meeting_messages WHERE meeting_id = ?`, meetingID)
-	h.exec(`INSERT INTO meeting_messages (meeting_id, seq, sender, text, timestamp) VALUES (?, ?, ?, ?, 'x')`, meetingID, seq, sender, text)
+	h.exec(`INSERT INTO meeting_messages (meeting_id, seq, sender, text, timestamp, sender_name) VALUES (?, ?, ?, ?, 'x', (SELECT name FROM agent_sessions WHERE id = ?))`, meetingID, seq, sender, text, sender)
 	h.ag.MeetingUpdated(meetingID)
 }
 

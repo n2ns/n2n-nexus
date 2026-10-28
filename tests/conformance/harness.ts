@@ -79,6 +79,8 @@ export type HostSettings = {
     rateLimit?: number;
     rateBurst?: number;
     maxAutoTurns?: number;
+    meetingRetentionDays?: number;
+    retentionDays?: number;
     /** Host names allowed besides IP literals and the defaults. */
     allowedHosts?: string[];
     /** How long a listening hook is held open (test-only flag). */

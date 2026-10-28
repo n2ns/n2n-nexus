@@ -57,7 +57,7 @@ func start(t *testing.T, opts ...hostOption) *harness {
 	h := &harness{t: t, dir: t.TempDir(), clk: &clock.Settable{}, t0: time.UnixMilli(time.Now().UnixMilli()), machines: map[string]any{}}
 	h.clk.Set(h.t0)
 	h.opts = Options{Clock: h.clk, Contract: testContract, Logger: log.New(io.Discard, "", 0),
-		ListenWait: listenMS * time.Millisecond, MaxAutoTurns: testContract.Hook.Limits.DefaultMaxAutoTurns}
+		ListenWait: listenMS * time.Millisecond, MaxAutoTurns: testContract.Hook.Limits.DefaultMaxAutoTurns, RetentionDays: 7}
 	for _, o := range opts {
 		o(&h.opts)
 	}

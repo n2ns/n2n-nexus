@@ -22,6 +22,14 @@ type Settings struct {
 	// StanceReminderMinutes: a meeting quiet this long reminds the approvers of
 	// its current draft that took no stance (0 disables the reminders).
 	StanceReminderMinutes int `json:"stanceReminderMinutes"`
+	// MeetingRetentionDays: a meeting closed or archived this long ago is
+	// deleted, and an active meeting without a message for this long is
+	// closed as expired.
+	MeetingRetentionDays int `json:"meetingRetentionDays"`
+	// RetentionDays: read or expired direct messages, delivered notices,
+	// events, finished tasks, sessions offline and adapter instances not seen
+	// this long are deleted.
+	RetentionDays int `json:"retentionDays"`
 }
 
 // Defaults are the settings of a fresh install.
@@ -35,6 +43,8 @@ func Defaults() Settings {
 		RateBurst:             60,
 		MaxAutoTurns:          0,
 		StanceReminderMinutes: 10,
+		MeetingRetentionDays:  30,
+		RetentionDays:         7,
 	}
 }
 
@@ -73,6 +83,10 @@ func (s Settings) Validate() error {
 		return errors.New("settings: maxAutoTurns must not be negative")
 	case s.StanceReminderMinutes < 0:
 		return errors.New("settings: stanceReminderMinutes must not be negative")
+	case s.MeetingRetentionDays < 1:
+		return errors.New("settings: meetingRetentionDays must be at least 1")
+	case s.RetentionDays < 1:
+		return errors.New("settings: retentionDays must be at least 1")
 	}
 	return nil
 }

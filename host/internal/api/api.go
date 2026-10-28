@@ -97,6 +97,25 @@ type MeetingNotifier interface {
 	MeetingNotice(meetingID string, to []string, text string)
 }
 
+// Cleaner removes the old rows of the conversations (internal/agents) for
+// the host's cleanup; with dryRun it only reports what it would remove.
+type Cleaner interface {
+	Cleanup(ctx context.Context, dryRun bool) (Cleanup, error)
+}
+
+// Cleanup is what a cleanup of the conversations removed or would remove.
+type Cleanup struct {
+	// MessagesExpired: unread direct messages past their expiry, marked expired.
+	MessagesExpired, Messages, Notices, ToolUseBindings, Instances int64
+	Sessions                                                       []CleanedSession
+}
+
+// CleanedSession is a session a cleanup removed or would remove.
+type CleanedSession struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // ToolFunc handles a tool; the result must satisfy the tool's output schema.
 type ToolFunc func(c Call) (any, error)
 

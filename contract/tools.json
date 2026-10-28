@@ -1719,14 +1719,19 @@
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "description": "The sending session's name when it posted; null for an adapter instance"
                 },
                 "senderMachine": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "description": "The sending session's machine, \"<label or hostname> · <platform>[ <environment>]\"; null for an adapter instance"
+                  "description": "The sending session's machine when it posted, \"<label or hostname> · <platform>[ <environment>]\"; null for an adapter instance"
+                },
+                "senderBackfilled": {
+                  "type": "boolean",
+                  "description": "senderName and senderMachine were filled in when the database was upgraded, from the session as it was then, not when the message was posted"
                 },
                 "text": {
                   "type": "string"
@@ -1757,6 +1762,7 @@
                 "from",
                 "senderName",
                 "senderMachine",
+                "senderBackfilled",
                 "text",
                 "category",
                 "timestamp"
@@ -2096,7 +2102,7 @@
     {
       "name": "list_meetings",
       "title": "List Meetings",
-      "description": "List meetings, newest first: id, topic, status, initiator, participants (everyone who has posted), members (who has joined and not left: name and conversation title, mode, approver, session status, wakes the meeting caused), message/decision counts, summary, endReason (manual: end_meeting; consensus: every required approver endorsed the current draft) and proposal: the current draft (messageId, author), the version of its required approver list and its approvals (required, endorsed, waiting: required approvers without a stance, objections), null when no draft was published. Initiator, participants and members are conversation session ids (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else MCP adapter instance ids. Read messages with read_messages(meetingId).",
+      "description": "List meetings, newest first: id, topic, status, initiator, participants (everyone who has posted), members (who has joined and not left: name, conversation title and machine as they were when it joined, mode, approver, session status, wakes the meeting caused), message/decision counts, summary, endReason (manual: end_meeting; consensus: every required approver endorsed the current draft; expired: the host closed it after meetingRetentionDays without a message) and proposal: the current draft (messageId, author), the version of its required approver list and its approvals (required, endorsed, waiting: required approvers without a stance, objections), null when no draft was published. Initiator, participants and members are conversation session ids (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else MCP adapter instance ids. Read messages with read_messages(meetingId).",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -2206,6 +2212,17 @@
                           "null"
                         ]
                       },
+                      "machine": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "The member's machine when it joined; null for an adapter instance"
+                      },
+                      "backfilled": {
+                        "type": "boolean",
+                        "description": "name, title and machine were filled in when the database was upgraded, not when the member joined"
+                      },
                       "mode": {
                         "type": "string",
                         "enum": [
@@ -2245,6 +2262,8 @@
                       "id",
                       "name",
                       "title",
+                      "machine",
+                      "backfilled",
                       "mode",
                       "approver",
                       "status",
@@ -2263,6 +2282,7 @@
                   "enum": [
                     "manual",
                     "consensus",
+                    "expired",
                     null
                   ]
                 },
@@ -3373,8 +3393,8 @@
     },
     {
       "name": "host_maintenance",
-      "title": "Prune or Clear Global Chat",
-      "description": "Remove global chat messages: action 'prune' removes the oldest count messages (count ≥ 1 required), 'clear' removes all.",
+      "title": "Clean Up the Host",
+      "description": "Host housekeeping. 'prune' removes the oldest count global chat messages (count ≥ 1 required), 'clear' removes all of them. 'cleanup' runs the hourly cleanup now: tasks past their TTL fail; finished tasks, events, read or expired direct messages, delivered notices, adapter instances not seen and sessions not active for retentionDays go (a session a direct message still references stays); an active meeting without a message for meetingRetentionDays since its last message, start or reopening closes with endReason expired; a meeting closed or archived meetingRetentionDays ago goes with its messages, decisions, stances and members. With dryRun true it changes nothing and reports what it would do. 'export' returns meeting meetingId as markdown: state, members, decisions and messages with who wrote them and on which machine.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -3388,7 +3408,9 @@
             "type": "string",
             "enum": [
               "prune",
-              "clear"
+              "clear",
+              "cleanup",
+              "export"
             ]
           },
           "count": {
@@ -3396,6 +3418,14 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "dryRun": {
+            "description": "cleanup: report what would be removed or changed without changing anything. Ignored by the other actions.",
+            "type": "boolean"
+          },
+          "meetingId": {
+            "description": "export: the meeting to export (required). Ignored by the other actions.",
+            "type": "string"
           }
         },
         "required": [
@@ -3415,19 +3445,159 @@
           "removed": {
             "type": "integer",
             "minimum": -9007199254740991,
-            "maximum": 9007199254740991
+            "maximum": 9007199254740991,
+            "description": "prune and clear: global messages removed."
           },
           "remaining": {
             "type": "integer",
             "minimum": -9007199254740991,
-            "maximum": 9007199254740991
+            "maximum": 9007199254740991,
+            "description": "prune and clear: global messages left."
+          },
+          "cleanup": {
+            "description": "cleanup: what was removed or changed, or with dryRun would be. counts: tasksExpired (failed for their TTL), tasks, events, meetingsExpired (closed), meetings (deleted), messagesExpired (unread direct messages marked expired), messages, notices, toolUseBindings, sessions, instances.",
+            "type": "object",
+            "properties": {
+              "dryRun": {
+                "type": "boolean"
+              },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "tasksExpired": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "tasks": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "events": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "meetingsExpired": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "meetings": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "messagesExpired": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "messages": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "notices": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "toolUseBindings": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "sessions": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "instances": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "tasksExpired",
+                  "tasks",
+                  "events",
+                  "meetingsExpired",
+                  "meetings",
+                  "messagesExpired",
+                  "messages",
+                  "notices",
+                  "toolUseBindings",
+                  "sessions",
+                  "instances"
+                ],
+                "additionalProperties": false
+              },
+              "meetings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "topic": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "expire",
+                        "delete"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "topic",
+                    "action"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "dryRun",
+              "counts",
+              "meetings",
+              "sessions"
+            ],
+            "additionalProperties": false
+          },
+          "markdown": {
+            "description": "export: the meeting as markdown.",
+            "type": "string"
           }
         },
         "required": [
           "ok",
-          "message",
-          "removed",
-          "remaining"
+          "message"
         ],
         "additionalProperties": false
       },

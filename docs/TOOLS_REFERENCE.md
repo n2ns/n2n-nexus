@@ -210,7 +210,7 @@ Behavior:
 - Unread mode is incremental per conversation (per adapter instance without hooks): each call returns messages of others not yet returned to it, oldest first, and moves its cursor past them and past its own messages.
 - A conversation's first unread read of global chat starts at the newest message: it returns nothing and a `note`; read earlier messages with `latest` or `afterId`. Its first read of a meeting starts at the meeting's first message.
 - History mode moves no cursor, includes your own messages and needs no identity.
-- Result: `{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, text, category, timestamp }], count, note? }`. `from` is the sender's session ID (`senderName` is its name, usable with `send`, and `senderMachine` its machine as `<label or hostname> · <platform>[ <environment>]`) or instance ID (`senderName` and `senderMachine` null); `category` is null for a message without one. A meeting message's `id` is its number in the meeting, from 1; global chat messages have their own ids.
+- Result: `{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`. `from` is the sender's session ID (`senderName` is its name, usable with `send`, and `senderMachine` its machine as `<label or hostname> · <platform>[ <environment>]`, both as they were when the message was written, so they stay after the session is cleaned up) or instance ID (`senderName` and `senderMachine` null); `senderBackfilled` is true for a message written before the host stored them, whose name and machine were filled in from the session as it was when the database was upgraded; `category` is null for a message without one. A meeting message's `id` is its number in the meeting, from 1; global chat messages have their own ids.
 - Unread mode without hooks needs the calling instance: a call without `instanceId` fails with `read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically); unread cursors are kept per instance.` The MCP adapter always sends one.
 
 ### `list_events`
@@ -292,8 +292,8 @@ List meetings, newest first.
 Behavior:
 
 - Returns `{ count, activeMeetingId, meetings: [{ id, topic, status, initiator, startTime, endTime?, participants, members, messageCount, decisionCount, wakes, summary?, endReason, proposal }] }`.
-- `endReason` is `consensus` (closed by [`stance`](#stance)), `manual` (`end_meeting`) or null. `proposal` is the current draft, or null: `{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }] }`.
-- `participants` is everyone who has posted; `members` is who has joined and not left: `[{ id, name, title, mode, approver, status, joinedAt, wakes, lastWokenAt }]`, where `name` and `status` are the session's (null for an adapter instance). `wakes` counts the wakes and held Stops the meeting caused, per member and for the meeting; it is only shown, nothing ends a meeting because of it.
+- `endReason` is `consensus` (closed by [`stance`](#stance)), `manual` (`end_meeting`), `expired` (closed by the host's cleanup after `meetingRetentionDays` without a message) or null. `proposal` is the current draft, or null: `{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }] }`.
+- `participants` is everyone who has posted; `members` is who has joined and not left: `[{ id, name, title, machine, backfilled, mode, approver, status, joinedAt, wakes, lastWokenAt }]`, where `name`, `title` and `machine` are the session's as it was when it joined (null for an adapter instance; `backfilled` true when they were filled in at that database upgrade) and `status` is the session's now (null for an adapter instance or a session that was cleaned up). `wakes` counts the wakes and held Stops the meeting caused, per member and for the meeting; it is only shown, nothing ends a meeting because of it.
 - Read a meeting's messages with `read_messages(meetingId)`.
 
 ### `start_meeting`
@@ -400,7 +400,7 @@ Create a task record that you track and update yourself with `update_task`; the 
 | --- | --- | --- | --- |
 | `source_meeting_id` | string | no | Link the task to a meeting for traceability. The meeting must exist. |
 | `metadata` | object | no | Arbitrary metadata object. |
-| `ttl` | integer | no | Time to live in milliseconds. A pending or running task past its TTL is marked `failed` (`TTL expired`) by the hourly maintenance run; finished tasks are purged after 7 days. |
+| `ttl` | integer | no | Time to live in milliseconds. A pending or running task past its TTL is marked `failed` (`TTL expired`) by the hourly cleanup; finished tasks are purged `retentionDays` after their last update (host `settings.json`, default 7). |
 
 Behavior:
 
@@ -454,16 +454,20 @@ Cancel a pending or running task.
 
 ### `host_maintenance`
 
-Prune or clear the global chat stream.
+Prune or clear the global chat stream, run the cleanup now, or export a meeting as markdown.
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `action` | string | yes | `prune` or `clear`. |
-| `count` | integer | for `prune` | Number of oldest messages to remove; at least `1` for `prune`. Ignored by `clear`. |
+| `action` | string | yes | `prune`, `clear`, `cleanup` or `export`. |
+| `count` | integer | for `prune` | Number of oldest messages to remove; at least `1` for `prune`. Ignored by the other actions. |
+| `dryRun` | boolean | no | `cleanup`: report what would be removed or changed, change nothing. |
+| `meetingId` | string | for `export` | Meeting to export. |
 
 Behavior:
 
-- Returns `{ ok, removed, remaining }`.
+- `prune` and `clear` return `{ ok, message, removed, remaining }`.
+- `cleanup` runs the hourly cleanup at once (what it removes: [Architecture](ARCHITECTURE.md#maintenance-and-retention)) and returns `{ ok, message, cleanup: { dryRun, counts, meetings: [{ id, topic, action }], sessions: [{ id, name }] } }`. `counts` has `tasksExpired`, `tasks`, `events`, `meetingsExpired`, `meetings`, `messagesExpired`, `messages`, `notices`, `toolUseBindings`, `sessions` and `instances`; a meeting's `action` is `expire` (closed) or `delete`. A cleanup that changed something is recorded as a `maintenance.cleanup` event with the same lists.
+- `export` returns `{ ok, message, markdown }`: the meeting's topic, status, times and summary, its members (those that left too) with their machines, its decisions and every message with its sender, machine, time and category. Names filled in at the database upgrade are marked `*`. Fails when the meeting does not exist.
 
 ### `host_delete_project`
 
