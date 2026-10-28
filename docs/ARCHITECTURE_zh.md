@@ -67,7 +67,7 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 
 ### 对话与 hooks
 
-每个 Claude Code 或 Codex 对话是一个会话，ID 为 `claude:<会话 ID>` 或 `codex:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（去掉 `.local` 的 `hostname`、`platform`——用 `/proc/version` 区分 `wsl` 和 `linux`——以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器上的会话常常名字和工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题；出任何错误都以退出码 0 退出、不输出，所以 host 不在也不会卡住客户端。
+每个 Claude Code 或 Codex 对话是一个会话，ID 为 `claude:<会话 ID>` 或 `codex:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（`hostname`：macOS 上取 `scutil --get ComputerName` 的电脑名，它由用户设置、不随网络变化，其他系统取去掉 `.local` 的主机名；`platform`：用 `/proc/version` 区分 `wsl` 和 `linux`；`environment`：WSL 发行版名，取自 `WSL_DISTRO_NAME`，因为同一台 Windows 上的发行版共用它的主机名；以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器或 WSL 发行版上的会话常常工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题；出任何错误都以退出码 0 退出、不输出，所以 host 不在也不会卡住客户端。
 
 ```
 客户端事件 ──▶ n2n-nexus hook ──▶ POST /api/hook ──▶ 会话状态、通知

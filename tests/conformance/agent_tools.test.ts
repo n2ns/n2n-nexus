@@ -1,7 +1,7 @@
 // Direct-message tools (peers, send, read, reply, listen, set_profile) through POST /api/tools/call.
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, useHost, type Caller } from "./harness.js";
-import { NO_AGENT_SESSION_ERROR, agentKit, ids, type HookClient, type Profile } from "./agents.js";
+import { NO_AGENT_SESSION_ERROR, agentKit, ids, nameOf, type HookClient, type Profile } from "./agents.js";
 
 type Sent = { messageId: string; to: { id: string; name: string; status: string } };
 type Read = {
@@ -82,17 +82,17 @@ describe("direct-message tools: listen, set_profile", () => {
         expect((await codex(s("a"), "set_profile", { name: "x".repeat(49) })).status).toBe(400);
         expect((await codex(s("a"), "set_profile", { note: "n".repeat(HOOK.limits.maxNoteChars + 1) })).status).toBe(400);
 
-        const taken = await codex(s("a"), "set_profile", { name: "codex@proj#2" });
+        const taken = await codex(s("a"), "set_profile", { name: nameOf("codex", "proj", s("b")) });
         expect(taken.status).toBe(400);
         expect(taken.payload.error).toContain("already used");
-        expect((await kit.profile(`codex:${s("a")}`))?.name).toBe("codex@proj");
+        expect((await kit.profile(`codex:${s("a")}`))?.name).toBe(nameOf("codex", "proj", s("a")));
 
         // The offline session's name is free; the session's own current name is fine too.
-        const renamed = await codex<{ profile: Profile }>(s("a"), "set_profile", { name: "codex@proj#3", note: "reviewing" });
-        expect(renamed.payload.result?.profile).toMatchObject({ id: `codex:${s("a")}`, name: "codex@proj#3", note: "reviewing" });
-        expect((await codex<{ profile: Profile }>(s("a"), "set_profile", { name: "codex@proj#3" })).status).toBe(200);
+        const renamed = await codex<{ profile: Profile }>(s("a"), "set_profile", { name: nameOf("codex", "proj", s("c")), note: "reviewing" });
+        expect(renamed.payload.result?.profile).toMatchObject({ id: `codex:${s("a")}`, name: nameOf("codex", "proj", s("c")), note: "reviewing" });
+        expect((await codex<{ profile: Profile }>(s("a"), "set_profile", { name: nameOf("codex", "proj", s("c")) })).status).toBe(200);
         const noteOnly = await codex<{ profile: Profile }>(s("a"), "set_profile", { note: "" });
-        expect(noteOnly.payload.result?.profile).toMatchObject({ name: "codex@proj#3", note: "" });
+        expect(noteOnly.payload.result?.profile).toMatchObject({ name: nameOf("codex", "proj", s("c")), note: "" });
     });
 
     it("set_profile title: the session's own title wins over the client's until it sets an empty one", async () => {
@@ -102,7 +102,7 @@ describe("direct-message tools: listen, set_profile", () => {
         expect((await codex(s("a"), "set_profile", { title: "t".repeat(HOOK.limits.maxTitleChars + 1) })).status).toBe(400);
 
         const own = await codex<{ profile: Profile }>(s("a"), "set_profile", { title: "My own" });
-        expect(own.payload.result?.profile).toMatchObject({ id: `codex:${s("a")}`, name: "codex@proj", title: "My own" });
+        expect(own.payload.result?.profile).toMatchObject({ id: `codex:${s("a")}`, name: nameOf("codex", "proj", s("a")), title: "My own" });
         await kit.hook("codex", "UserPromptSubmit", s("a"), { title: "Renamed in the client" });
         await kit.hook("codex", "Stop", s("a"), { title: "Renamed in the client", stop_hook_active: false });
         expect((await kit.profile(`codex:${s("a")}`))?.title).toBe("My own");
@@ -122,19 +122,19 @@ describe("direct-message tools: send, reply, read", () => {
         await hook("codex", "SessionStart", s("off"), "/work/off");
         await hook("codex", "SessionEnd", s("off"));
 
-        const byName = await claude<Sent>(s("a"), "send", { to: "codex@beta", text: "by name" });
+        const byName = await claude<Sent>(s("a"), "send", { to: nameOf("codex", "beta", s("b")), text: "by name" });
         expect(byName.status).toBe(200);
-        expect(byName.payload.result).toEqual({ messageId: expect.any(String), to: { id: `codex:${s("b")}`, name: "codex@beta", status: "idle" } });
+        expect(byName.payload.result).toEqual({ messageId: expect.any(String), to: { id: `codex:${s("b")}`, name: nameOf("codex", "beta", s("b")), status: "idle" } });
 
         const byId = await claude<Sent>(s("a"), "send", { to: `codex:${s("off")}`, text: "to offline" });
-        expect(byId.payload.result?.to).toEqual({ id: `codex:${s("off")}`, name: "codex@off", status: "offline" });
+        expect(byId.payload.result?.to).toEqual({ id: `codex:${s("off")}`, name: nameOf("codex", "off", s("off")), status: "offline" });
 
-        const offlineName = await claude(s("a"), "send", { to: "codex@off", text: "x" });
+        const offlineName = await claude(s("a"), "send", { to: nameOf("codex", "off", s("off")), text: "x" });
         expect(offlineName.status).toBe(400);
         expect(offlineName.payload.error).toContain("Unknown recipient");
         expect((await claude(s("a"), "send", { to: "nobody", text: "x" })).payload.error).toContain("Unknown recipient");
 
-        const self = await claude(s("a"), "send", { to: "claude@alpha", text: "x" });
+        const self = await claude(s("a"), "send", { to: nameOf("claude", "alpha", s("a")), text: "x" });
         expect(self.status).toBe(400);
         expect(self.payload.error).toContain("yourself");
         expect((await claude(s("a"), "send", { to: `claude:${s("a")}`, text: "x" })).status).toBe(400);
@@ -155,8 +155,8 @@ describe("direct-message tools: send, reply, read", () => {
         const first = await claude<Read>(s("r"), "read", { count: 2 });
         expect(first.payload.result).toEqual({
             messages: [
-                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: "codex@proj" }, replyTo: null, text: "m1", createdAt: expect.any(String), expectsReply: true },
-                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: "codex@proj" }, replyTo: null, text: "m2", createdAt: expect.any(String), expectsReply: true }
+                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m1", createdAt: expect.any(String), expectsReply: true },
+                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m2", createdAt: expect.any(String), expectsReply: true }
             ],
             remaining: 1
         });
@@ -189,11 +189,11 @@ describe("direct-message tools: send, reply, read", () => {
 
         await claude(s("r"), "read");                                                                   // read messages can still be answered
         const replied = await claude<Sent>(s("r"), "reply", { messageId: original, text: "answer" });
-        expect(replied.payload.result?.to).toEqual({ id: `codex:${s("s")}`, name: "codex@proj", status: "idle" });
+        expect(replied.payload.result?.to).toEqual({ id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")), status: "idle" });
 
         const inbox = await codex<Read>(s("s"), "read");
         expect(inbox.payload.result?.messages).toEqual([
-            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: "claude@proj" }, replyTo: original, text: "answer", createdAt: expect.any(String), expectsReply: true }
+            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: nameOf("claude", "proj", s("r")) }, replyTo: original, text: "answer", createdAt: expect.any(String), expectsReply: true }
         ]);
     });
 });

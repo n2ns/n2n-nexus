@@ -14,6 +14,7 @@ type profile struct {
 	Cwd          string `json:"cwd"`
 	Hostname     string `json:"hostname"`
 	Platform     string `json:"platform"`
+	Environment  string `json:"environment"`
 	UTCOffset    int    `json:"utcOffset"`
 	Label        string `json:"label"`
 	Note         string `json:"note"`
@@ -22,7 +23,7 @@ type profile struct {
 }
 
 func profileOf(s *session) profile {
-	return profile{ID: s.ID, Name: s.Name, Title: s.Title, Client: s.Client, Cwd: s.Cwd, Hostname: s.Hostname, Platform: s.Platform, UTCOffset: s.UTCOffset, Label: s.Label, Note: s.Note, Status: s.Status, LastActiveAt: s.LastActiveAt}
+	return profile{ID: s.ID, Name: s.Name, Title: s.Title, Client: s.Client, Cwd: s.Cwd, Hostname: s.Hostname, Platform: s.Platform, Environment: s.Environment, UTCOffset: s.UTCOffset, Label: s.Label, Note: s.Note, Status: s.Status, LastActiveAt: s.LastActiveAt}
 }
 
 type recipient struct {

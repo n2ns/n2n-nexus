@@ -113,7 +113,7 @@ describe("meetings per conversation", () => {
         const s = ids();
         const [a, b] = [s("a"), s("b")];
         for (const id of [a, b]) await kit.hook("claude", "SessionStart", id);
-        await kit.hook("claude", "UserPromptSubmit", a, { machine: { hostname: "box-a", platform: "wsl", utcOffset: 0 } });
+        await kit.hook("claude", "UserPromptSubmit", a, { machine: { hostname: "box-a", platform: "wsl", environment: "Ubuntu_26", utcOffset: 0 } });
         const meetingId = await start("Per session", "ide-a");
         for (const message of ["one", "two"]) expect((await host.callTool("send_message", { message, meetingId }, "ide-a")).status).toBe(200);
 
@@ -128,7 +128,7 @@ describe("meetings per conversation", () => {
         const sent = await kit.claudeTool<{ sentTo: string; identity: string; messageId: number }>(a, "send_message", { message: "from a", meetingId });
         expect(sent.payload.result).toMatchObject({ sentTo: "meeting", identity: "session", messageId: expect.any(Number) });
         const forB = (await kit.claudeTool<Read>(b, "read_messages", { meetingId })).payload.result!;
-        expect(forB.messages).toEqual([expect.objectContaining({ text: "from a", from: `claude:${a}`, senderName: expect.any(String), senderMachine: "box-a · WSL" })]);
+        expect(forB.messages).toEqual([expect.objectContaining({ text: "from a", from: `claude:${a}`, senderName: expect.any(String), senderMachine: "box-a · WSL Ubuntu_26" })]);
         expect((await kit.claudeTool<Read>(a, "read_messages", { meetingId })).payload.result!.messages).toEqual([]);
 
         const meeting = (await listed()).meetings.find((m) => m.id === meetingId)!;

@@ -43,19 +43,23 @@ func (a *Agents) revive(id string) error {
 }
 
 // machineOf reads where the session runs from a hook event's input: every
-// event of the conversation carries machine {hostname, platform, utcOffset}.
+// event of the conversation carries machine {hostname, platform, environment, utcOffset}.
 func (a *Agents) machineOf(input map[string]any) (*machine, error) {
 	raw, _ := input["machine"].(map[string]any)
 	hostname, _ := raw["hostname"].(string)
 	platform, _ := raw["platform"].(string)
+	environment, hasEnvironment := raw["environment"].(string)
 	offset, isNumber := raw["utcOffset"].(float64)
-	if hostname == "" || !knownPlatform(platform) || !isNumber || offset != float64(int(offset)) || offset < -1440 || offset > 1440 {
-		return nil, api.Errorf("Invalid hook request: input.machine must be {hostname, platform: darwin | linux | wsl | win32, utcOffset: minutes from UTC}; upgrade n2n-nexus to the host's version")
+	if hostname == "" || !knownPlatform(platform) || !hasEnvironment || !isNumber || offset != float64(int(offset)) || offset < -1440 || offset > 1440 {
+		return nil, api.Errorf("Invalid hook request: input.machine must be {hostname, platform: darwin | linux | wsl | win32, environment, utcOffset: minutes from UTC}; upgrade n2n-nexus to the host's version")
+	}
+	if r := []rune(environment); len(r) > a.o.Contract.Hook.Limits.MaxHostnameChars {
+		environment = string(r[:a.o.Contract.Hook.Limits.MaxHostnameChars])
 	}
 	if r := []rune(hostname); len(r) > a.o.Contract.Hook.Limits.MaxHostnameChars {
 		hostname = string(r[:a.o.Contract.Hook.Limits.MaxHostnameChars])
 	}
-	return &machine{Hostname: hostname, Platform: platform, UTCOffset: int(offset)}, nil
+	return &machine{Hostname: hostname, Platform: platform, Environment: environment, UTCOffset: int(offset)}, nil
 }
 
 // Hook handles one client hook event (POST /api/hook); it returns what the hook prints, or nil.

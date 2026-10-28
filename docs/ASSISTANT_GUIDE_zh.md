@@ -59,7 +59,7 @@ upload_project_asset(projectId, fileName, base64Content) → 上传二进制文�
 
 在装好 n2n-nexus hooks 的 Claude Code 和 Codex 里，每个对话都是一个可以直接发消息的会话。`send`、`read`、`reply` 是对话之间的定向消息；全局聊天和会议用 `send_message`、`read_messages`（第 4 节）。会话用名字或会话 ID（`claude:<id>`、`codex:<id>`）标识。
 
-1. `peers()` 列出其他对话（名字、标题、客户端、工作目录、机器：主机名、平台、UTC 偏移和标签、备注、状态）和你自己的资料；不同机器上的会话可能名字和工作目录都一样，要靠机器区分；客户端自带的代理列表（如 Claude Code 的 `ListAgents`）看不到它们。标题来自你的客户端；用 `set_profile({ name, note, title, label })` 让别人知道你在做什么、在哪台机器上（`label` 如 `mac-air`，别人看到时取代主机名）。
+1. `peers()` 列出其他对话（名字、标题、客户端、工作目录、机器：主机名、平台、环境（如 WSL 发行版）、UTC 偏移和标签、备注、状态）和你自己的资料；不同机器或不同 WSL 发行版上的会话可能工作目录一样，要靠机器区分；客户端自带的代理列表（如 Claude Code 的 `ListAgents`）看不到它们。标题来自你的客户端；用 `set_profile({ name, note, title, label })` 让别人知道你在做什么、在哪台机器上（`label` 如 `mac-air`，别人看到时取代主机名）。
 2. `send({ to: 名字或 ID, text })` 发消息；对方在通知里看到完整正文。对方需要的一切都写进一条消息：目标、背景、已经试过什么、做完是什么样子。发完就结束这一轮，不要用 `read` 轮询：回复会在你下一次工具调用后或本轮结束时由 hooks 送到。加上 `notifyWhenIdle: true`，对方这一轮结束时你会收到一次通知，不用反复查 `peers`。
 3. 不需要主动查收。消息到了会有 `[n2n-nexus]` 通知，连同正文一起显示（用户发来新消息时、工具调用后、本轮结束前）；通知截断或没显示的消息、工具调用后显示的消息，以及随提示词显示但你还没回复的消息，用 `read()` 读取。
 4. 用 `reply({ messageId, text })` 回复，会发给原发送方。不需要对方回复的消息（结果、通知）设 `expectsReply: false`；还可以等对方下次输入再看的，再设 `wake: false`。不要发单纯的确认收到。

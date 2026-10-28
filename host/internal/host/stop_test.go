@@ -32,7 +32,7 @@ func TestStopAnswersHeldHooks(t *testing.T) {
 				return http.Post(base+path, "application/json", bytes.NewReader(raw))
 			}
 			hook := func(event string, extra map[string]any) map[string]any {
-				input := map[string]any{"hook_event_name": event, "session_id": "s", "cwd": "/tmp/x", "machine": map[string]any{"hostname": "box", "platform": "linux", "utcOffset": 0}}
+				input := map[string]any{"hook_event_name": event, "session_id": "s", "cwd": "/tmp/x", "machine": map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": 0}}
 				for k, v := range extra {
 					input[k] = v
 				}

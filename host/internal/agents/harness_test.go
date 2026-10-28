@@ -134,7 +134,7 @@ func (h *harness) post(ctx context.Context, path string, body any) (int, map[str
 }
 
 // testMachine is where every test session runs unless a test says otherwise.
-var testMachine = map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(0)}
+var testMachine = map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": float64(0)}
 
 func hookInput(event, sessionID string, extra map[string]any) map[string]any {
 	in := map[string]any{"hook_event_name": event, "session_id": sessionID, "cwd": "/work/proj", "machine": testMachine}

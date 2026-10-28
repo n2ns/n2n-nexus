@@ -44,7 +44,7 @@ func TestToolCallsAreLimitedPerConversation(t *testing.T) {
 	post := startLimited(t, burst)
 	// Claude: the PreToolUse hook binds the toolUseId to its conversation.
 	for _, s := range []string{"a", "b"} {
-		if got := post("/api/hook", map[string]any{"client": "claude", "input": map[string]any{"hook_event_name": "PreToolUse", "session_id": s, "tool_use_id": "tu-" + s, "cwd": "/tmp/x", "machine": map[string]any{"hostname": "box", "platform": "linux", "utcOffset": 0}}}); got != 200 {
+		if got := post("/api/hook", map[string]any{"client": "claude", "input": map[string]any{"hook_event_name": "PreToolUse", "session_id": s, "tool_use_id": "tu-" + s, "cwd": "/tmp/x", "machine": map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": 0}}}); got != 200 {
 			t.Fatalf("PreToolUse %s: %d", s, got)
 		}
 	}

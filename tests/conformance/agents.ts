@@ -21,7 +21,7 @@ export type HookOutput = {
     timeout?: boolean;
 } | null;
 export type Profile = {
-    id: string; name: string; title: string; client: HookClient; cwd: string; hostname: string; platform: string; utcOffset: number | null; label: string;
+    id: string; name: string; title: string; client: HookClient; cwd: string; hostname: string; platform: string; environment: string; utcOffset: number; label: string;
     note: string; status: string; lastActiveAt: string;
 };
 
@@ -29,8 +29,11 @@ export const { noticePrefix: NOTICE_PREFIX, notifyClosing: NOTIFY_CLOSING, stopC
     sessionStartClosing: SESSION_START_CLOSING, collaborationRules: COLLABORATION_RULES, messageTrustNote: MESSAGE_TRUST_NOTE, messageEnd: MESSAGE_END,
     messageCut: MESSAGE_CUT, replyInstruction: REPLY_INSTRUCTION, readRest: READ_REST, replyTool: REPLY_TOOL, noAgentSessionError: NO_AGENT_SESSION_ERROR } = HOOK.texts;
 export const BACKGROUND_WAIT_EVENT = HOOK.backgroundWaitEvent;
+/** A session's own name: <client>@<dir>#<the last 4 letters and digits of its client session id>. */
+export const nameOf = (client: HookClient, dir: string, sessionId: string, length = 4) =>
+    `${client}@${dir}#${sessionId.replace(/[^A-Za-z0-9]/g, "").toLowerCase().slice(-length)}`;
 /** Where every test session runs unless a test says otherwise. */
-export const TEST_MACHINE = { hostname: "box", platform: "linux", utcOffset: 0 };
+export const TEST_MACHINE = { hostname: "box", platform: "linux", environment: "", utcOffset: 0 };
 export const WAKE_RESULT_EVENT = HOOK.wakeResultEvent;
 
 const OBSERVER = "conformance-observer";

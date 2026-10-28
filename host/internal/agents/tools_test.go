@@ -77,7 +77,7 @@ func TestPeers(t *testing.T) {
 	h.at(0)
 
 	r := h.claude("me", "peers", nil)
-	want := map[string]any{"id": "claude:me", "name": "claude@mine", "title": "", "client": "claude", "cwd": "/work/mine", "hostname": "box", "platform": "linux", "utcOffset": float64(0), "label": "", "note": "", "status": "idle", "lastActiveAt": store.ISO(h.t0)}
+	want := map[string]any{"id": "claude:me", "name": "claude@mine#me", "title": "", "client": "claude", "cwd": "/work/mine", "hostname": "box", "platform": "linux", "environment": "", "utcOffset": float64(0), "label": "", "note": "", "status": "idle", "lastActiveAt": store.ISO(h.t0)}
 	if !reflect.DeepEqual(r.result["self"], want) {
 		t.Fatalf("self = %v", r.result["self"])
 	}
@@ -94,7 +94,7 @@ func TestPeers(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	eq(t, strings.Join(keys, ","), "client,cwd,hostname,id,label,lastActiveAt,name,note,platform,status,title,utcOffset")
+	eq(t, strings.Join(keys, ","), "client,cwd,environment,hostname,id,label,lastActiveAt,name,note,platform,status,title,utcOffset")
 }
 
 func TestListenTool(t *testing.T) {
@@ -118,19 +118,19 @@ func TestSetProfile(t *testing.T) {
 	eq(t, h.codex("a", "set_profile", map[string]any{"name": strings.Repeat("x", 49)}).status, 400)
 	eq(t, h.codex("a", "set_profile", map[string]any{"note": strings.Repeat("n", testContract.Hook.Limits.MaxNoteChars+1)}).status, 400)
 
-	taken := h.codex("a", "set_profile", map[string]any{"name": "codex@proj#2"})
+	taken := h.codex("a", "set_profile", map[string]any{"name": "codex@proj#b"})
 	eq(t, taken.status, 400)
 	contains(t, taken.error, "already used")
-	eq(t, h.session("codex:a").Name, "codex@proj")
+	eq(t, h.session("codex:a").Name, "codex@proj#a")
 
 	// The offline session's name is free; the session's own current name is fine too.
-	renamed := h.codex("a", "set_profile", map[string]any{"name": "codex@proj#3", "note": "reviewing"}).result["profile"].(map[string]any)
+	renamed := h.codex("a", "set_profile", map[string]any{"name": "codex@proj#c", "note": "reviewing"}).result["profile"].(map[string]any)
 	eq(t, renamed["id"], any("codex:a"))
-	eq(t, renamed["name"], any("codex@proj#3"))
+	eq(t, renamed["name"], any("codex@proj#c"))
 	eq(t, renamed["note"], any("reviewing"))
-	eq(t, h.codex("a", "set_profile", map[string]any{"name": "codex@proj#3"}).status, 200)
+	eq(t, h.codex("a", "set_profile", map[string]any{"name": "codex@proj#c"}).status, 200)
 	noteOnly := h.codex("a", "set_profile", map[string]any{"note": ""}).result["profile"].(map[string]any)
-	eq(t, noteOnly["name"], any("codex@proj#3"))
+	eq(t, noteOnly["name"], any("codex@proj#c"))
 	eq(t, noteOnly["note"], any(""))
 }
 
@@ -141,21 +141,21 @@ func TestSendResolvesRecipient(t *testing.T) {
 	h.hook("codex", "SessionStart", "off", map[string]any{"cwd": "/work/off"})
 	h.hook("codex", "SessionEnd", "off")
 
-	byName := h.claude("a", "send", map[string]any{"to": "codex@beta", "text": "by name"})
+	byName := h.claude("a", "send", map[string]any{"to": "codex@beta#b", "text": "by name"})
 	eq(t, byName.status, 200)
-	if byName.result["messageId"].(string) == "" || !reflect.DeepEqual(byName.result["to"], map[string]any{"id": "codex:b", "name": "codex@beta", "status": "idle"}) {
+	if byName.result["messageId"].(string) == "" || !reflect.DeepEqual(byName.result["to"], map[string]any{"id": "codex:b", "name": "codex@beta#b", "status": "idle"}) {
 		t.Fatal(byName.result)
 	}
 	byID := h.claude("a", "send", map[string]any{"to": "codex:off", "text": "to offline"})
-	if !reflect.DeepEqual(byID.result["to"], map[string]any{"id": "codex:off", "name": "codex@off", "status": "offline"}) {
+	if !reflect.DeepEqual(byID.result["to"], map[string]any{"id": "codex:off", "name": "codex@off#off", "status": "offline"}) {
 		t.Fatal(byID.result)
 	}
-	offlineName := h.claude("a", "send", map[string]any{"to": "codex@off", "text": "x"})
+	offlineName := h.claude("a", "send", map[string]any{"to": "codex@off#off", "text": "x"})
 	eq(t, offlineName.status, 400)
 	contains(t, offlineName.error, "Unknown recipient")
 	contains(t, h.claude("a", "send", map[string]any{"to": "nobody", "text": "x"}).error, "Unknown recipient")
 
-	self := h.claude("a", "send", map[string]any{"to": "claude@alpha", "text": "x"})
+	self := h.claude("a", "send", map[string]any{"to": "claude@alpha#a", "text": "x"})
 	eq(t, self.status, 400)
 	contains(t, self.error, "yourself")
 	eq(t, h.claude("a", "send", map[string]any{"to": "claude:a", "text": "x"}).status, 400)
@@ -179,7 +179,7 @@ func TestReadPages(t *testing.T) {
 	for i, m := range msgs {
 		m := m.(map[string]any)
 		eq(t, m["messageId"], any(ids[i]))
-		if !reflect.DeepEqual(m["from"], map[string]any{"id": "codex:s", "name": "codex@proj"}) || m["replyTo"] != nil || m["createdAt"] != store.ISO(h.t0) {
+		if !reflect.DeepEqual(m["from"], map[string]any{"id": "codex:s", "name": "codex@proj#s"}) || m["replyTo"] != nil || m["createdAt"] != store.ISO(h.t0) {
 			t.Fatal(m)
 		}
 		eq(t, m["text"], any([]string{"m1", "m2"}[i]))
@@ -213,7 +213,7 @@ func TestReply(t *testing.T) {
 
 	h.claude("r", "read", nil) // read messages can still be answered
 	replied := h.claude("r", "reply", map[string]any{"messageId": original, "text": "answer"})
-	if !reflect.DeepEqual(replied.result["to"], map[string]any{"id": "codex:s", "name": "codex@proj", "status": "idle"}) {
+	if !reflect.DeepEqual(replied.result["to"], map[string]any{"id": "codex:s", "name": "codex@proj#s", "status": "idle"}) {
 		t.Fatal(replied.result)
 	}
 	inbox := h.codex("s", "read", nil).result["messages"].([]any)
@@ -222,7 +222,7 @@ func TestReply(t *testing.T) {
 	eq(t, m["messageId"], replied.result["messageId"])
 	eq(t, m["replyTo"], any(original))
 	eq(t, m["text"], any("answer"))
-	if !reflect.DeepEqual(m["from"], map[string]any{"id": "claude:r", "name": "claude@proj"}) {
+	if !reflect.DeepEqual(m["from"], map[string]any{"id": "claude:r", "name": "claude@proj#r"}) {
 		t.Fatal(m)
 	}
 }

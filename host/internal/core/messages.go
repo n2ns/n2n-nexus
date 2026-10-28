@@ -195,6 +195,7 @@ func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chat
 	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, s.name,
 		CASE WHEN s.label != '' THEN s.label ELSE s.hostname END,
 		CASE s.platform WHEN 'darwin' THEN 'macOS' WHEN 'linux' THEN 'Linux' WHEN 'wsl' THEN 'WSL' WHEN 'win32' THEN 'Windows' ELSE '' END
+			|| CASE WHEN s.environment != '' THEN ' ' || s.environment ELSE '' END
 		FROM `+s.table+` m LEFT JOIN agent_sessions s ON s.id = m.sender
 		WHERE `+s.where+cond+` `+tail, append(append([]any{}, s.args...), args...)...)
 	if err != nil {

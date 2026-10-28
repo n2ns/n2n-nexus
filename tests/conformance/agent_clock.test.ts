@@ -3,7 +3,7 @@
 // sessions and messages of earlier tests are far outside every time window.
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost, type Caller } from "./harness.js";
-import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, NO_AGENT_SESSION_ERROR, agentKit, context, ids, type Profile } from "./agents.js";
+import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, NO_AGENT_SESSION_ERROR, agentKit, context, ids, nameOf, type Profile } from "./agents.js";
 
 const { staleSessionMs: STALE_SESSION_MS, peerWindowMs: PEER_WINDOW_MS, idleSubscriptionTtlMs: IDLE_SUBSCRIPTION_TTL_MS,
     messageTtlMs: MESSAGE_TTL_MS, toolUseBindingTtlMs: TOOL_USE_BINDING_TTL_MS } = HOOK.timing;
@@ -109,7 +109,7 @@ describe("agent sessions over time", () => {
 
         await hook("codex", "SessionStart", s("other"));                        // any hook runs the expiry check
         expect(context(await hook("codex", "UserPromptSubmit", s("s"))))
-            .toBe(`${NOTICE_PREFIX} Notices:\n- Your message to claude@proj (claude:${s("r")}) expired unread: "stale request"`);
+            .toBe(`${NOTICE_PREFIX} Notices:\n- Your message to ${nameOf("claude", "proj", s("r"))} (claude:${s("r")}) expired unread: "stale request"`);
         expect(await hook("claude", "UserPromptSubmit", s("r"))).toBeNull();
         expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
     });
@@ -147,7 +147,7 @@ describe("agent sessions over time", () => {
 
         const { payload } = await claudeTool<{ self: Profile; peers: Profile[] }>(s("me"), "peers");
         expect(payload.result?.self).toEqual({
-            id: `claude:${s("me")}`, name: "claude@mine", title: "", client: "claude", cwd: "/work/mine", hostname: "box", platform: "linux", utcOffset: 0, label: "",
+            id: `claude:${s("me")}`, name: nameOf("claude", "mine", s("me")), title: "", client: "claude", cwd: "/work/mine", hostname: "box", platform: "linux", environment: "", utcOffset: 0, label: "",
             note: "", status: "idle", lastActiveAt: iso(t0)
         });
         expect(payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
@@ -156,7 +156,7 @@ describe("agent sessions over time", () => {
         expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual([
             [`codex:${s("busy")}`, "working"], [`claude:${s("recent-offline")}`, "offline"]
         ]);
-        expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "hostname", "id", "label", "lastActiveAt", "name", "note", "platform", "status", "title", "utcOffset"]);
+        expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "environment", "hostname", "id", "label", "lastActiveAt", "name", "note", "platform", "status", "title", "utcOffset"]);
         expect((await sessions()).map((p) => p.id)).not.toContain(`codex:${s("stale")}`);
     });
 });

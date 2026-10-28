@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost, type ToolReply } from "./harness.js";
 import {
-    BACKGROUND_WAIT_EVENT, COLLABORATION_RULES, MESSAGE_CUT, MESSAGE_END, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, READ_REST, REPLY_INSTRUCTION, REPLY_TOOL, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
+    nameOf, BACKGROUND_WAIT_EVENT, COLLABORATION_RULES, MESSAGE_CUT, MESSAGE_END, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, READ_REST, REPLY_INSTRUCTION, REPLY_TOOL, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
     agentKit, context, ids
 } from "./agents.js";
 
@@ -17,30 +17,25 @@ const { hook, openHook, claudeTool, codexTool, send, sessions, profile, status, 
 afterEach(() => endSessions());
 
 describe("POST /api/hook: sessions and names", () => {
-    it("creates sessions named <client>@<cwd basename> with the smallest free #N among sessions that are not offline", async () => {
+    it("names a session <client>@<cwd basename>#<the end of its id>, longer when another recorded session has that name", async () => {
         const s = ids();
         await hook("claude", "SessionStart", s("a"));
-        await hook("claude", "SessionStart", s("b"));
-        await hook("claude", "UserPromptSubmit", s("c"));                       // any event creates the session
-        expect(await profile(`claude:${s("a")}`)).toMatchObject({ client: "claude", name: "claude@proj", cwd: "/work/proj", status: "idle", note: "" });
-        expect((await profile(`claude:${s("b")}`))?.name).toBe("claude@proj#2");
-        expect(await profile(`claude:${s("c")}`)).toMatchObject({ name: "claude@proj#3", status: "working" });
+        await hook("claude", "UserPromptSubmit", s("b"));                       // any event creates the session
+        expect(await profile(`claude:${s("a")}`)).toMatchObject({ client: "claude", name: nameOf("claude", "proj", s("a")), cwd: "/work/proj", status: "idle", note: "" });
+        expect(await profile(`claude:${s("b")}`)).toMatchObject({ name: nameOf("claude", "proj", s("b")), status: "working" });
 
-        // No cwd: name falls back to "session", cwd is "".
+        // No cwd: the directory part is "session", cwd is "".
         await hook("codex", "SessionStart", s("x"), { cwd: undefined });
-        expect(await profile(`codex:${s("x")}`)).toMatchObject({ name: "codex@session", cwd: "" });
+        expect(await profile(`codex:${s("x")}`)).toMatchObject({ name: nameOf("codex", "session", s("x")), cwd: "" });
 
-        // An offline session's name is free again; when it comes back the name is taken, so it gets a new #N.
-        await hook("claude", "SessionEnd", s("a"), { reason: "clear" });
-        await hook("claude", "SessionStart", s("d"));
-        expect((await profile(`claude:${s("d")}`))?.name).toBe("claude@proj");
-        await hook("claude", "SessionStart", s("a"), { source: "resume" });
-        expect(await profile(`claude:${s("a")}`)).toMatchObject({ name: "claude@proj#4", status: "idle" });
-
-        // A session coming back whose name is still free keeps it.
-        await hook("claude", "SessionEnd", s("b"));
-        await hook("claude", "SessionStart", s("b"));
-        expect((await profile(`claude:${s("b")}`))?.name).toBe("claude@proj#2");
+        // An offline session keeps its name; a new session whose id ends the same takes more of its id.
+        const first = `${s("e")}-0000-aaaa1234`, second = `${s("e")}-0000-bbbb1234`;
+        await hook("claude", "SessionStart", first);
+        await hook("claude", "SessionEnd", first);
+        await hook("claude", "SessionStart", second);
+        expect((await profile(`claude:${second}`))?.name).toBe(nameOf("claude", "proj", second, 5));
+        await hook("claude", "SessionStart", first, { source: "resume" });
+        expect((await profile(`claude:${first}`))?.name).toBe(nameOf("claude", "proj", first));
     });
 
     it("ignores input without a session id, rejects malformed requests and leaves PreToolUse and unknown events without output", async () => {
@@ -101,7 +96,7 @@ describe("POST /api/hook: SessionStart introduction", () => {
     it("tells a new session who it is and which sessions are online, at most five individually", async () => {
         const s = ids();
         const alone = context(await hook("claude", "SessionStart", s("a")));
-        expect(alone.startsWith(`${NOTICE_PREFIX} This conversation is claude@proj (claude:${s("a")}) on n2n-nexus`)).toBe(true);
+        expect(alone.startsWith(`${NOTICE_PREFIX} This conversation is ${nameOf("claude", "proj", s("a"))} (claude:${s("a")}) on n2n-nexus`)).toBe(true);
         expect(alone).toContain("No other AI sessions are online.");
         expect(alone).toContain(SESSION_START_CLOSING);
 
@@ -112,10 +107,10 @@ describe("POST /api/hook: SessionStart introduction", () => {
 
         const text = context(await hook("claude", "SessionStart", s("h")));
         expect(text).toContain("6 other AI sessions are online:");
-        expect(text).toContain(`- codex@proj (box · Linux) (codex:${s("b")}), codex, idle, /work/proj: fixing login`);
+        expect(text).toContain(`- ${nameOf("codex", "proj", s("b"))} (box · Linux) (codex:${s("b")}), codex, idle, /work/proj: fixing login`);
         expect(text).not.toContain(`(codex:${s("g")})`);
-        expect(text).toContain(`This conversation is claude@proj#2 (claude:${s("h")})`);
-        expect(text).not.toContain(`- claude@proj#2 (claude:${s("h")})`);      // not listed among the others
+        expect(text).toContain(`This conversation is ${nameOf("claude", "proj", s("h"))} (claude:${s("h")})`);
+        expect(text).not.toContain(`- ${nameOf("claude", "proj", s("h"))} (`);      // not listed among the others
         expect(text).toContain("...and 1 more");
         expect(text.endsWith(`${SESSION_START_CLOSING}\n${COLLABORATION_RULES}`)).toBe(true);
         expect(text).toContain(STATUS_NOTE);
@@ -126,32 +121,32 @@ describe("POST /api/hook: SessionStart introduction", () => {
         const s = ids();
         await hook("codex", "SessionStart", s("a"), { title: "Fix login" });
         const text = context(await hook("claude", "SessionStart", s("b")));
-        expect(text).toContain(`- codex@proj (box · Linux) "Fix login" (codex:${s("a")}), codex, idle, /work/proj`);
+        expect(text).toContain(`- ${nameOf("codex", "proj", s("a"))} (box · Linux) "Fix login" (codex:${s("a")}), codex, idle, /work/proj`);
         await send(s("a"), `claude:${s("b")}`, "hello");
-        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(` from codex@proj (box · Linux) "Fix login" (codex:${s("a")}) at `);
+        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(` from ${nameOf("codex", "proj", s("a"))} (box · Linux) "Fix login" (codex:${s("a")}) at `);
     });
 
     it("shows the machine a session runs on, as its hooks report it, in peers, the introduction and notifications", async () => {
         const s = ids();
-        const machine = { hostname: "mac-host", platform: "darwin", utcOffset: 480 };
+        const machine = { hostname: "mac-host", platform: "darwin", environment: "", utcOffset: 480 };
         await hook("claude", "SessionStart", s("mac"), { machine });
-        await hook("codex", "SessionStart", s("win"), { machine: { hostname: "DESKTOP-1", platform: "win32", utcOffset: 480 } });
+        await hook("codex", "SessionStart", s("win"), { machine: { hostname: "DESKTOP-1", platform: "win32", environment: "", utcOffset: 480 } });
         expect(await profile(`claude:${s("mac")}`)).toMatchObject({ hostname: "mac-host", platform: "darwin", utcOffset: 480, label: "" });
 
-        expect(context(await hook("codex", "SessionStart", s("win")))).toContain(`- claude@proj (mac-host · macOS) (claude:${s("mac")}), claude, `);
+        expect(context(await hook("codex", "SessionStart", s("win")))).toContain(`- ${nameOf("claude", "proj", s("mac"))} (mac-host · macOS) (claude:${s("mac")}), claude, `);
         await claudeTool(s("mac"), "send", { to: `codex:${s("win")}`, text: "hi" });
-        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from claude@proj (mac-host · macOS) (claude:${s("mac")}) at `);
+        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from ${nameOf("claude", "proj", s("mac"))} (mac-host · macOS) (claude:${s("mac")}) at `);
 
         // A label replaces the hostname wherever the machine is shown.
         const set = await claudeTool<{ profile: { label: string } }>(s("mac"), "set_profile", { label: "mac-air" });
         expect(set.payload.result?.profile.label).toBe("mac-air");
         await claudeTool(s("mac"), "send", { to: `codex:${s("win")}`, text: "again" });
-        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from claude@proj (mac-air · macOS) (claude:${s("mac")}) at `);
+        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from ${nameOf("claude", "proj", s("mac"))} (mac-air · macOS) (claude:${s("mac")}) at `);
     });
 
     it("refuses a hook event without a valid machine and creates no session for it", async () => {
         const s = ids();
-        for (const machine of [undefined, { hostname: "box", platform: "plan9", utcOffset: 0 }, { hostname: "box", platform: "linux", utcOffset: 5000 }, { hostname: "", platform: "linux", utcOffset: 0 }]) {
+        for (const machine of [undefined, { hostname: "box", platform: "plan9", environment: "", utcOffset: 0 }, { hostname: "box", platform: "linux", environment: "", utcOffset: 5000 }, { hostname: "box", platform: "linux", utcOffset: 0 }, { hostname: "", platform: "linux", utcOffset: 0 }]) {
             const res = await host.request<{ error?: string }>("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: s("x"), cwd: "/w", machine } });
             expect(res.status, res.body).toBe(400);
             expect(res.payload.error).toContain("input.machine");
@@ -175,7 +170,7 @@ describe("POST /api/hook: notifications", () => {
         expect(out?.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
         const text = context(out);
         expect(text.startsWith(`${NOTICE_PREFIX} 7 unread direct messages:`)).toBe(true);
-        expect(text).toContain(`--- Message ${first} from codex@proj (box · Linux) (codex:${s("sender")}) at `);
+        expect(text).toContain(`--- Message ${first} from ${nameOf("codex", "proj", s("sender"))} (box · Linux) (codex:${s("sender")}) at `);
         expect(text).toContain(` ---\n${long}\n${MESSAGE_END.replace("%s", first)}\n${REPLY_INSTRUCTION.replace("%s", first)}\n`);
         expect(text).toContain("\nmessage 5\n");
         expect(text).not.toContain("\nmessage 6\n");
@@ -200,7 +195,7 @@ describe("POST /api/hook: notifications", () => {
         await hook("codex", "Stop", s("target"));
 
         const text = context(await hook("codex", "UserPromptSubmit", s("watcher")));
-        expect(text).toBe(`${NOTICE_PREFIX} Notices:\n- codex@proj#2 (codex:${s("target")}) finished its turn.`);
+        expect(text).toBe(`${NOTICE_PREFIX} Notices:\n- ${nameOf("codex", "proj", s("target"))} (codex:${s("target")}) finished its turn.`);
         expect(await hook("codex", "UserPromptSubmit", s("watcher"))).toBeNull(); // notices are delivered once
     });
 
@@ -410,7 +405,7 @@ describe("POST /api/hook: idle subscriptions", () => {
         await send(s("w"), t, "task", true);
         await claudeTool(s("t"), "read");
         await hook("claude", "Stop", s("t"));
-        expect(context(await hook("codex", "UserPromptSubmit", s("w")))).toContain(`claude@proj (${t}) finished its turn.`);
+        expect(context(await hook("codex", "UserPromptSubmit", s("w")))).toContain(`${nameOf("claude", "proj", s("t"))} (${t}) finished its turn.`);
         await hook("claude", "Stop", s("t"));                                    // the subscription was one-shot
         expect(await hook("codex", "UserPromptSubmit", s("w"))).toBeNull();
 
@@ -423,7 +418,7 @@ describe("POST /api/hook: idle subscriptions", () => {
 
         await send(s("w"), t, "task 3", true);
         await hook("claude", "SessionEnd", s("t"));
-        expect(context(await hook("codex", "UserPromptSubmit", s("w")))).toContain(`claude@proj (${t}) went offline.`);
+        expect(context(await hook("codex", "UserPromptSubmit", s("w")))).toContain(`${nameOf("claude", "proj", s("t"))} (${t}) went offline.`);
     });
 });
 

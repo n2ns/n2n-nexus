@@ -1,5 +1,5 @@
 {
-  "contractVersion": 3,
+  "contractVersion": 4,
   "tools": [
     {
       "name": "sync_project_assets",
@@ -925,7 +925,7 @@
     {
       "name": "peers",
       "title": "List Peers",
-      "description": "List the AI sessions (Claude Code / Codex conversations) of your own user that you can message with send, and your own profile; your client's own agent list (such as ListAgents) does not show them. Each profile says which machine the conversation runs on: hostname and platform (darwin, linux, wsl or win32) and utcOffset (local time minus UTC, in minutes), as its hooks report them with every event, and the label it set with set_profile. Offline ones only with includeOffline. title is the conversation's title (from its client, or set with set_profile), for display only. status: listening (waiting for messages, answers right away), working or idle (sees a message when its user next sends a prompt or it next calls a tool), or offline (ended, or no activity for 30 minutes).",
+      "description": "List the AI sessions (Claude Code / Codex conversations) of your own user that you can message with send, and your own profile; your client's own agent list (such as ListAgents) does not show them. Each profile says which machine the conversation runs on: hostname, platform (darwin, linux, wsl or win32), environment (the WSL distribution, else \"\") and utcOffset (local time minus UTC, in minutes), as its hooks report them with every event, and the label it set with set_profile. Offline ones only with includeOffline. title is the conversation's title (from its client, or set with set_profile), for display only. status: listening (waiting for messages, answers right away), working or idle (sees a message when its user next sends a prompt or it next calls a tool), or offline (ended, or no activity for 30 minutes).",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -980,6 +980,10 @@
                 ],
                 "description": "The operating system of that machine; wsl is a Linux distribution under Windows"
               },
+              "environment": {
+                "type": "string",
+                "description": "Tells environments that share the host name apart: the WSL distribution; \"\" otherwise"
+              },
               "utcOffset": {
                 "type": "integer",
                 "minimum": -1440,
@@ -1014,6 +1018,7 @@
               "cwd",
               "hostname",
               "platform",
+              "environment",
               "utcOffset",
               "label",
               "note",
@@ -1061,6 +1066,10 @@
                   ],
                   "description": "The operating system of that machine; wsl is a Linux distribution under Windows"
                 },
+                "environment": {
+                  "type": "string",
+                  "description": "Tells environments that share the host name apart: the WSL distribution; \"\" otherwise"
+                },
                 "utcOffset": {
                   "type": "integer",
                   "minimum": -1440,
@@ -1095,6 +1104,7 @@
                 "cwd",
                 "hostname",
                 "platform",
+                "environment",
                 "utcOffset",
                 "label",
                 "note",
@@ -1481,6 +1491,10 @@
                 ],
                 "description": "The operating system of that machine; wsl is a Linux distribution under Windows"
               },
+              "environment": {
+                "type": "string",
+                "description": "Tells environments that share the host name apart: the WSL distribution; \"\" otherwise"
+              },
               "utcOffset": {
                 "type": "integer",
                 "minimum": -1440,
@@ -1515,6 +1529,7 @@
               "cwd",
               "hostname",
               "platform",
+              "environment",
               "utcOffset",
               "label",
               "note",
@@ -1711,7 +1726,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The sending session's machine, \"<label or hostname> · <platform>\"; null for an adapter instance"
+                  "description": "The sending session's machine, \"<label or hostname> · <platform>[ <environment>]\"; null for an adapter instance"
                 },
                 "text": {
                   "type": "string"

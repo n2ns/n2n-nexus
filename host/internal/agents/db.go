@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/google/uuid"
@@ -43,27 +44,25 @@ type session struct {
 }
 
 // machine is where a conversation runs, as its hooks report it: Platform is
-// darwin, linux, wsl or win32; UTCOffset is local time minus UTC in minutes.
+// darwin, linux, wsl or win32; Environment tells environments that share the
+// host name apart (the WSL distribution), "" when there is no such thing;
+// UTCOffset is local time minus UTC in minutes.
 type machine struct {
-	Hostname, Platform string
-	UTCOffset          int
+	Hostname, Platform, Environment string
+	UTCOffset                       int
 }
 
-// machineName is how a session's machine is shown: "<label or hostname> · <platform>", either part alone, or "".
+// machineName is how a session's machine is shown: "<label or hostname> · <platform>[ <environment>]".
 func (s *session) machineName() string {
 	name := s.Label
 	if name == "" {
 		name = s.Hostname
 	}
-	plat := platformNames[s.Platform]
-	switch {
-	case name != "" && plat != "":
-		return name + " · " + plat
-	case name != "":
-		return name
-	default:
-		return plat
+	shown := name + " · " + platformNames[s.Platform]
+	if s.Environment != "" {
+		shown += " " + s.Environment
 	}
+	return shown
 }
 
 var platformNames = map[string]string{"darwin": "macOS", "linux": "Linux", "wsl": "WSL", "win32": "Windows"}
@@ -93,12 +92,12 @@ type notice struct {
 	Wakes bool
 }
 
-const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, utc_offset, label"
+const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, environment, utc_offset, label"
 
 func scanSession(row interface{ Scan(...any) error }) (*session, error) {
 	var s session
 	var listening int
-	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource, &s.Hostname, &s.Platform, &s.UTCOffset, &s.Label); err != nil {
+	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource, &s.Hostname, &s.Platform, &s.Environment, &s.UTCOffset, &s.Label); err != nil {
 		return nil, err
 	}
 	s.Listening = listening == 1
@@ -149,33 +148,38 @@ func nameTaken(q querier, name, exceptID string) (bool, error) {
 	return err == nil, err
 }
 
-// freeName: base, or base#N with the smallest N >= 2 that no other non-offline session uses.
-func freeName(q querier, base, exceptID string) (string, error) {
-	rows, err := q.QueryContext(bg, "SELECT name FROM agent_sessions WHERE id != ? AND status != 'offline'", exceptID)
-	if err != nil {
-		return "", err
+// autoName is a session's own name, <client>@<cwd basename>#<the end of its
+// client session id>: the last 4 letters and digits of the id, more when
+// another session in the database (of any status) has that name, so a name
+// never stands for two sessions while both are recorded.
+func autoName(q querier, id, client, cwd string) (string, error) {
+	base := baseName(cwd)
+	if base == "" {
+		base = "session"
 	}
-	defer rows.Close()
-	taken := map[string]bool{}
-	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			return "", err
-		}
-		taken[n] = true
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	if !taken[base] {
-		return base, nil
-	}
-	for n := 2; ; n++ {
-		candidate := fmt.Sprintf("%s#%d", base, n)
-		if !taken[candidate] {
-			return candidate, nil
+	var tail []rune
+	for _, r := range strings.TrimPrefix(id, client+":") {
+		if r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			tail = append(tail, unicode.ToLower(r))
 		}
 	}
+	for n := min(4, len(tail)); ; n++ {
+		name := client + "@" + base + "#" + string(tail[len(tail)-n:])
+		taken, err := nameUsed(q, name, id)
+		if err != nil || !taken || n == len(tail) {
+			return name, err
+		}
+	}
+}
+
+// nameUsed: another session in the database, of any status, has the name.
+func nameUsed(q querier, name, exceptID string) (bool, error) {
+	var one int
+	err := q.QueryRowContext(bg, "SELECT 1 FROM agent_sessions WHERE name = ? AND id != ? LIMIT 1", name, exceptID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // baseName is the last element of a client's working directory (either
@@ -188,7 +192,7 @@ func baseName(cwd string) string {
 	return trimmed
 }
 
-// touch creates the session if it does not exist (named <client>@<cwd basename>)
+// touch creates the session if it does not exist (named by autoName)
 // and refreshes its last activity time and where it runs; m is nil only for an
 // event the client sends on its behalf (BackgroundWait), which never creates a session.
 func (a *Agents) touch(id, client, cwd string, m *machine, now time.Time) error {
@@ -202,21 +206,17 @@ func (a *Agents) touch(id, client, cwd string, m *machine, now time.Time) error 
 			if m == nil {
 				_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ? WHERE id = ?", at, id)
 			} else {
-				_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ?, hostname = ?, platform = ?, utc_offset = ? WHERE id = ?", at, m.Hostname, m.Platform, m.UTCOffset, id)
+				_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ?, hostname = ?, platform = ?, environment = ?, utc_offset = ? WHERE id = ?", at, m.Hostname, m.Platform, m.Environment, m.UTCOffset, id)
 			}
 			return err
 		}
-		base := baseName(cwd)
-		if base == "" {
-			base = "session"
-		}
-		name, err := freeName(tx, client+"@"+base, id)
+		name, err := autoName(tx, id, client, cwd)
 		if err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(bg,
-			"INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at, hostname, platform, utc_offset) VALUES (?, ?, ?, '', ?, 'idle', 0, ?, ?, ?, ?, ?)",
-			id, client, name, cwd, at, at, m.Hostname, m.Platform, m.UTCOffset)
+			"INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at, hostname, platform, environment, utc_offset) VALUES (?, ?, ?, '', ?, 'idle', 0, ?, ?, ?, ?, ?, ?)",
+			id, client, name, cwd, at, at, m.Hostname, m.Platform, m.Environment, m.UTCOffset)
 		return err
 	})
 }
@@ -227,21 +227,8 @@ func (a *Agents) refresh(id string, now time.Time) error {
 	return err
 }
 
-// stripNumber removes a trailing #N from a session name.
-func stripNumber(name string) string {
-	if i := strings.LastIndex(name, "#"); i >= 0 && i < len(name)-1 {
-		for _, r := range name[i+1:] {
-			if r < '0' || r > '9' {
-				return name
-			}
-		}
-		return name[:i]
-	}
-	return name
-}
-
 // setStatus sets the status. A session coming back from offline whose name
-// another non-offline session now uses gets a numbered name.
+// another non-offline session took meanwhile (with set_profile) gets its own name again.
 func (a *Agents) setStatus(id, status string) error {
 	return a.tx(func(tx *sql.Tx) error {
 		current, err := getSession(tx, id)
@@ -254,7 +241,7 @@ func (a *Agents) setStatus(id, status string) error {
 				return err
 			}
 			if taken {
-				name, err := freeName(tx, stripNumber(current.Name), id)
+				name, err := autoName(tx, id, current.Client, current.Cwd)
 				if err != nil {
 					return err
 				}
@@ -396,7 +383,7 @@ func (a *Agents) addMessage(fromID, toID, text string, replyTo *string, expectsR
 }
 
 const messageSelect = `
-    SELECT m.id, m.from_id, s.name AS from_name, s.title AS from_title, s.hostname, s.platform, s.label, m.to_id, m.text, m.reply_to, m.status,
+    SELECT m.id, m.from_id, s.name AS from_name, s.title AS from_title, s.hostname, s.platform, s.environment, s.label, m.to_id, m.text, m.reply_to, m.status,
            m.created_at, m.expires_at, m.notified_at, m.read_at, m.expects_reply, m.wake
     FROM agent_messages m JOIN agent_sessions s ON s.id = m.from_id`
 
@@ -410,7 +397,7 @@ func queryMessages(q querier, query string, args ...any) ([]*message, error) {
 	for rows.Next() {
 		var m message
 		var from session
-		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake); err != nil {
+		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Environment, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake); err != nil {
 			return nil, err
 		}
 		m.FromMachine = from.machineName()

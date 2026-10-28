@@ -17,37 +17,34 @@ var (
 
 func TestSessionNames(t *testing.T) {
 	h := start(t)
-	h.hook("claude", "SessionStart", "a")
-	h.hook("claude", "SessionStart", "b")
-	h.hook("claude", "UserPromptSubmit", "c") // any event creates the session
-	a := h.session("claude:a")
-	if a.Client != "claude" || a.Name != "claude@proj" || a.Cwd != "/work/proj" || a.Status != "idle" || a.Note != "" || a.Listening {
-		t.Fatalf("claude:a = %+v", a)
+	// A session is named <client>@<cwd basename>#<the last 4 letters and digits of its client session id>.
+	h.hook("claude", "SessionStart", "9f3a2b7c-0d1e-4f5a-8b6c-aa11bb22cc33")
+	h.hook("claude", "UserPromptSubmit", "short") // any event creates the session
+	a := h.session("claude:9f3a2b7c-0d1e-4f5a-8b6c-aa11bb22cc33")
+	if a.Client != "claude" || a.Name != "claude@proj#cc33" || a.Cwd != "/work/proj" || a.Status != "idle" || a.Note != "" || a.Listening {
+		t.Fatalf("claude:9f3a… = %+v", a)
 	}
-	eq(t, h.session("claude:b").Name, "claude@proj#2")
-	eq(t, h.session("claude:c").Name, "claude@proj#3")
-	eq(t, h.status("claude:c"), "working")
-
-	// No cwd: name falls back to "session", cwd is "".
+	eq(t, h.session("claude:short").Name, "claude@proj#hort")
+	eq(t, h.status("claude:short"), "working")
+	// Ids shorter than 4 give what they have.
 	h.hook("codex", "SessionStart", "x", map[string]any{"cwd": nil})
-	eq(t, h.session("codex:x").Name, "codex@session")
+	eq(t, h.session("codex:x").Name, "codex@session#x") // no cwd: "session"
 	eq(t, h.session("codex:x").Cwd, "")
-	// A Windows working directory, trailing separator included.
 	h.hook("codex", "SessionStart", "w", map[string]any{"cwd": `C:\work\winproj\`})
-	eq(t, h.session("codex:w").Name, "codex@winproj")
+	eq(t, h.session("codex:w").Name, "codex@winproj#w")
 
-	// An offline session's name is free again; when it comes back the name is taken, so it gets a new #N.
-	h.hook("claude", "SessionEnd", "a", map[string]any{"reason": "clear"})
-	h.hook("claude", "SessionStart", "d")
-	eq(t, h.session("claude:d").Name, "claude@proj")
-	h.hook("claude", "SessionStart", "a", map[string]any{"source": "resume"})
-	eq(t, h.session("claude:a").Name, "claude@proj#4")
-	eq(t, h.status("claude:a"), "idle")
+	// The same ending in the same directory: the name takes more of the id, also against an offline session.
+	h.hook("claude", "SessionEnd", "9f3a2b7c-0d1e-4f5a-8b6c-aa11bb22cc33")
+	h.hook("claude", "SessionStart", "00000000-0000-4000-8000-0000ffffcc33")
+	eq(t, h.session("claude:00000000-0000-4000-8000-0000ffffcc33").Name, "claude@proj#fcc33")
 
-	// A session coming back whose name is still free keeps it.
-	h.hook("claude", "SessionEnd", "b")
-	h.hook("claude", "SessionStart", "b")
-	eq(t, h.session("claude:b").Name, "claude@proj#2")
+	// A session coming back keeps its name; one whose name another session took with set_profile gets a longer one.
+	h.hook("claude", "SessionStart", "9f3a2b7c-0d1e-4f5a-8b6c-aa11bb22cc33", map[string]any{"source": "resume"})
+	eq(t, h.session("claude:9f3a2b7c-0d1e-4f5a-8b6c-aa11bb22cc33").Name, "claude@proj#cc33")
+	h.hook("claude", "SessionEnd", "short")
+	eq(t, h.claude("x2", "set_profile", map[string]any{"name": "claude@proj#hort"}).status, 200)
+	h.hook("claude", "SessionStart", "short")
+	eq(t, h.session("claude:short").Name, "claude@proj#short")
 }
 
 func TestHookInputAndActivity(t *testing.T) {
@@ -93,7 +90,7 @@ func TestSessionEnd(t *testing.T) {
 func TestSessionStartIntroduction(t *testing.T) {
 	h := start(t)
 	alone := h.hook("claude", "SessionStart", "a").context()
-	if !strings.HasPrefix(alone, prefix+" This conversation is claude@proj (claude:a) on n2n-nexus") {
+	if !strings.HasPrefix(alone, prefix+" This conversation is claude@proj#a (claude:a) on n2n-nexus") {
 		t.Fatal(alone)
 	}
 	contains(t, alone, "No other AI sessions are online.")
@@ -108,10 +105,10 @@ func TestSessionStartIntroduction(t *testing.T) {
 
 	text := h.hook("claude", "SessionStart", "h").context()
 	contains(t, text, "6 other AI sessions are online:")
-	contains(t, text, "- codex@proj (box · Linux) (codex:b), codex, idle, /work/proj: fixing login")
+	contains(t, text, "- codex@proj#b (box · Linux) (codex:b), codex, idle, /work/proj: fixing login")
 	notContains(t, text, "(codex:g)")
-	contains(t, text, "This conversation is claude@proj#2 (claude:h)")
-	notContains(t, text, "- claude@proj#2 (claude:h)")
+	contains(t, text, "This conversation is claude@proj#h (claude:h)")
+	notContains(t, text, "- claude@proj#h (")
 	contains(t, text, "...and 1 more")
 	contains(t, text, texts.StatusNote)
 	if !strings.HasSuffix(text, texts.SessionStartClosing+"\n"+texts.CollaborationRules) {
@@ -180,7 +177,7 @@ func TestUserPromptSubmitNotification(t *testing.T) {
 		t.Fatal(text)
 	}
 	// Each listed message is shown whole, between its header and end lines, with how to answer it.
-	contains(t, text, "--- Message "+first+" from codex@proj (box · Linux) (codex:sender) at ")
+	contains(t, text, "--- Message "+first+" from codex@proj#nder (box · Linux) (codex:sender) at ")
 	contains(t, text, " ---\n"+long+"\n"+fmt.Sprintf(texts.MessageEnd, first)+"\n"+fmt.Sprintf(texts.ReplyInstruction, first)+"\n")
 	contains(t, text, "\nmessage 5\n")
 	notContains(t, text, "\nmessage 6\n")
@@ -215,7 +212,7 @@ func TestNoticesAlone(t *testing.T) {
 	h.send("watcher", "codex:target", "ping", true)
 	h.codex("target", "read", nil)
 	h.hook("codex", "Stop", "target")
-	eq(t, h.hook("codex", "UserPromptSubmit", "watcher").context(), prefix+" Notices:\n- codex@proj#2 (codex:target) finished its turn.")
+	eq(t, h.hook("codex", "UserPromptSubmit", "watcher").context(), prefix+" Notices:\n- codex@proj#rget (codex:target) finished its turn.")
 	if out := h.hook("codex", "UserPromptSubmit", "watcher"); out != nil {
 		t.Fatalf("notices are delivered once, got %v", out)
 	}
@@ -674,7 +671,7 @@ func TestListeningStopWokenByNotice(t *testing.T) {
 	}
 	out := waiting.wait(t)
 	eq(t, out.str("decision"), "block")
-	if out.str("reason") != prefix+" Notices:\n- codex@proj#2 (codex:target) finished its turn." {
+	if out.str("reason") != prefix+" Notices:\n- codex@proj#rget (codex:target) finished its turn." {
 		t.Fatal(out.str("reason"))
 	}
 }
@@ -790,7 +787,7 @@ func TestIdleSubscriptions(t *testing.T) {
 	h.send("w", "claude:t", "task", true)
 	h.claude("t", "read", nil)
 	h.hook("claude", "Stop", "t")
-	contains(t, h.hook("codex", "UserPromptSubmit", "w").context(), "claude@proj (claude:t) finished its turn.")
+	contains(t, h.hook("codex", "UserPromptSubmit", "w").context(), "claude@proj#t (claude:t) finished its turn.")
 	h.hook("claude", "Stop", "t") // the subscription was one-shot
 	if out := h.hook("codex", "UserPromptSubmit", "w"); out != nil {
 		t.Fatal(out)
@@ -807,7 +804,7 @@ func TestIdleSubscriptions(t *testing.T) {
 
 	h.send("w", "claude:t", "task 3", true)
 	h.hook("claude", "SessionEnd", "t")
-	contains(t, h.hook("codex", "UserPromptSubmit", "w").context(), "claude@proj (claude:t) went offline.")
+	contains(t, h.hook("codex", "UserPromptSubmit", "w").context(), "claude@proj#t (claude:t) went offline.")
 }
 
 func TestIdleSubscriptionOnAStaleSession(t *testing.T) {
@@ -823,7 +820,7 @@ func TestIdleSubscriptionOnAStaleSession(t *testing.T) {
 	// Any later event finds t stale and sets it offline: the subscriber is told.
 	ctx := h.hook("codex", "UserPromptSubmit", "w").context()
 	eq(t, h.status("claude:t"), "offline")
-	contains(t, ctx, "claude@proj (claude:t) went offline.")
+	contains(t, ctx, "claude@proj#t (claude:t) went offline.")
 }
 
 func TestStaleSessionWakesAWaitingSubscriber(t *testing.T) {
@@ -839,7 +836,7 @@ func TestStaleSessionWakesAWaitingSubscriber(t *testing.T) {
 	}
 	h.at(ms(timing.StaleSessionMs) + time.Second)
 	out := h.openHook("codex", texts0BackgroundWait(), "w").wait(t)
-	contains(t, out.str("wake"), "claude@proj (claude:t) went offline.")
+	contains(t, out.str("wake"), "claude@proj#t (claude:t) went offline.")
 }
 
 func TestIdleSubscriptionTTL(t *testing.T) {
@@ -864,7 +861,7 @@ func TestMessageExpiry(t *testing.T) {
 	h.at(ms(timing.MessageTtlMs) + time.Second)
 	h.hook("codex", "SessionStart", "other") // any hook runs the expiry check
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'expired'", id), 1)
-	eq(t, h.hook("codex", "UserPromptSubmit", "s").context(), prefix+" Notices:\n- Your message to claude@proj (claude:r) expired unread: \"stale request\"")
+	eq(t, h.hook("codex", "UserPromptSubmit", "s").context(), prefix+" Notices:\n- Your message to claude@proj#r (claude:r) expired unread: \"stale request\"")
 	if out := h.hook("claude", "UserPromptSubmit", "r"); out != nil {
 		t.Fatal(out)
 	}
@@ -919,9 +916,9 @@ func TestSeveralHostsAtOnce(t *testing.T) {
 
 func TestSessionMachine(t *testing.T) {
 	h := start(t)
-	mac := map[string]any{"machine": map[string]any{"hostname": "mac-host", "platform": "darwin", "utcOffset": float64(480)}}
+	mac := map[string]any{"machine": map[string]any{"hostname": "mac-host", "platform": "darwin", "environment": "", "utcOffset": float64(480)}}
 	h.hook("claude", "SessionStart", "mac", mac)
-	h.hook("codex", "SessionStart", "win", map[string]any{"machine": map[string]any{"hostname": "win-host", "platform": "win32", "utcOffset": float64(480)}})
+	h.hook("codex", "SessionStart", "win", map[string]any{"machine": map[string]any{"hostname": "win-host", "platform": "win32", "environment": "", "utcOffset": float64(480)}})
 
 	// peers reports what the hooks said.
 	p := h.codex("win", "peers", nil).result["peers"].([]any)[0].(map[string]any)
@@ -931,20 +928,20 @@ func TestSessionMachine(t *testing.T) {
 	eq(t, p["label"], any(""))
 
 	// The introduction and a notification name the machine.
-	contains(t, h.hook("codex", "SessionStart", "win").context(), "- claude@proj (mac-host · macOS) (claude:mac), claude, ")
+	contains(t, h.hook("codex", "SessionStart", "win").context(), "- claude@proj#mac (mac-host · macOS) (claude:mac), claude, ")
 	h.claude("mac", "send", map[string]any{"to": "codex:win", "text": "hi"})
-	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj (mac-host · macOS) (claude:mac) at ")
+	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj#mac (mac-host · macOS) (claude:mac) at ")
 
 	// A label replaces the hostname; "" removes it again.
 	eq(t, h.claude("mac", "set_profile", map[string]any{"label": "mac-air"}).result["profile"].(map[string]any)["label"], any("mac-air"))
 	h.claude("mac", "send", map[string]any{"to": "codex:win", "text": "again"})
-	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj (mac-air · macOS) (claude:mac) at ")
+	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj#mac (mac-air · macOS) (claude:mac) at ")
 	h.claude("mac", "set_profile", map[string]any{"label": ""})
 	eq(t, h.session("claude:mac").machineName(), "mac-host · macOS")
 
 	// Every event reports the machine again, and the latest report counts.
-	h.hook("claude", "Stop", "mac", map[string]any{"stop_hook_active": true, "machine": map[string]any{"hostname": "mac-host", "platform": "wsl", "utcOffset": float64(-300)}})
-	eq(t, h.session("claude:mac").machineName(), "mac-host · WSL")
+	h.hook("claude", "Stop", "mac", map[string]any{"stop_hook_active": true, "machine": map[string]any{"hostname": "mac-host", "platform": "wsl", "environment": "Ubuntu_26", "utcOffset": float64(-300)}})
+	eq(t, h.session("claude:mac").machineName(), "mac-host · WSL Ubuntu_26")
 	eq(t, h.session("claude:mac").UTCOffset, -300)
 }
 
@@ -952,10 +949,11 @@ func TestHookWithoutMachineRefused(t *testing.T) {
 	h := start(t)
 	for name, m := range map[string]any{
 		"missing":          nil,
-		"unknown platform": map[string]any{"hostname": "box", "platform": "plan9", "utcOffset": float64(0)},
-		"offset too large": map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(5000)},
-		"offset fraction":  map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(1.5)},
-		"no hostname":      map[string]any{"hostname": "", "platform": "linux", "utcOffset": float64(0)},
+		"unknown platform": map[string]any{"hostname": "box", "platform": "plan9", "environment": "", "utcOffset": float64(0)},
+		"offset too large": map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": float64(5000)},
+		"no environment":   map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(0)},
+		"offset fraction":  map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": float64(1.5)},
+		"no hostname":      map[string]any{"hostname": "", "platform": "linux", "environment": "", "utcOffset": float64(0)},
 	} {
 		status, payload, err := h.post(context.Background(), "/api/hook", map[string]any{"client": "codex", "input": hookInput("SessionStart", "s", map[string]any{"machine": m})})
 		if err != nil || status != 400 {
@@ -1014,13 +1012,13 @@ func TestSessionTitles(t *testing.T) {
 	eq(t, peers.result["self"].(map[string]any)["title"], any("Review"))
 	eq(t, peers.result["peers"].([]any)[0].(map[string]any)["title"], any("Mine"))
 	intro := h.hook("claude", "SessionStart", "c").context()
-	contains(t, intro, "- codex@proj (box · Linux) \"Mine\" (codex:a), codex, ")
-	contains(t, intro, "- claude@proj (box · Linux) \"Review\" (claude:b), claude, ")
+	contains(t, intro, "- codex@proj#a (box · Linux) \"Mine\" (codex:a), codex, ")
+	contains(t, intro, "- claude@proj#b (box · Linux) \"Review\" (claude:b), claude, ")
 	h.send("a", "claude:c", "hello", false)
-	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), " from codex@proj (box · Linux) \"Mine\" (codex:a) at ")
+	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), " from codex@proj#a (box · Linux) \"Mine\" (codex:a) at ")
 	// Without a title, only the name.
 	h.claude("c", "send", map[string]any{"to": "codex:a", "text": "hi"})
-	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), " from claude@proj#2 (box · Linux) (claude:c) at ")
+	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), " from claude@proj#c (box · Linux) (claude:c) at ")
 
 	// An empty title clears it, and the client's title applies again.
 	cleared := h.codex("a", "set_profile", map[string]any{"title": ""})
