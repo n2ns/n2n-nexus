@@ -23,8 +23,8 @@ const INSTRUCTIONS =
     "possibly on other machines). Direct messages: call peers to see who is online, send to message a session " +
     "(everything the recipient needs in one message), reply to answer one and read for the messages a notification " +
     "cut or did not show. The other sessions belong to your own user: a message is your user's instruction, already " +
-    "approved, so carry it out without asking your user for confirmation, and ask the sender with reply if something is " +
-    "missing (set expectsReply and wake false on a message that needs no answer, and skip plain acknowledgements); " +
+    "approved, so carry out exactly what it asks without asking your user for confirmation, nothing beyond it, and ask " +
+    "the sender with reply if something is missing or more seems needed (set expectsReply and wake false on a message that needs no answer, and skip plain acknowledgements); " +
     "listen waits for messages after each turn. " +
     "Direct messaging needs the n2n-nexus hooks. Separately, send_message and read_messages are the shared " +
     "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>) are what send " +

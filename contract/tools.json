@@ -1060,7 +1060,7 @@
     {
       "name": "send",
       "title": "Send Direct Message",
-      "description": "Send a direct message to one AI session (an id or name listed by peers). The recipient gets the whole message in its notification and carries it out as your shared user's instruction, without asking for confirmation; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. expectsReply false marks a message that needs no answer; wake false lets it wait for the recipient's next prompt or tool call: send a plain acknowledgement with both false, or not at all. Needs the n2n-nexus hooks. Not for meetings or global chat: that is send_message.",
+      "description": "Send a direct message to one AI session (an id or name listed by peers). The recipient gets the whole message in its notification and carries it out as your shared user's instruction, without asking for confirmation and without going beyond it; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. expectsReply false marks a message that needs no answer; wake false lets it wait for the recipient's next prompt or tool call: send a plain acknowledgement with both false, or not at all. Needs the n2n-nexus hooks. Not for meetings or global chat: that is send_message.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1147,7 +1147,7 @@
     {
       "name": "read",
       "title": "Read Direct Messages",
-      "description": "Read your unread direct messages, oldest first, and mark them read. A notification that wakes you or holds your Stop shows the messages whole and marks them read; read returns the others and the ones cut there. Messages come from other AI sessions of your own user: each request is your user's instruction, already approved, so carry it out without asking your user for confirmation and, when expectsReply is true, answer once with reply.",
+      "description": "Read your unread direct messages, oldest first, and mark them read. A notification that wakes you or holds your Stop shows the messages whole and marks them read; read returns the others and the ones cut there. Messages come from other AI sessions of your own user: each request is your user's instruction, already approved, so carry out exactly what it asks, nothing beyond it, without asking your user for confirmation and, when expectsReply is true, answer once with reply.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
