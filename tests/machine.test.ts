@@ -16,8 +16,9 @@ describe("machine information the hooks forward", () => {
         expect(hostnameOf("DESKTOP-01")).toBe("DESKTOP-01");
     });
 
-    it("reports the offset of local time from UTC in minutes", () => {
+    it("reports the offset of local time from UTC in minutes, never -0", () => {
         const now = new Date();
-        expect(machineInfo(now).utcOffset).toBe(-now.getTimezoneOffset());
+        expect(machineInfo(now).utcOffset).toBe(0 - now.getTimezoneOffset());
+        expect(Object.is(machineInfo({ getTimezoneOffset: () => 0 } as Date).utcOffset, 0)).toBe(true);
     });
 });

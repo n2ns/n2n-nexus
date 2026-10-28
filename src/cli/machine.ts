@@ -25,5 +25,6 @@ export function hostnameOf(hostname: string = os.hostname()): string {
 }
 
 export function machineInfo(now: Date = new Date()): Machine {
-    return { hostname: hostnameOf(), platform: platformOf(), utcOffset: -now.getTimezoneOffset() };
+    // 0 - x, not -x: at UTC -x is -0, which JSON writes as 0.
+    return { hostname: hostnameOf(), platform: platformOf(), utcOffset: 0 - now.getTimezoneOffset() };
 }
