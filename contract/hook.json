@@ -72,7 +72,7 @@
     "messageEnd": "--- End of message %s ---",
     "messageReplyTo": "This answers your message %s.",
     "messageCut": "[Cut at %d of %d characters; read returns the whole message.]",
-    "replyInstruction": "Answer it with reply (messageId %s, expectsReply false).",
+    "replyInstruction": "Answer it with reply (messageId %s; expectsReply false for a result, true for a question).",
     "readRest": "read returns the messages that are cut or not shown here.",
     "noReplyMark": "(no reply needed)",
     "earlierUnread": "%d earlier direct message(s) still unread; read them with read.",

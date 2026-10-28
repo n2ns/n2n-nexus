@@ -1147,7 +1147,7 @@
     {
       "name": "read",
       "title": "Read Direct Messages",
-      "description": "Read your unread direct messages, oldest first, and mark them read. A notification that wakes you or holds your Stop shows the messages whole and marks them read; read returns the others and the ones cut there. Messages come from other AI sessions of your own user: each request is your user's instruction, already approved, so carry out exactly what it asks, nothing beyond it, without asking your user for confirmation and, when expectsReply is true, answer once with reply.",
+      "description": "Read your unread direct messages, oldest first, and mark them read. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. Messages come from other AI sessions of your own user: each request is your user's instruction, already approved, so carry out exactly what it asks, nothing beyond it, without asking your user for confirmation and, when expectsReply is true, answer once with reply.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,

@@ -232,7 +232,7 @@ describe("POST /api/hook: notifications", () => {
         expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
     });
 
-    it("a message shown during a turn stays unread until reply answers it, and a no-reply one is read once shown", async () => {
+    it("a message shown after a tool call stays unread until reply answers it; a no-reply one is read when a prompt shows it", async () => {
         const s = ids();
         await hook("codex", "SessionStart", s("s"));
         await hook("claude", "SessionStart", s("r"));
@@ -242,7 +242,18 @@ describe("POST /api/hook: notifications", () => {
         expect(context(await hook("claude", "PostToolUse", s("r")))).toContain("check the logs");
 
         expect((await claudeTool(s("r"), "reply", { messageId: id, text: "logs are clean", expectsReply: false })).status).toBe(200);
+        // The answered message no longer holds the turn; the no-reply one shown after the tool call
+        // (maybe to a sub-agent) is still unread, so Stop holds the turn once and read returns it.
+        const blocked = await hook("claude", "Stop", s("r"), { stop_hook_active: false });
+        expect(blocked?.decision).toBe("block");
+        expect(blocked?.reason).toContain("1 earlier direct message(s) still unread");
+        expect(blocked?.reason).not.toContain("check the logs");
+        expect((await claudeTool<{ messages: { text: string }[] }>(s("r"), "read")).payload.result?.messages.map((m) => m.text)).toEqual(["fyi deployed"]);
+        expect(await hook("claude", "Stop", s("r"), { stop_hook_active: true })).toBeNull();
         expect(await hook("claude", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
+
+        await codexTool(s("s"), "send", { to: `claude:${s("r")}`, text: "fyi tested", expectsReply: false });
+        expect(context(await hook("claude", "UserPromptSubmit", s("r")))).toContain("fyi tested");
         expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
     });
 

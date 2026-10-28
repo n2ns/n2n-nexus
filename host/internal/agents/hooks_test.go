@@ -314,6 +314,28 @@ func TestReplyMarksTheAnsweredMessageRead(t *testing.T) {
 	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
 }
 
+func TestNoReplyMessageReadOnlyWhenAPromptShowsIt(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "UserPromptSubmit", "r")
+	// Shown after a tool call: the context can be a sub-agent's, so the message stays unread ...
+	first := h.codex("s", "send", map[string]any{"to": "claude:r", "text": "done with part one", "expectsReply": false}).result["messageId"].(string)
+	contains(t, h.hook("claude", "PostToolUse", "r").context(), "done with part one")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread'", first), 1)
+	// ... and the next prompt counts it, so the conversation can read it.
+	h.hook("claude", "Stop", "r", stopActive)
+	second := h.codex("s", "send", map[string]any{"to": "claude:r", "text": "done with part two", "expectsReply": false}).result["messageId"].(string)
+	ctx := h.hook("claude", "UserPromptSubmit", "r").context()
+	contains(t, ctx, fmt.Sprintf(texts.EarlierUnread, 1))
+	contains(t, ctx, "done with part two")
+	// Shown with the prompt itself, the no-reply message is read; the earlier one waits for read.
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'read'", second), 1)
+	read := h.claude("r", "read", nil).result["messages"].([]any)
+	eq(t, len(read), 1)
+	eq(t, read[0].(map[string]any)["messageId"], any(first))
+}
+
 func TestNotificationTextBudget(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")

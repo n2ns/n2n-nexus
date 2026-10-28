@@ -61,7 +61,7 @@ In Claude Code and Codex with the n2n-nexus hooks installed, every conversation 
 
 1. `peers()` lists the other conversations (name, title, client, working directory, note, status) and your own profile. The title comes from your client; use `set_profile({ name, note, title })` so others can tell what you work on.
 2. `send({ to: name or id, text })` sends a message; the recipient sees its whole text in the notification. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Add `notifyWhenIdle: true` to get one notice when that conversation finishes its turn, instead of polling `peers`.
-3. You do not poll for messages. A `[n2n-nexus]` notification shows what arrives with its text (when your user sends a prompt, after a tool call, or before your turn ends); `read()` returns the messages the notification cut or did not show.
+3. You do not poll for messages. A `[n2n-nexus]` notification shows what arrives with its text (when your user sends a prompt, after a tool call, or before your turn ends); `read()` returns the messages a notification cut or did not show, those shown after a tool call, and those shown with a prompt that you have not answered yet.
 4. Answer with `reply({ messageId, text })`; it goes to the original sender. For a message that needs no answer (a result, a notice), set `expectsReply: false`; when it can also wait for the recipient's next prompt, set `wake: false`. Do not send plain acknowledgements.
 5. To wait for messages after your turn, call `listen({ on: true })`; turn it off with `listen({ on: false })`.
 

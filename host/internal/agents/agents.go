@@ -615,14 +615,25 @@ func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 	return b, nil
 }
 
+// readMark says which of the messages an announcement shows whole it also marks read.
+type readMark int
+
+const (
+	// markNone: a tool call's context can reach a sub-agent only, so every message stays unread for read.
+	markNone readMark = iota
+	// markNoReply: a prompt's context reaches the conversation; a message that needs no reply is done once shown.
+	markNoReply
+	// markShown: the text drives the turn (it wakes the session or holds its Stop), so what it shows whole is read.
+	markShown
+)
+
 // announce builds the notification text of a batch and marks it notified.
 // Each listed message is shown with its text, all texts together cut to the
-// contract's notifyTextChars. A message shown whole is also marked read when
-// it needs no reply, or with markRead (the text drives the turn: it wakes the
-// session or holds its Stop). Otherwise, and when cut or not listed, it stays
-// unread until read or answered with reply, so Stop holds the turn for it.
+// contract's notifyTextChars; mark says which of those shown whole are also
+// marked read. The others, and a message cut or not listed, stay unread until
+// read returns them or reply answers them, so Stop holds the turn for them.
 // closing ends the direct-message part when a message expects a reply.
-func (a *Agents) announce(sessionID string, b batch, label, closing string, markRead bool) (string, error) {
+func (a *Agents) announce(sessionID string, b batch, label, closing string, mark readMark) (string, error) {
 	h := a.o.Contract.Hook
 	limit := h.Limits.NotifyListLimit
 	var lines []string
@@ -649,7 +660,7 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			if len(text) < len(m.Text) {
 				rest = true
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, unitLen(text), unitLen(m.Text)))
-			} else if markRead || !m.ExpectsReply {
+			} else if mark == markShown || (mark == markNoReply && !m.ExpectsReply) {
 				shown = append(shown, m.ID)
 			}
 			lines = append(lines, fmt.Sprintf(h.Texts.MessageEnd, m.ID))
@@ -724,20 +735,20 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 
 // notifyAll: for a prompt, every unread message (the earlier ones counted), pending notices and meeting news; "" when there are none.
 func (a *Agents) notifyAll(sessionID, closing string) (string, error) {
-	return a.notifyWith(sessionID, true, "unread", closing)
+	return a.notifyWith(sessionID, true, "unread", closing, markNoReply)
 }
 
-// notifyFresh: for a tool call, what was not announced yet, or "" when nothing is new.
-func (a *Agents) notifyFresh(sessionID, closing string) (string, error) {
-	return a.notifyWith(sessionID, false, "new", closing)
+// notifyFresh: for a tool call, or the prompt of a woken turn, what was not announced yet, or "" when nothing is new.
+func (a *Agents) notifyFresh(sessionID, closing string, mark readMark) (string, error) {
+	return a.notifyWith(sessionID, false, "new", closing, mark)
 }
 
-func (a *Agents) notifyWith(sessionID string, all bool, label, closing string) (string, error) {
+func (a *Agents) notifyWith(sessionID string, all bool, label, closing string, mark readMark) (string, error) {
 	b, err := a.gather(sessionID, all, false)
 	if err != nil || b.empty() {
 		return "", err
 	}
-	return a.announce(sessionID, b, label, closing, false)
+	return a.announce(sessionID, b, label, closing, mark)
 }
 
 // continueWith announces a batch that wakes the session or holds its Stop: it
@@ -748,7 +759,7 @@ func (a *Agents) continueWith(sessionID string, b batch, label, closing string) 
 	if err != nil {
 		return "", nil, err
 	}
-	text, err := a.announce(sessionID, b, label, closing, true)
+	text, err := a.announce(sessionID, b, label, closing, markShown)
 	if err != nil {
 		return "", nil, err
 	}

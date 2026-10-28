@@ -117,11 +117,13 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 			return nil, nil, err
 		}
 		// The turn a wake began got the announcement as its prompt: only what arrived since.
-		notify := a.notifyAll
+		var text string
+		var err error
 		if woken {
-			notify = a.notifyFresh
+			text, err = a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing, markNoReply)
+		} else {
+			text, err = a.notifyAll(id, a.o.Contract.Hook.Texts.NotifyClosing)
 		}
-		text, err := notify(id, a.o.Contract.Hook.Texts.NotifyClosing)
 		return contextOutput("UserPromptSubmit", text), nil, err
 	case "PreToolUse":
 		if toolUseID, _ := input["tool_use_id"].(string); toolUseID != "" {
@@ -134,7 +136,8 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 		if err := a.setStatus(id, "working"); err != nil {
 			return nil, nil, err
 		}
-		text, err := a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing)
+		// A tool call can be a sub-agent's, whose context the conversation never sees: nothing is marked read.
+		text, err := a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing, markNone)
 		return contextOutput("PostToolUse", text), nil, err
 	case "Stop":
 		return a.stop(id, input)
