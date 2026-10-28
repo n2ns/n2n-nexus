@@ -77,7 +77,7 @@ func TestPeers(t *testing.T) {
 	h.at(0)
 
 	r := h.claude("me", "peers", nil)
-	want := map[string]any{"id": "claude:me", "name": "claude@mine", "title": "", "client": "claude", "cwd": "/work/mine", "note": "", "status": "idle", "lastActiveAt": store.ISO(h.t0)}
+	want := map[string]any{"id": "claude:me", "name": "claude@mine", "title": "", "client": "claude", "cwd": "/work/mine", "hostname": "box", "platform": "linux", "utcOffset": float64(0), "label": "", "note": "", "status": "idle", "lastActiveAt": store.ISO(h.t0)}
 	if !reflect.DeepEqual(r.result["self"], want) {
 		t.Fatalf("self = %v", r.result["self"])
 	}
@@ -94,7 +94,7 @@ func TestPeers(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	eq(t, strings.Join(keys, ","), "client,cwd,id,lastActiveAt,name,note,status,title")
+	eq(t, strings.Join(keys, ","), "client,cwd,hostname,id,label,lastActiveAt,name,note,platform,status,title,utcOffset")
 }
 
 func TestListenTool(t *testing.T) {

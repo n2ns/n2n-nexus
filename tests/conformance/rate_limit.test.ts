@@ -3,6 +3,7 @@
 // Each test restarts the host for fresh buckets.
 import { beforeEach, describe, expect, it } from "vitest";
 import { useHost } from "./harness.js";
+import { TEST_MACHINE } from "./agents.js";
 
 const BURST = 3;
 const ADDRESS_BURST = BURST * 5;
@@ -11,7 +12,7 @@ const host = useHost({ rateLimit: 0.001, rateBurst: BURST });
 beforeEach(() => host.restart());
 
 const send = (instanceId: string) => host.callTool("send_message", { message: "x" }, instanceId);
-const hook = (sessionId: string) => host.request("POST", "/api/hook", { client: "claude", input: { hook_event_name: "PostToolUse", session_id: sessionId } });
+const hook = (sessionId: string) => host.request("POST", "/api/hook", { client: "claude", input: { hook_event_name: "PostToolUse", session_id: sessionId, machine: TEST_MACHINE } });
 
 describe("rate limiting", () => {
     it("answers 429 with Retry-After once an instance spends its burst, without affecting others", async () => {

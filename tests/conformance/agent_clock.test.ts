@@ -147,7 +147,8 @@ describe("agent sessions over time", () => {
 
         const { payload } = await claudeTool<{ self: Profile; peers: Profile[] }>(s("me"), "peers");
         expect(payload.result?.self).toEqual({
-            id: `claude:${s("me")}`, name: "claude@mine", title: "", client: "claude", cwd: "/work/mine", note: "", status: "idle", lastActiveAt: iso(t0)
+            id: `claude:${s("me")}`, name: "claude@mine", title: "", client: "claude", cwd: "/work/mine", hostname: "box", platform: "linux", utcOffset: 0, label: "",
+            note: "", status: "idle", lastActiveAt: iso(t0)
         });
         expect(payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
 
@@ -155,7 +156,7 @@ describe("agent sessions over time", () => {
         expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual([
             [`codex:${s("busy")}`, "working"], [`claude:${s("recent-offline")}`, "offline"]
         ]);
-        expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "id", "lastActiveAt", "name", "note", "status", "title"]);
+        expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "hostname", "id", "label", "lastActiveAt", "name", "note", "platform", "status", "title", "utcOffset"]);
         expect((await sessions()).map((p) => p.id)).not.toContain(`codex:${s("stale")}`);
     });
 });

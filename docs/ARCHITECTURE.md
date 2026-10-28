@@ -67,7 +67,7 @@ The adapter's instance ID (the identity of chat and meeting calls from clients w
 
 ### Conversations and hooks
 
-Each Claude Code or Codex conversation is one session, `claude:<session id>` or `codex:<session id>`, using the ID the client itself assigns. `n2n-nexus install <claude|codex>` writes hooks that run `n2n-nexus hook <client>` on SessionStart, UserPromptSubmit, PostToolUse, Stop and SessionEnd (and, for Claude Code, PreToolUse on the n2n-nexus tools). The hook command forwards the event's identifying fields to `POST /api/hook` and prints the host's answer; on any error it exits 0 without output, so a missing host never blocks the client.
+Each Claude Code or Codex conversation is one session, `claude:<session id>` or `codex:<session id>`, using the ID the client itself assigns. `n2n-nexus install <claude|codex>` writes hooks that run `n2n-nexus hook <client>` on SessionStart, UserPromptSubmit, PostToolUse, Stop and SessionEnd (and, for Claude Code, PreToolUse on the n2n-nexus tools). The hook command forwards the event's identifying fields to `POST /api/hook` and prints the host's answer; to every event it adds the conversation's machine (`hostname` without `.local`, `platform` with `wsl` told from `linux` by `/proc/version`, and `utcOffset`), which the host requires, stores with the session and shows after its name, because sessions on different machines often share a name and a working directory; on SessionStart, UserPromptSubmit and Stop it also adds the conversation's title; on any error it exits 0 without output, so a missing host never blocks the client.
 
 ```
 Client event ──▶ n2n-nexus hook ──▶ POST /api/hook ──▶ session status, notifications
@@ -114,13 +114,13 @@ The wait never delivers while the session is `working` or while a listening Stop
 
 All data lives in one SQLite file, `nexus.db`, in the host's data directory, next to `settings.json` and `host.lock` (locations per OS: [User guide](USER_GUIDE.md#data-and-logs)).
 
-- **Schema**: numbered migrations embedded in the host (`host/internal/store/migrations/0001_core.sql`, `0002_agents.sql`) run in order at startup, each in one transaction; the version is `PRAGMA user_version`. A database newer than the host is refused ("upgrade n2n-nexus-host").
+- **Schema**: numbered migrations embedded in the host (`host/internal/store/migrations/0001_core.sql`, `0002_agents.sql`) run in order at startup, each in one transaction; the version is `PRAGMA user_version`. A database whose version is above the host's is refused, with a message to upgrade the host or, when the release says so, to delete `nexus.db`. Each file holds the whole current schema of one owner (`0001_core.sql`: internal/core; `0002_agents.sql`: internal/agents); a later schema change adds a numbered file.
 - **Tables**: `projects` (scalar manifest fields as columns, structured fields as JSON, internal docs as text), `project_relations` and `project_assets` (asset bytes as BLOBs; both cascade on project rename and delete), `global_strategy`, `global_docs`, `meetings` (with `status` and `is_default`), `meeting_messages` (numbered per meeting with `seq`), `meeting_members` (who takes part, how, and what they were told), `decisions`, `global_messages`, `events`, `tasks`, `read_cursors`, and for conversations `agent_sessions`, `agent_messages`, `agent_notices`, `agent_idle_subscriptions`, `tool_use_bindings` and `hooked_instances` (adapter instances whose calls resolved a conversation, for chat and meeting identity).
 - **Transactions**: every write is one transaction, so a multi-row change (a meeting message, starting / ending / reopening a meeting, renaming a project) is applied completely or not at all. The database runs in WAL mode with `foreign_keys` on and a 5 s busy timeout, through a single connection.
 - **Only the host opens the database**. MCP adapters and hooks go through HTTP.
 - **Activity log**: state changes made through tools (project sync/update/rename/delete/asset, doc sync, strategy update, meeting start/end/archive/reopen, maintenance) are recorded as structured events and read with `list_events`; they are not mixed into chat streams.
 
-Meeting members and stances store their resolved identity kind; draft eligibility is captured in the publishing transaction. Migration `0009` backfills legacy identities by exact matches with registered sessions and corrects active drafts' instance approvers without changing settled meeting lists. For a legacy optional member whose join and draft share a millisecond, the old data cannot establish their order: existing required approvers keep eligibility, but an unlisted member cannot opt into that draft and becomes eligible when a new draft is published.
+Meeting members and stances store their resolved identity kind; draft eligibility is captured in the publishing transaction.
 
 ### Maintenance and retention
 

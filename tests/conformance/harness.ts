@@ -45,7 +45,7 @@ export const HOOK = readContract<{
     wakeResultEvent: string;
     agentStatuses: string[];
     timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "peerWindowMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
-    limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number };
+    limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number; maxHostnameChars: number };
     texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "replyTool" | "noAgentSessionError", string>;
 }>("hook.json");
 export const ERRORS = readContract<{ contractVersion: number; maxBodyBytes: number }>("errors.json");

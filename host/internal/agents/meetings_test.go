@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,7 +13,11 @@ func (h *harness) meeting(id string, members map[string]string) {
 	h.exec(`INSERT INTO meetings (id, topic, status, is_default, active_order, initiator, participants, created_at)
 		VALUES (?, ?, 'active', 0, 1, 'x', '[]', 'x')`, id, "Topic "+id)
 	for member, mode := range members {
-		h.exec(`INSERT INTO meeting_members (meeting_id, member_id, mode, approver, joined_at) VALUES (?, ?, ?, 'required', 'x')`, id, member, mode)
+		kind := "instance"
+		if strings.HasPrefix(member, "codex:") || strings.HasPrefix(member, "claude:") {
+			kind = "session"
+		}
+		h.exec(`INSERT INTO meeting_members (meeting_id, member_id, identity_kind, mode, approver, joined_at) VALUES (?, ?, ?, ?, 'required', 'x')`, id, member, kind, mode)
 	}
 }
 

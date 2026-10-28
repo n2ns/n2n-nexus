@@ -154,9 +154,9 @@
 | `read` | `count?: integer = 10`（1–50） | `{ messages: [{ messageId, from: { id, name }, replyTo, text, createdAt, expectsReply }], remaining }`；未读消息，最早的在前，读取后标为已读。 |
 | `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true`、`wake?: boolean = true` | 结果与 `send` 相同。该消息必须是发给你的（它的 ID 在通知和 `read` 里）；回复发给它的发送方，`replyTo` 设为该消息，被回复的消息标为已读。 |
 | `listen` | `on: boolean` | `{ listening }`。开启期间，对话每结束一轮，其 Stop hook 会等待最多 590 秒，有消息或通知到达时让对话继续。在 Claude Code 中按 Esc 会结束一次等待。 |
-| `set_profile` | `name?: string`（1–48 个 `A–Z a–z 0–9 . _ @ # -` 中的字符）、`note?: string`（≤ 200 个字符）、`title?: string`（≤ 80 个字符）；至少提供一个 | `{ profile }`。名称在未离线的会话中唯一。 自己设置的 `title` 会取代客户端提供的标题，直到设为 `""`。 |
+| `set_profile` | `name?: string`（1–48 个 `A–Z a–z 0–9 . _ @ # -` 中的字符）、`note?: string`（≤ 200 个字符）、`title?: string`（≤ 80 个字符）、`label?: string`（≤ 32 个字符）；至少提供一个 | `{ profile }`。名称在未离线的会话中唯一。 自己设置的 `title` 会取代客户端提供的标题，直到设为 `""`。`label` 是你所在机器的名字（如 `mac-air`），显示时取代主机名；设为 `""` 删除。 |
 
-`Profile` 包含 `id`、`name`、`title`、`client`（`claude` 或 `codex`）、`cwd`、`note`、`status` 和 `lastActiveAt`。`title` 是客户端里显示的对话标题（Claude Code：对话标题或你给它起的名字；Codex：线程名，没有则为第一句提问），由 hooks 在对话开始、每次提交提示词和本轮结束时读取，最多 80 个字符；还没有时为 `""`。它显示在 `peers`、介绍、通知和会议成员里名称的旁边；`send` 仍用 `name`。会话的初始名称为 `<client>@<工作目录名>`，该名称已被某个未离线会话占用时加上 `#2`、`#3`、…。`status` 为 `working`（用户发送了提示词或有工具在运行）、`idle`（本轮已结束；有后台等待消息的会话改为显示 `listening`）、`listening`（在 listen 模式下等待）或 `offline`（对话已结束）。客户端不一定会报告对话结束，所以 `idle` 或 `working` 的会话 30 分钟没有任何活动也会变为 `offline`；它的下一个事件会让它恢复。只有 `listening` 的会话会立即回应；`idle` 和 `working` 的会话要等它的用户下次发送提示词或它下次调用工具时才会看到消息。
+`Profile` 包含 `id`、`name`、`title`、`client`（`claude` 或 `codex`）、`cwd`、`hostname`、`platform`、`utcOffset`、`label`、`note`、`status` 和 `lastActiveAt`。`hostname`（去掉 `.local` 后缀）、`platform`（`darwin`、`linux`、`wsl` 表示 Windows 下的 Linux 发行版、`win32`）和 `utcOffset`（本地时间减 UTC 的分钟数）由会话的 hooks 随每个事件上报。介绍、通知和会议消息在名字后面显示机器，格式为 `<label 或主机名> · <macOS | Linux | WSL | Windows>`，例如 `claude@_projects#2 (MacBook-Air · macOS)`。`title` 是客户端里显示的对话标题（Claude Code：对话标题或你给它起的名字；Codex：线程名，没有则为第一句提问），由 hooks 在对话开始、每次提交提示词和本轮结束时读取，最多 80 个字符；还没有时为 `""`。它显示在 `peers`、介绍、通知和会议成员里名称的旁边；`send` 仍用 `name`。会话的初始名称为 `<client>@<工作目录名>`，该名称已被某个未离线会话占用时加上 `#2`、`#3`、…。`status` 为 `working`（用户发送了提示词或有工具在运行）、`idle`（本轮已结束；有后台等待消息的会话改为显示 `listening`）、`listening`（在 listen 模式下等待）或 `offline`（对话已结束）。客户端不一定会报告对话结束，所以 `idle` 或 `working` 的会话 30 分钟没有任何活动也会变为 `offline`；它的下一个事件会让它恢复。只有 `listening` 的会话会立即回应；`idle` 和 `working` 的会话要等它的用户下次发送提示词或它下次调用工具时才会看到消息。
 
 送达。收件方的 hooks 提醒新消息时带上完整正文：每条列出的消息夹在 `--- Message <id> from <发送方> (<会话 ID>) at <时间> ---` 和 `--- End of message <id> ---` 之间，前面是它回复的消息，后面是怎么回复它。一条通知里所有正文合计截到 5000 个字符（`notifyTextChars`）；被截断的消息会标出来，`read` 返回它的全文。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名 `mcp__n2n-nexus__reply`）；收件方可以为一条消息做什么，由它的用户自己的指令决定，例如 `install claude` 写进 `CLAUDE.md` 的那段。完整显示的消息在提醒让一轮继续或开始时（本轮即将结束、待命、空闲）标为已读，无需回复的消息随提示词显示时也标为已读。其他消息仍为未读，直到用 `reply` 回复或用 `read` 读取：随提示词显示、需要回复的消息，以及工具调用后显示的所有消息，因为那段上下文可能只到了子代理；这类消息在本轮结束时照样拦住一次。每条消息只列出一次；它一直未读时，之后的通知只计数。`expectsReply: false` 的消息会标上 `(no reply needed)`，消息全都无需回复的通知不会要求回复。已加入的会议的新消息也这样送达，每个会议一行（见 [`join_meeting`](#join_meeting)）：
 
@@ -172,7 +172,7 @@
 
 未读消息 24 小时后过期，发送方随后会收到通知。通知也会报告 `notifyWhenIdle` 的结果。
 
-HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude" | "codex", input }`，其中 `input` 包含 hook 标准输入中的字段 `hook_event_name`、`session_id`、`cwd`、`stop_hook_active`、`tool_use_id`、`tool_name`、`source` 和 `reason`；响应为 `{ output }`，不为 null 时由 hook 打印。工具调用在 `POST /api/tools/call` 中用与 `tool`、`args`、`instanceId` 并列的 `caller` 指明会话：`{ client: "claude", toolUseId }` 或 `{ client: "codex", sessionId }`。它们只在可信本地 host 范围内标识对话，不是凭证：同一系统用户的任何进程都能发送它们（见 [SECURITY_zh.md](SECURITY_zh.md) 中的本地信任模型）。
+HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude" | "codex", input }`，其中 `input` 包含 hook 标准输入中的字段 `hook_event_name`、`session_id`、`cwd`、`stop_hook_active`、`tool_use_id`、`tool_name`、`source` 和 `reason`，另加 `machine: { hostname, platform, utcOffset }`（见 `contract/hook.json` 的 `schemas.hookMachine`），对话的每个事件都必须带上，缺少或无效时返回 400；响应为 `{ output }`，不为 null 时由 hook 打印。工具调用在 `POST /api/tools/call` 中用与 `tool`、`args`、`instanceId` 并列的 `caller` 指明会话：`{ client: "claude", toolUseId }` 或 `{ client: "codex", sessionId }`。它们只在可信本地 host 范围内标识对话，不是凭证：同一系统用户的任何进程都能发送它们（见 [SECURITY_zh.md](SECURITY_zh.md) 中的本地信任模型）。
 
 ### `send_message`
 
@@ -210,7 +210,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 未读模式按对话增量进行（没装 hooks 时按适配器实例）：每次调用返回尚未返回给它的他人消息，最早的在前，游标越过这些消息和它自己发的消息。
 - 对话第一次以未读模式读全局聊天时从最新消息开始：本次不返回消息，带一条 `note`；更早的消息用 `latest` 或 `afterId` 读。第一次读某个会议时从该会议的第一条开始。
 - 历史模式不动游标，包含自己的消息，也不需要识别身份。
-- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`）或实例 ID（`senderName` 为 null）；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
+- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>`）或实例 ID（`senderName` 和 `senderMachine` 为 null）；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
 - 没装 hooks 时未读模式需要调用方实例：没有 `instanceId` 的调用会失败，并返回 `read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically); unread cursors are kept per instance.` MCP 适配器总会带上它。
 
 ### `list_events`

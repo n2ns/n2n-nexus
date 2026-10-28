@@ -4,6 +4,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2026-10-29
+
+Upgrade the host and the client on every machine together, and delete `nexus.db` from the host's data directory before the new host starts: this release starts a new database and contract version, and an older host or client no longer works with it.
+
+### Added
+
+- Sessions show the machine they run on. Every hook event carries `machine` (hostname without `.local`, platform `darwin` / `linux` / `wsl` / `win32`, local time minus UTC in minutes); the host refuses an event without it. `peers` and `set_profile` return `hostname`, `platform`, `utcOffset` and `label`; introductions and notifications show `name (<label or hostname> · <platform>)`; `read_messages` returns `senderMachine`. `set_profile({ label })` names the machine in place of its hostname.
+
+### Changed
+
+- Contract version 3: the host and the client must be upgraded together (`n2n-nexus doctor` reports a mismatch).
+- The database schema is two files, one per owner, with no upgrade path from earlier databases: delete `nexus.db` before starting this host (it then says so if an old file is left).
+- Notifications, the collaboration rules, the tool descriptions and the MCP instructions state facts only (sender, text, whether and how to reply) and no longer claim that a message is an approved instruction; that authorization lives only in the `CLAUDE.md` block that `install claude` writes. A Claude Code recipient gets the reply tool's full name.
+- `send` / `read` / `reply` and `send_message` / `read_messages` name each other in their first sentence; the introduction, `peers` and the MCP instructions say that the client's own agent list does not show nexus sessions; `send` asks the sender to end its turn instead of polling with `read`.
+
 ## [0.10.0] - 2026-10-28
 
 ### Added

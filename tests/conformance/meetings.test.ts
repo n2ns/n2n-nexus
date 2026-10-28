@@ -107,12 +107,13 @@ describe("meeting tools", () => {
 describe("meetings per conversation", () => {
     const kit = agentKit(host);
     afterEach(() => kit.endSessions());
-    type Read = { identity: string; messages: { text: string; from: string; senderName: string | null }[] };
+    type Read = { identity: string; messages: { text: string; from: string; senderName: string | null; senderMachine: string | null }[] };
 
     it("gives two Claude conversations on one adapter instance their own cursors and names them as senders", async () => {
         const s = ids();
         const [a, b] = [s("a"), s("b")];
         for (const id of [a, b]) await kit.hook("claude", "SessionStart", id);
+        await kit.hook("claude", "UserPromptSubmit", a, { machine: { hostname: "box-a", platform: "wsl", utcOffset: 0 } });
         const meetingId = await start("Per session", "ide-a");
         for (const message of ["one", "two"]) expect((await host.callTool("send_message", { message, meetingId }, "ide-a")).status).toBe(200);
 
@@ -127,7 +128,7 @@ describe("meetings per conversation", () => {
         const sent = await kit.claudeTool<{ sentTo: string; identity: string; messageId: number }>(a, "send_message", { message: "from a", meetingId });
         expect(sent.payload.result).toMatchObject({ sentTo: "meeting", identity: "session", messageId: expect.any(Number) });
         const forB = (await kit.claudeTool<Read>(b, "read_messages", { meetingId })).payload.result!;
-        expect(forB.messages).toEqual([expect.objectContaining({ text: "from a", from: `claude:${a}`, senderName: expect.any(String) })]);
+        expect(forB.messages).toEqual([expect.objectContaining({ text: "from a", from: `claude:${a}`, senderName: expect.any(String), senderMachine: "box-a · WSL" })]);
         expect((await kit.claudeTool<Read>(a, "read_messages", { meetingId })).payload.result!.messages).toEqual([]);
 
         const meeting = (await listed()).meetings.find((m) => m.id === meetingId)!;

@@ -2,6 +2,7 @@
 import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
 import { TOOLS_CONTRACT, useHost } from "./harness.js";
+import { TEST_MACHINE } from "./agents.js";
 
 const host = useHost({ rateLimit: 0 });
 const ajv = new Ajv({ allErrors: true });
@@ -15,7 +16,7 @@ const manifest = (id: string, relations: { targetId: string; type: string }[] = 
 describe("tool results", () => {
     it("match each tool's output schema", async () => {
         for (const session of ["me", "peer"]) {
-            const hook = await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: session, cwd: "/work" } });
+            const hook = await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: session, cwd: "/work", machine: TEST_MACHINE } });
             expect(hook.status).toBe(200);
         }
 

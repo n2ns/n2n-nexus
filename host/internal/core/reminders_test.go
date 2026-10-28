@@ -37,7 +37,7 @@ func (h *harness) postDraft(meetingID, author string) int64 {
 
 func (h *harness) stance(meetingID string, draft int64, member, stance string) {
 	h.t.Helper()
-	h.exec(`INSERT OR REPLACE INTO meeting_stances (meeting_id, message_id, member_id, stance, at) VALUES (?, ?, ?, ?, ?)`,
+	h.exec(`INSERT OR REPLACE INTO meeting_stances (meeting_id, message_id, member_id, identity_kind, stance, at) VALUES (?, ?, ?, 'session', ?, ?)`,
 		meetingID, draft, member, stance, store.ISO(h.clock.Now()))
 }
 
@@ -53,8 +53,8 @@ func (h *harness) remind() string {
 func TestRemindStances(t *testing.T) {
 	h, n := newNotedHarness(t)
 	texts := h.core.d.Contract.Hook.Texts
-	h.exec(`INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at)
-		VALUES ('codex:a', 'codex', 'alice', '', '', 'idle', 0, 'x', 'x')`)
+	h.exec(`INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at, hostname, platform, utc_offset)
+		VALUES ('codex:a', 'codex', 'alice', '', '', 'idle', 0, 'x', 'x', 'box', 'linux', 0)`)
 	d1 := h.draftMeeting("m1", "active", 1, "codex:author", "codex:a", "codex:b", "codex:c", "codex:d")
 	h.stance("m1", d1, "codex:b", "endorse")
 	h.stance("m1", d1, "codex:c", "object")

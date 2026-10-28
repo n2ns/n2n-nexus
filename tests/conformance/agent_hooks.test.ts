@@ -112,7 +112,7 @@ describe("POST /api/hook: SessionStart introduction", () => {
 
         const text = context(await hook("claude", "SessionStart", s("h")));
         expect(text).toContain("6 other AI sessions are online:");
-        expect(text).toContain(`- codex@proj (codex:${s("b")}), codex, idle, /work/proj: fixing login`);
+        expect(text).toContain(`- codex@proj (box · Linux) (codex:${s("b")}), codex, idle, /work/proj: fixing login`);
         expect(text).not.toContain(`(codex:${s("g")})`);
         expect(text).toContain(`This conversation is claude@proj#2 (claude:${s("h")})`);
         expect(text).not.toContain(`- claude@proj#2 (claude:${s("h")})`);      // not listed among the others
@@ -126,9 +126,37 @@ describe("POST /api/hook: SessionStart introduction", () => {
         const s = ids();
         await hook("codex", "SessionStart", s("a"), { title: "Fix login" });
         const text = context(await hook("claude", "SessionStart", s("b")));
-        expect(text).toContain(`- codex@proj "Fix login" (codex:${s("a")}), codex, idle, /work/proj`);
+        expect(text).toContain(`- codex@proj (box · Linux) "Fix login" (codex:${s("a")}), codex, idle, /work/proj`);
         await send(s("a"), `claude:${s("b")}`, "hello");
-        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(` from codex@proj "Fix login" (codex:${s("a")}) at `);
+        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(` from codex@proj (box · Linux) "Fix login" (codex:${s("a")}) at `);
+    });
+
+    it("shows the machine a session runs on, as its hooks report it, in peers, the introduction and notifications", async () => {
+        const s = ids();
+        const machine = { hostname: "mac-host", platform: "darwin", utcOffset: 480 };
+        await hook("claude", "SessionStart", s("mac"), { machine });
+        await hook("codex", "SessionStart", s("win"), { machine: { hostname: "DESKTOP-1", platform: "win32", utcOffset: 480 } });
+        expect(await profile(`claude:${s("mac")}`)).toMatchObject({ hostname: "mac-host", platform: "darwin", utcOffset: 480, label: "" });
+
+        expect(context(await hook("codex", "SessionStart", s("win")))).toContain(`- claude@proj (mac-host · macOS) (claude:${s("mac")}), claude, `);
+        await claudeTool(s("mac"), "send", { to: `codex:${s("win")}`, text: "hi" });
+        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from claude@proj (mac-host · macOS) (claude:${s("mac")}) at `);
+
+        // A label replaces the hostname wherever the machine is shown.
+        const set = await claudeTool<{ profile: { label: string } }>(s("mac"), "set_profile", { label: "mac-air" });
+        expect(set.payload.result?.profile.label).toBe("mac-air");
+        await claudeTool(s("mac"), "send", { to: `codex:${s("win")}`, text: "again" });
+        expect(context(await hook("codex", "UserPromptSubmit", s("win")))).toContain(` from claude@proj (mac-air · macOS) (claude:${s("mac")}) at `);
+    });
+
+    it("refuses a hook event without a valid machine and creates no session for it", async () => {
+        const s = ids();
+        for (const machine of [undefined, { hostname: "box", platform: "plan9", utcOffset: 0 }, { hostname: "box", platform: "linux", utcOffset: 5000 }, { hostname: "", platform: "linux", utcOffset: 0 }]) {
+            const res = await host.request<{ error?: string }>("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: s("x"), cwd: "/w", machine } });
+            expect(res.status, res.body).toBe(400);
+            expect(res.payload.error).toContain("input.machine");
+        }
+        expect(await profile(`codex:${s("x")}`)).toBeUndefined();
     });
 });
 
@@ -147,7 +175,7 @@ describe("POST /api/hook: notifications", () => {
         expect(out?.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
         const text = context(out);
         expect(text.startsWith(`${NOTICE_PREFIX} 7 unread direct messages:`)).toBe(true);
-        expect(text).toContain(`--- Message ${first} from codex@proj (codex:${s("sender")}) at `);
+        expect(text).toContain(`--- Message ${first} from codex@proj (box · Linux) (codex:${s("sender")}) at `);
         expect(text).toContain(` ---\n${long}\n${MESSAGE_END.replace("%s", first)}\n${REPLY_INSTRUCTION.replace("%s", first)}\n`);
         expect(text).toContain("\nmessage 5\n");
         expect(text).not.toContain("\nmessage 6\n");

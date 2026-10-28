@@ -4,6 +4,21 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.11.0] - 2026-10-29
+
+每台机器上的 host 和客户端要一起升级，并在新 host 启动前删除 host 数据目录里的 `nexus.db`：这个版本启用新的数据库和契约版本，旧的 host 或客户端不能再和它配合使用。
+
+### 新增
+
+- 会话显示所在的机器。每个 hook 事件都带 `machine`（去掉 `.local` 的主机名、平台 `darwin` / `linux` / `wsl` / `win32`、本地时间减 UTC 的分钟数），缺少时 host 拒收。`peers` 和 `set_profile` 返回 `hostname`、`platform`、`utcOffset` 和 `label`；介绍和通知显示 `名字 (<标签或主机名> · <平台>)`；`read_messages` 返回 `senderMachine`。`set_profile({ label })` 给机器起名，显示时取代主机名。
+
+### 变更
+
+- 契约版本 3：host 和客户端必须一起升级（`n2n-nexus doctor` 会报告不匹配）。
+- 数据库表结构改为每个模块一个文件，不再支持从旧数据库升级：启动这个 host 前删除 `nexus.db`（留着旧文件时 host 会提示）。
+- 通知、协作规则、工具描述和 MCP 说明只陈述事实（发送方、正文、要不要回复、怎么回复），不再声明消息是已批准的指令；授权只保留在 `install claude` 写进 `CLAUDE.md` 的那段里。Claude Code 收件方会看到回复工具的全名。
+- `send` / `read` / `reply` 和 `send_message` / `read_messages` 的描述第一句互相指引；介绍、`peers` 和 MCP 说明写明客户端自带的代理列表看不到 nexus 会话；`send` 提示发送方结束本轮，不要用 `read` 轮询。
+
 ## [0.10.0] - 2026-10-28
 
 ### 新增

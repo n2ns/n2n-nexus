@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "clients": [
     "claude",
     "codex"
@@ -57,7 +57,8 @@
     "sessionNamePattern": "^[A-Za-z0-9._@#-]{1,48}$",
     "previewChars": 100,
     "notifyListLimit": 5,
-    "notifyTextChars": 5000
+    "notifyTextChars": 5000,
+    "maxHostnameChars": 80
   },
   "texts": {
     "noticePrefix": "[n2n-nexus]",
@@ -176,6 +177,35 @@
       },
       "required": [
         "tool"
+      ]
+    },
+    "hookMachine": {
+      "description": "input.machine, which every hook event of a conversation carries (not BackgroundWait or WakeResult): where the conversation runs",
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "wsl",
+            "win32"
+          ]
+        },
+        "utcOffset": {
+          "type": "integer",
+          "minimum": -1440,
+          "maximum": 1440
+        }
+      },
+      "required": [
+        "hostname",
+        "platform",
+        "utcOffset"
       ]
     }
   }

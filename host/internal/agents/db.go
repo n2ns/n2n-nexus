@@ -34,16 +34,51 @@ type session struct {
 	ID, Client, Name, Note, Cwd, Status string
 	// Title is the conversation's title, for display only; TitleSource is
 	// "client" (from the hooks), "self" (set_profile) or "" (none).
-	Title, TitleSource      string
+	Title, TitleSource string
+	machine
+	// Label is a short machine name the session set itself, shown in place of Hostname.
+	Label                   string
 	Listening               bool
 	CreatedAt, LastActiveAt string
 }
 
+// machine is where a conversation runs, as its hooks report it: Platform is
+// darwin, linux, wsl or win32; UTCOffset is local time minus UTC in minutes.
+type machine struct {
+	Hostname, Platform string
+	UTCOffset          int
+}
+
+// machineName is how a session's machine is shown: "<label or hostname> · <platform>", either part alone, or "".
+func (s *session) machineName() string {
+	name := s.Label
+	if name == "" {
+		name = s.Hostname
+	}
+	plat := platformNames[s.Platform]
+	switch {
+	case name != "" && plat != "":
+		return name + " · " + plat
+	case name != "":
+		return name
+	default:
+		return plat
+	}
+}
+
+var platformNames = map[string]string{"darwin": "macOS", "linux": "Linux", "wsl": "WSL", "win32": "Windows"}
+
+// knownPlatform: a platform value the hooks may report.
+func knownPlatform(platform string) bool {
+	_, ok := platformNames[platform]
+	return ok
+}
+
 type message struct {
-	ID, FromID, FromName, FromTitle, ToID, Text string
-	ReplyTo                                     *string
-	Status, CreatedAt, ExpiresAt                string
-	NotifiedAt, ReadAt                          *string
+	ID, FromID, FromName, FromTitle, FromMachine, ToID, Text string
+	ReplyTo                                                  *string
+	Status, CreatedAt, ExpiresAt                             string
+	NotifiedAt, ReadAt                                       *string
 	// ExpectsReply: the sender wants an answer; Wake: the message may wake the recipient.
 	ExpectsReply, Wake bool
 }
@@ -58,12 +93,12 @@ type notice struct {
 	Wakes bool
 }
 
-const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source"
+const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, utc_offset, label"
 
 func scanSession(row interface{ Scan(...any) error }) (*session, error) {
 	var s session
 	var listening int
-	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource); err != nil {
+	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource, &s.Hostname, &s.Platform, &s.UTCOffset, &s.Label); err != nil {
 		return nil, err
 	}
 	s.Listening = listening == 1
@@ -154,8 +189,9 @@ func baseName(cwd string) string {
 }
 
 // touch creates the session if it does not exist (named <client>@<cwd basename>)
-// and refreshes its last activity time.
-func (a *Agents) touch(id, client, cwd string, now time.Time) error {
+// and refreshes its last activity time and where it runs; m is nil only for an
+// event the client sends on its behalf (BackgroundWait), which never creates a session.
+func (a *Agents) touch(id, client, cwd string, m *machine, now time.Time) error {
 	return a.tx(func(tx *sql.Tx) error {
 		at := a.iso(now)
 		existing, err := getSession(tx, id)
@@ -163,7 +199,11 @@ func (a *Agents) touch(id, client, cwd string, now time.Time) error {
 			return err
 		}
 		if existing != nil {
-			_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ? WHERE id = ?", at, id)
+			if m == nil {
+				_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ? WHERE id = ?", at, id)
+			} else {
+				_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET last_active_at = ?, hostname = ?, platform = ?, utc_offset = ? WHERE id = ?", at, m.Hostname, m.Platform, m.UTCOffset, id)
+			}
 			return err
 		}
 		base := baseName(cwd)
@@ -175,8 +215,8 @@ func (a *Agents) touch(id, client, cwd string, now time.Time) error {
 			return err
 		}
 		_, err = tx.ExecContext(bg,
-			"INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at) VALUES (?, ?, ?, '', ?, 'idle', 0, ?, ?)",
-			id, client, name, cwd, at, at)
+			"INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at, hostname, platform, utc_offset) VALUES (?, ?, ?, '', ?, 'idle', 0, ?, ?, ?, ?, ?)",
+			id, client, name, cwd, at, at, m.Hostname, m.Platform, m.UTCOffset)
 		return err
 	})
 }
@@ -258,9 +298,9 @@ func (a *Agents) setClientTitle(id, title string) error {
 	return err
 }
 
-// updateProfile sets name, note and/or title; a name another non-offline session uses is the caller's error.
+// updateProfile sets name, note, title and/or label; a name another non-offline session uses is the caller's error.
 // A non-empty title is the session's own (the client's no longer replaces it); "" clears it and lets the client's apply again.
-func (a *Agents) updateProfile(id string, name, note, title *string) (*session, error) {
+func (a *Agents) updateProfile(id string, name, note, title, label *string) (*session, error) {
 	var out *session
 	err := a.tx(func(tx *sql.Tx) error {
 		if name != nil {
@@ -286,6 +326,11 @@ func (a *Agents) updateProfile(id string, name, note, title *string) (*session, 
 				source = ""
 			}
 			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET title = ?, title_source = ? WHERE id = ?", *title, source, id); err != nil {
+				return err
+			}
+		}
+		if label != nil {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET label = ? WHERE id = ?", *label, id); err != nil {
 				return err
 			}
 		}
@@ -351,7 +396,7 @@ func (a *Agents) addMessage(fromID, toID, text string, replyTo *string, expectsR
 }
 
 const messageSelect = `
-    SELECT m.id, m.from_id, s.name AS from_name, s.title AS from_title, m.to_id, m.text, m.reply_to, m.status,
+    SELECT m.id, m.from_id, s.name AS from_name, s.title AS from_title, s.hostname, s.platform, s.label, m.to_id, m.text, m.reply_to, m.status,
            m.created_at, m.expires_at, m.notified_at, m.read_at, m.expects_reply, m.wake
     FROM agent_messages m JOIN agent_sessions s ON s.id = m.from_id`
 
@@ -364,9 +409,11 @@ func queryMessages(q querier, query string, args ...any) ([]*message, error) {
 	var out []*message
 	for rows.Next() {
 		var m message
-		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake); err != nil {
+		var from session
+		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake); err != nil {
 			return nil, err
 		}
+		m.FromMachine = from.machineName()
 		out = append(out, &m)
 	}
 	return out, rows.Err()
@@ -610,8 +657,12 @@ func cutUnits(s string, limit int) string {
 	return s
 }
 
-// displayName is how notifications name a session: its name, followed by its title in quotes when it has one.
-func displayName(name, title string) string {
+// displayName is how notifications name a session: its name, its machine in
+// parentheses when known, and its title in quotes when it has one.
+func displayName(name, machine, title string) string {
+	if machine != "" {
+		name = fmt.Sprintf("%s (%s)", name, machine)
+	}
 	if title == "" {
 		return name
 	}

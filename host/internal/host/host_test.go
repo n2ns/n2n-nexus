@@ -35,7 +35,7 @@ func TestHealthCountsOnlineSessions(t *testing.T) {
 		return sessions["online"]
 	}
 	hook := func(event string) {
-		raw, _ := json.Marshal(map[string]any{"client": "codex", "input": map[string]any{"hook_event_name": event, "session_id": "s", "cwd": "/tmp/x"}})
+		raw, _ := json.Marshal(map[string]any{"client": "codex", "input": map[string]any{"hook_event_name": event, "session_id": "s", "cwd": "/tmp/x", "machine": map[string]any{"hostname": "box", "platform": "linux", "utcOffset": 0}}})
 		res, err := http.Post(base+"/api/hook", "application/json", bytes.NewReader(raw))
 		if err != nil || res.StatusCode != 200 {
 			t.Fatalf("%s: %v %v", event, res, err)

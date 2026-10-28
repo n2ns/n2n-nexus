@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
 )
@@ -153,16 +154,18 @@ type readMessagesArgs struct {
 
 // chatMessage is a global or meeting message. ID is its number: the global
 // chat id, or its number in the meeting; row is the table id, which orders
-// messages and keeps read cursors. SenderName is the sending session's name,
-// null for an instance; Category is null when none was given.
+// messages and keeps read cursors. SenderName is the sending session's name
+// and SenderMachine its machine ("<label or hostname> · <platform>"), null for
+// an instance or when unknown; Category is null when none was given.
 type chatMessage struct {
-	row        int64
-	ID         int64   `json:"id"`
-	From       string  `json:"from"`
-	SenderName *string `json:"senderName"`
-	Text       string  `json:"text"`
-	Category   *string `json:"category"`
-	Timestamp  string  `json:"timestamp"`
+	row           int64
+	ID            int64   `json:"id"`
+	From          string  `json:"from"`
+	SenderName    *string `json:"senderName"`
+	SenderMachine *string `json:"senderMachine"`
+	Text          string  `json:"text"`
+	Category      *string `json:"category"`
+	Timestamp     string  `json:"timestamp"`
 }
 
 // firstGlobalReadNote is returned by the first unread read of global chat as a session.
@@ -189,7 +192,9 @@ func sourceOf(meetingID string) messageSource {
 
 // query selects the context's messages matching cond (with its arguments appended).
 func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chatMessage, error) {
-	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, s.name
+	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, s.name,
+		CASE WHEN s.label != '' THEN s.label ELSE s.hostname END,
+		CASE s.platform WHEN 'darwin' THEN 'macOS' WHEN 'linux' THEN 'Linux' WHEN 'wsl' THEN 'WSL' WHEN 'win32' THEN 'Windows' ELSE '' END
 		FROM `+s.table+` m LEFT JOIN agent_sessions s ON s.id = m.sender
 		WHERE `+s.where+cond+` `+tail, append(append([]any{}, s.args...), args...)...)
 	if err != nil {
@@ -199,8 +204,8 @@ func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chat
 	var out []chatMessage
 	for rows.Next() {
 		var m chatMessage
-		var category, name sql.NullString
-		if err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name); err != nil {
+		var category, name, host, plat sql.NullString
+		if err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name, &host, &plat); err != nil {
 			return nil, err
 		}
 		if category.Valid {
@@ -208,6 +213,9 @@ func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chat
 		}
 		if name.Valid {
 			m.SenderName = &name.String
+		}
+		if machine := strings.Trim(host.String+" · "+plat.String, " ·"); machine != "" {
+			m.SenderMachine = &machine
 		}
 		out = append(out, m)
 	}

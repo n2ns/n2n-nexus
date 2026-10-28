@@ -257,7 +257,7 @@ func messageTexts(res map[string]any) []string {
 
 func TestGlobalChatPerSession(t *testing.T) {
 	h := newHarnessWith(t, fakeIdentities{})
-	h.exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at) VALUES ('codex:a', 'codex', 'alice', '/w', 'idle', 'x', 'x')`)
+	h.exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset) VALUES ('codex:a', 'codex', 'alice', '/w', 'idle', 'x', 'x', 'box', 'linux', 0)`)
 	h.ok("send_message", map[string]any{"message": "old"}, "mcp-0")
 
 	// A session's first read starts at the newest message, with a note.

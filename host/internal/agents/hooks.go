@@ -3,6 +3,8 @@ package agents
 import (
 	"context"
 	"time"
+
+	"github.com/n2ns/n2n-nexus/host/internal/api"
 )
 
 func sessionKey(client, clientSessionID string) string { return client + ":" + clientSessionID }
@@ -40,6 +42,22 @@ func (a *Agents) revive(id string) error {
 	return a.setStatus(id, "working")
 }
 
+// machineOf reads where the session runs from a hook event's input: every
+// event of the conversation carries machine {hostname, platform, utcOffset}.
+func (a *Agents) machineOf(input map[string]any) (*machine, error) {
+	raw, _ := input["machine"].(map[string]any)
+	hostname, _ := raw["hostname"].(string)
+	platform, _ := raw["platform"].(string)
+	offset, isNumber := raw["utcOffset"].(float64)
+	if hostname == "" || !knownPlatform(platform) || !isNumber || offset != float64(int(offset)) || offset < -1440 || offset > 1440 {
+		return nil, api.Errorf("Invalid hook request: input.machine must be {hostname, platform: darwin | linux | wsl | win32, utcOffset: minutes from UTC}; upgrade n2n-nexus to the host's version")
+	}
+	if r := []rune(hostname); len(r) > a.o.Contract.Hook.Limits.MaxHostnameChars {
+		hostname = string(r[:a.o.Contract.Hook.Limits.MaxHostnameChars])
+	}
+	return &machine{Hostname: hostname, Platform: platform, UTCOffset: int(offset)}, nil
+}
+
 // Hook handles one client hook event (POST /api/hook); it returns what the hook prints, or nil.
 func (a *Agents) Hook(ctx context.Context, client string, input map[string]any) (map[string]any, error) {
 	a.mu.Lock()
@@ -68,7 +86,7 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 			return nil, nil, err
 		}
 		// The client is waiting on its behalf: activity, so a long wait does not let the session go stale.
-		if err := a.touch(id, client, "", now); err != nil {
+		if err := a.touch(id, client, "", nil, now); err != nil {
 			return nil, nil, err
 		}
 		// A wait asks again every few minutes: other sessions that went stale meanwhile tell their subscribers.
@@ -85,8 +103,12 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 	}
 	// Any real event of the session follows a wake it was handed: delivered, or overtaken by real input.
 	delete(a.dispatches, id)
+	m, err := a.machineOf(input)
+	if err != nil {
+		return nil, nil, err
+	}
 	cwd, _ := input["cwd"].(string)
-	if err := a.touch(id, client, cwd, now); err != nil {
+	if err := a.touch(id, client, cwd, m, now); err != nil {
 		return nil, nil, err
 	}
 	if err := a.expireAll(now); err != nil {

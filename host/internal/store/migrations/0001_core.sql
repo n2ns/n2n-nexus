@@ -63,6 +63,12 @@ CREATE TABLE global_docs (
 -- is_default marks the meeting send_message and end_meeting use without a
 -- meetingId (always an active one); active_order is the order meetings became
 -- active, so ending the default one hands the role to the latest still active.
+-- current_proposal_id: the table id (meeting_messages.id) of the draft that
+-- waits for approval, set only by publishing a draft (send_message draft);
+-- approvers_version counts the changes of its approver list. end_reason:
+-- 'consensus' when every required approver endorsed the draft, 'manual' when
+-- end_meeting closed it. draft_reminded_at: when the draft's author was told
+-- who has not taken a stance yet (once per draft).
 CREATE TABLE meetings (
     id TEXT PRIMARY KEY,
     topic TEXT NOT NULL,
@@ -74,20 +80,79 @@ CREATE TABLE meetings (
     created_at TEXT NOT NULL,
     closed_at TEXT,
     summary TEXT,
+    current_proposal_id INTEGER,
+    approvers_version INTEGER NOT NULL DEFAULT 0,
+    end_reason TEXT CHECK (end_reason IN ('manual', 'consensus')),
+    draft_reminded_at TEXT,
     CHECK (is_default = 0 OR status = 'active')
 );
 CREATE INDEX idx_meetings_status ON meetings(status);
 CREATE UNIQUE INDEX idx_meetings_default ON meetings(is_default) WHERE is_default = 1;
 
+-- seq numbers a meeting's messages from 1; tools show and take it as the
+-- message id, while the table id still orders messages and keeps read cursors.
 CREATE TABLE meeting_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
     sender TEXT NOT NULL,
     text TEXT NOT NULL,
     category TEXT CHECK (category IN ('MEETING_START', 'PROPOSAL', 'DECISION', 'UPDATE', 'CHAT')),
     timestamp TEXT NOT NULL
 );
 CREATE INDEX idx_meeting_messages_meeting ON meeting_messages(meeting_id, id);
+CREATE UNIQUE INDEX idx_meeting_messages_seq ON meeting_messages(meeting_id, seq);
+
+-- Who takes part in a meeting (written here, notified by internal/agents): a
+-- conversation session key (claude:<id> / codex:<id>), or an adapter instance
+-- id for a client without hooks, which cannot be notified; identity_kind says
+-- which, since a custom adapter id may look like a session id. mode: active
+-- members are woken by new messages of others, async members see them at
+-- their next hook. approver: whether the member's approval is required for a
+-- decision. draft_eligible: the member joined before the current draft was
+-- published, so it may approve it. notified_id is the table id of the newest
+-- meeting message announced to the member (at join: the newest message then);
+-- wakes and last_woken_at count the wakes the meeting caused. left_at is set
+-- by leave_meeting; a member that left is not notified.
+CREATE TABLE meeting_members (
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL,
+    identity_kind TEXT NOT NULL CHECK (identity_kind IN ('session', 'instance')),
+    mode TEXT NOT NULL CHECK (mode IN ('active', 'async')),
+    approver TEXT NOT NULL CHECK (approver IN ('required', 'optional')),
+    draft_eligible INTEGER NOT NULL DEFAULT 0 CHECK (draft_eligible IN (0, 1)),
+    joined_at TEXT NOT NULL,
+    left_at TEXT,
+    notified_id INTEGER NOT NULL DEFAULT 0,
+    wakes INTEGER NOT NULL DEFAULT 0,
+    last_woken_at TEXT,
+    PRIMARY KEY (meeting_id, member_id)
+);
+CREATE INDEX idx_meeting_members_member ON meeting_members(member_id, left_at);
+
+-- The required approvers of a meeting's current draft: the conversation
+-- sessions that were required members when it was published, changed only by
+-- an explicit leave or approver change. reminded_at: when the approver was
+-- reminded of its missing stance (once per draft).
+CREATE TABLE meeting_approvers (
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL,
+    reminded_at TEXT,
+    PRIMARY KEY (meeting_id, member_id)
+);
+
+-- Stances on proposals (message_id: the table id of a PROPOSAL message). A
+-- member has one stance per proposal and may change or withdraw it.
+CREATE TABLE meeting_stances (
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL,
+    member_id TEXT NOT NULL,
+    identity_kind TEXT NOT NULL CHECK (identity_kind IN ('session', 'instance')),
+    stance TEXT NOT NULL CHECK (stance IN ('endorse', 'object')),
+    note TEXT,
+    at TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, message_id, member_id)
+);
 
 CREATE TABLE decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

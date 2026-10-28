@@ -120,7 +120,7 @@ func (s *Store) migrate() error {
 		}
 	}
 	if current > len(list) {
-		return fmt.Errorf("database version %d is newer than this host (%d); upgrade n2n-nexus-host", current, len(list))
+		return fmt.Errorf("database version %d does not match this host (%d): upgrade n2n-nexus-host, or delete %s when the CHANGELOG of this release says to reset the data directory", current, len(list), FileName)
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { MAX_TITLE_CHARS } from "../src/contract.js";
 import { waitForWake } from "../src/cli/hook.js";
+import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
 
 // Tests the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
@@ -126,7 +127,7 @@ describe("n2n-nexus hook, forwarding", () => {
         expect(result.stdout).toBe(JSON.stringify(output) + "\n");
         expect(fake.requests).toEqual([{
             url: "/api/hook",
-            body: { client: "claude", input: { hook_event_name: "PostToolUse", session_id: "s1", cwd: "/work", tool_use_id: "t1", tool_name: "Bash" } }
+            body: { client: "claude", input: { hook_event_name: "PostToolUse", session_id: "s1", cwd: "/work", tool_use_id: "t1", tool_name: "Bash", machine: machineInfo() } }
         }]);
     });
 
@@ -134,8 +135,8 @@ describe("n2n-nexus hook, forwarding", () => {
         await runHook(["codex", "--endpoint", fake.endpoint], JSON.stringify({ hook_event_name: "Stop", session_id: "c1", stop_hook_active: true, last_assistant_message: "hi" }));
         await runHook(["codex", "--endpoint", fake.endpoint], JSON.stringify({ hook_event_name: "SessionEnd", session_id: "c1", reason: "exit", source: "x" }));
         expect(fake.requests.map((r) => r.body)).toEqual([
-            { client: "codex", input: { hook_event_name: "Stop", session_id: "c1", stop_hook_active: true } },
-            { client: "codex", input: { hook_event_name: "SessionEnd", session_id: "c1", source: "x", reason: "exit" } }
+            { client: "codex", input: { hook_event_name: "Stop", session_id: "c1", stop_hook_active: true, machine: machineInfo() } },
+            { client: "codex", input: { hook_event_name: "SessionEnd", session_id: "c1", source: "x", reason: "exit", machine: machineInfo() } }
         ]);
     });
 
@@ -231,7 +232,7 @@ describe("n2n-nexus hook, conversation title", () => {
             { type: "ai-title", aiTitle: "Later auto title", sessionId: "s" }
         ], 300 * 1024);
         const input = await forwarded("claude", { hook_event_name: "UserPromptSubmit", session_id: "s", transcript_path: file, prompt: "hi" });
-        expect(input).toEqual({ hook_event_name: "UserPromptSubmit", session_id: "s", title: "Renamed" });
+        expect(input).toEqual({ hook_event_name: "UserPromptSubmit", session_id: "s", title: "Renamed", machine: machineInfo() });
     });
 
     it("forwards the automatic title when the transcript has no custom one", async () => {
@@ -253,7 +254,7 @@ describe("n2n-nexus hook, conversation title", () => {
 
     it("forwards no title when the transcript is missing", async () => {
         const input = await forwarded("claude", { hook_event_name: "SessionStart", session_id: "s", transcript_path: path.join(TMP, "no-such.jsonl") });
-        expect(input).toEqual({ hook_event_name: "SessionStart", session_id: "s" });
+        expect(input).toEqual({ hook_event_name: "SessionStart", session_id: "s", machine: machineInfo() });
     });
 
     it("reads no title on PostToolUse", async () => {
@@ -286,7 +287,7 @@ describe("n2n-nexus hook, conversation title", () => {
     it("forwards no Codex title without a state database", async () => {
         const home = path.join(TMP, "codex-empty-home");
         fs.mkdirSync(home, { recursive: true });
-        expect(await forwarded("codex", { hook_event_name: "SessionStart", session_id: "c1" }, { CODEX_HOME: home })).toEqual({ hook_event_name: "SessionStart", session_id: "c1" });
+        expect(await forwarded("codex", { hook_event_name: "SessionStart", session_id: "c1" }, { CODEX_HOME: home })).toEqual({ hook_event_name: "SessionStart", session_id: "c1", machine: machineInfo() });
         expect(await forwarded("codex", { hook_event_name: "Stop", session_id: "c1" }, { CODEX_HOME: path.join(TMP, "no-such-home") })).not.toHaveProperty("title");
     });
 });

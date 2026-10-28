@@ -236,7 +236,7 @@ describe("doctor", () => {
         expect(result.stdout).toContain('note: after upgrading Node, run "n2n-nexus install codex" again, or install with --node <path>');
     });
 
-    it("reports an MCP command not in the npx form, as an older install wrote it", async () => {
+    it("reports an MCP command not in the npx form", async () => {
         writeClaude(hookCommand("claude"), { command: NODE, args: [ENTRY, "mcp"] });
         const result = await run(["claude"]);
         expect(result.code).toBe(1);

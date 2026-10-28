@@ -650,7 +650,7 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			if i == limit {
 				break
 			}
-			lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, displayName(m.FromName, m.FromTitle), m.FromID, m.CreatedAt))
+			lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, displayName(m.FromName, m.FromMachine, m.FromTitle), m.FromID, m.CreatedAt))
 			if m.ReplyTo != nil {
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
@@ -805,7 +805,7 @@ func (a *Agents) introduce(sessionID string) (string, error) {
 			if i == h.Limits.NotifyListLimit {
 				break
 			}
-			line := fmt.Sprintf("- %s (%s), %s, %s", displayName(p.Name, p.Title), p.ID, p.Client, p.Status)
+			line := fmt.Sprintf("- %s (%s), %s, %s", displayName(p.Name, p.machineName(), p.Title), p.ID, p.Client, p.Status)
 			if p.Cwd != "" {
 				line += ", " + p.Cwd
 			}

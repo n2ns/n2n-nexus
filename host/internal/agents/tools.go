@@ -12,13 +12,17 @@ type profile struct {
 	Title        string `json:"title"`
 	Client       string `json:"client"`
 	Cwd          string `json:"cwd"`
+	Hostname     string `json:"hostname"`
+	Platform     string `json:"platform"`
+	UTCOffset    int    `json:"utcOffset"`
+	Label        string `json:"label"`
 	Note         string `json:"note"`
 	Status       string `json:"status"`
 	LastActiveAt string `json:"lastActiveAt"`
 }
 
 func profileOf(s *session) profile {
-	return profile{ID: s.ID, Name: s.Name, Title: s.Title, Client: s.Client, Cwd: s.Cwd, Note: s.Note, Status: s.Status, LastActiveAt: s.LastActiveAt}
+	return profile{ID: s.ID, Name: s.Name, Title: s.Title, Client: s.Client, Cwd: s.Cwd, Hostname: s.Hostname, Platform: s.Platform, UTCOffset: s.UTCOffset, Label: s.Label, Note: s.Note, Status: s.Status, LastActiveAt: s.LastActiveAt}
 }
 
 type recipient struct {
@@ -246,18 +250,19 @@ func (a *Agents) toolSetProfile(c api.Call) (any, error) {
 		Name  *string `json:"name"`
 		Note  *string `json:"note"`
 		Title *string `json:"title"`
+		Label *string `json:"label"`
 	}
 	if err := decode(c, &args); err != nil {
 		return nil, err
 	}
-	if args.Name == nil && args.Note == nil && args.Title == nil {
-		return nil, api.Errorf("Invalid arguments for set_profile: Pass at least one of name, note and title")
+	if args.Name == nil && args.Note == nil && args.Title == nil && args.Label == nil {
+		return nil, api.Errorf("Invalid arguments for set_profile: Pass at least one of name, note, title and label")
 	}
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
 	}
-	s, err := a.updateProfile(self.ID, args.Name, args.Note, args.Title)
+	s, err := a.updateProfile(self.ID, args.Name, args.Note, args.Title, args.Label)
 	if err != nil {
 		return nil, err
 	}

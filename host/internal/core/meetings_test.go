@@ -392,7 +392,7 @@ func TestJoinAndLeaveMeeting(t *testing.T) {
 
 func TestListMeetingsMembers(t *testing.T) {
 	h := newHarnessWith(t, fakeIdentities{})
-	h.exec(`INSERT INTO agent_sessions (id, client, name, title, cwd, status, created_at, last_active_at) VALUES ('codex:a', 'codex', 'alice', 'Fix login', '/w', 'listening', 'x', 'x')`)
+	h.exec(`INSERT INTO agent_sessions (id, client, name, title, cwd, status, created_at, last_active_at, hostname, platform, utc_offset) VALUES ('codex:a', 'codex', 'alice', 'Fix login', '/w', 'listening', 'x', 'x', 'box', 'linux', 0)`)
 	id := h.as("a", "start_meeting", map[string]any{"topic": "t"})["meetingId"].(string)
 	h.ok("join_meeting", map[string]any{"meetingId": id, "mode": "async"}, "mcp-plain")
 	h.exec(`UPDATE meeting_members SET wakes = 3, last_woken_at = 'w' WHERE member_id = 'codex:a'`)

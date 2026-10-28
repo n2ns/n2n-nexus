@@ -132,6 +132,7 @@ type Hook struct {
 		PreviewChars        int    `json:"previewChars"`
 		NotifyListLimit     int    `json:"notifyListLimit"`
 		NotifyTextChars     int    `json:"notifyTextChars"`
+		MaxHostnameChars    int    `json:"maxHostnameChars"`
 	} `json:"limits"`
 	Texts struct {
 		NoticePrefix        string `json:"noticePrefix"`

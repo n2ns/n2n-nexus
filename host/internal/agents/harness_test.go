@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,8 @@ type harness struct {
 	t0     time.Time
 	toolNo atomic.Int64
 	opts   Options
+	// machines: the machine a session reported in its last event, sent again with its later events.
+	machines map[string]any
 }
 
 type hostOption func(*Options)
@@ -51,7 +54,7 @@ func maxTurns(n int) hostOption             { return func(o *Options) { o.MaxAut
 // fresh data directory, with the clock pinned to t0.
 func start(t *testing.T, opts ...hostOption) *harness {
 	t.Helper()
-	h := &harness{t: t, dir: t.TempDir(), clk: &clock.Settable{}, t0: time.UnixMilli(time.Now().UnixMilli())}
+	h := &harness{t: t, dir: t.TempDir(), clk: &clock.Settable{}, t0: time.UnixMilli(time.Now().UnixMilli()), machines: map[string]any{}}
 	h.clk.Set(h.t0)
 	h.opts = Options{Clock: h.clk, Contract: testContract, Logger: log.New(io.Discard, "", 0),
 		ListenWait: listenMS * time.Millisecond, MaxAutoTurns: testContract.Hook.Limits.DefaultMaxAutoTurns}
@@ -130,8 +133,11 @@ func (h *harness) post(ctx context.Context, path string, body any) (int, map[str
 	return res.StatusCode, payload, nil
 }
 
+// testMachine is where every test session runs unless a test says otherwise.
+var testMachine = map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(0)}
+
 func hookInput(event, sessionID string, extra map[string]any) map[string]any {
-	in := map[string]any{"hook_event_name": event, "session_id": sessionID, "cwd": "/work/proj"}
+	in := map[string]any{"hook_event_name": event, "session_id": sessionID, "cwd": "/work/proj", "machine": testMachine}
 	for k, v := range extra {
 		if v == nil {
 			delete(in, k)
@@ -145,9 +151,16 @@ func hookInput(event, sessionID string, extra map[string]any) map[string]any {
 // hook sends a hook event (cwd /work/proj unless extra overrides it; a nil value removes a field).
 func (h *harness) hook(client, event, sessionID string, extra ...map[string]any) hookOutput {
 	h.t.Helper()
-	var x map[string]any
+	x := map[string]any{}
 	if len(extra) > 0 {
-		x = extra[0]
+		maps.Copy(x, extra[0])
+	}
+	// A session keeps reporting the machine it reported last, as a real client does.
+	key := client + ":" + sessionID
+	if m, ok := x["machine"]; ok {
+		h.machines[key] = m
+	} else if m, ok := h.machines[key]; ok {
+		x["machine"] = m
 	}
 	status, payload, err := h.post(context.Background(), "/api/hook", map[string]any{"client": client, "input": hookInput(event, sessionID, x)})
 	if err != nil || status != 200 {

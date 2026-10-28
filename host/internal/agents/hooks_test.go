@@ -108,7 +108,7 @@ func TestSessionStartIntroduction(t *testing.T) {
 
 	text := h.hook("claude", "SessionStart", "h").context()
 	contains(t, text, "6 other AI sessions are online:")
-	contains(t, text, "- codex@proj (codex:b), codex, idle, /work/proj: fixing login")
+	contains(t, text, "- codex@proj (box · Linux) (codex:b), codex, idle, /work/proj: fixing login")
 	notContains(t, text, "(codex:g)")
 	contains(t, text, "This conversation is claude@proj#2 (claude:h)")
 	notContains(t, text, "- claude@proj#2 (claude:h)")
@@ -180,7 +180,7 @@ func TestUserPromptSubmitNotification(t *testing.T) {
 		t.Fatal(text)
 	}
 	// Each listed message is shown whole, between its header and end lines, with how to answer it.
-	contains(t, text, "--- Message "+first+" from codex@proj (codex:sender) at ")
+	contains(t, text, "--- Message "+first+" from codex@proj (box · Linux) (codex:sender) at ")
 	contains(t, text, " ---\n"+long+"\n"+fmt.Sprintf(texts.MessageEnd, first)+"\n"+fmt.Sprintf(texts.ReplyInstruction, first)+"\n")
 	contains(t, text, "\nmessage 5\n")
 	notContains(t, text, "\nmessage 6\n")
@@ -917,6 +917,57 @@ func TestSeveralHostsAtOnce(t *testing.T) {
 	contains(t, waiting.wait(t).str("reason"), "on host 1")
 }
 
+func TestSessionMachine(t *testing.T) {
+	h := start(t)
+	mac := map[string]any{"machine": map[string]any{"hostname": "mac-host", "platform": "darwin", "utcOffset": float64(480)}}
+	h.hook("claude", "SessionStart", "mac", mac)
+	h.hook("codex", "SessionStart", "win", map[string]any{"machine": map[string]any{"hostname": "win-host", "platform": "win32", "utcOffset": float64(480)}})
+
+	// peers reports what the hooks said.
+	p := h.codex("win", "peers", nil).result["peers"].([]any)[0].(map[string]any)
+	eq(t, p["hostname"], any("mac-host"))
+	eq(t, p["platform"], any("darwin"))
+	eq(t, p["utcOffset"], any(float64(480)))
+	eq(t, p["label"], any(""))
+
+	// The introduction and a notification name the machine.
+	contains(t, h.hook("codex", "SessionStart", "win").context(), "- claude@proj (mac-host · macOS) (claude:mac), claude, ")
+	h.claude("mac", "send", map[string]any{"to": "codex:win", "text": "hi"})
+	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj (mac-host · macOS) (claude:mac) at ")
+
+	// A label replaces the hostname; "" removes it again.
+	eq(t, h.claude("mac", "set_profile", map[string]any{"label": "mac-air"}).result["profile"].(map[string]any)["label"], any("mac-air"))
+	h.claude("mac", "send", map[string]any{"to": "codex:win", "text": "again"})
+	contains(t, h.hook("codex", "UserPromptSubmit", "win").context(), " from claude@proj (mac-air · macOS) (claude:mac) at ")
+	h.claude("mac", "set_profile", map[string]any{"label": ""})
+	eq(t, h.session("claude:mac").machineName(), "mac-host · macOS")
+
+	// Every event reports the machine again, and the latest report counts.
+	h.hook("claude", "Stop", "mac", map[string]any{"stop_hook_active": true, "machine": map[string]any{"hostname": "mac-host", "platform": "wsl", "utcOffset": float64(-300)}})
+	eq(t, h.session("claude:mac").machineName(), "mac-host · WSL")
+	eq(t, h.session("claude:mac").UTCOffset, -300)
+}
+
+func TestHookWithoutMachineRefused(t *testing.T) {
+	h := start(t)
+	for name, m := range map[string]any{
+		"missing":          nil,
+		"unknown platform": map[string]any{"hostname": "box", "platform": "plan9", "utcOffset": float64(0)},
+		"offset too large": map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(5000)},
+		"offset fraction":  map[string]any{"hostname": "box", "platform": "linux", "utcOffset": float64(1.5)},
+		"no hostname":      map[string]any{"hostname": "", "platform": "linux", "utcOffset": float64(0)},
+	} {
+		status, payload, err := h.post(context.Background(), "/api/hook", map[string]any{"client": "codex", "input": hookInput("SessionStart", "s", map[string]any{"machine": m})})
+		if err != nil || status != 400 {
+			t.Fatalf("%s: %d %v %v", name, status, payload, err)
+		}
+		contains(t, payload["error"].(string), "input.machine")
+	}
+	if s := h.session("codex:s"); s != nil {
+		t.Fatalf("a refused event created the session: %+v", s)
+	}
+}
+
 func TestSessionTitles(t *testing.T) {
 	h := start(t)
 	same := func(id, wantTitle, wantSource string) {
@@ -963,13 +1014,13 @@ func TestSessionTitles(t *testing.T) {
 	eq(t, peers.result["self"].(map[string]any)["title"], any("Review"))
 	eq(t, peers.result["peers"].([]any)[0].(map[string]any)["title"], any("Mine"))
 	intro := h.hook("claude", "SessionStart", "c").context()
-	contains(t, intro, "- codex@proj \"Mine\" (codex:a), codex, ")
-	contains(t, intro, "- claude@proj \"Review\" (claude:b), claude, ")
+	contains(t, intro, "- codex@proj (box · Linux) \"Mine\" (codex:a), codex, ")
+	contains(t, intro, "- claude@proj (box · Linux) \"Review\" (claude:b), claude, ")
 	h.send("a", "claude:c", "hello", false)
-	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), " from codex@proj \"Mine\" (codex:a) at ")
+	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), " from codex@proj (box · Linux) \"Mine\" (codex:a) at ")
 	// Without a title, only the name.
 	h.claude("c", "send", map[string]any{"to": "codex:a", "text": "hi"})
-	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), " from claude@proj#2 (claude:c) at ")
+	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), " from claude@proj#2 (box · Linux) (claude:c) at ")
 
 	// An empty title clears it, and the client's title applies again.
 	cleared := h.codex("a", "set_profile", map[string]any{"title": ""})

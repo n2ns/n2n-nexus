@@ -20,12 +20,17 @@ export type HookOutput = {
     dispatchId?: string;
     timeout?: boolean;
 } | null;
-export type Profile = { id: string; name: string; title: string; client: HookClient; cwd: string; note: string; status: string; lastActiveAt: string };
+export type Profile = {
+    id: string; name: string; title: string; client: HookClient; cwd: string; hostname: string; platform: string; utcOffset: number | null; label: string;
+    note: string; status: string; lastActiveAt: string;
+};
 
 export const { noticePrefix: NOTICE_PREFIX, notifyClosing: NOTIFY_CLOSING, stopClosing: STOP_CLOSING, statusNote: STATUS_NOTE,
     sessionStartClosing: SESSION_START_CLOSING, collaborationRules: COLLABORATION_RULES, messageTrustNote: MESSAGE_TRUST_NOTE, messageEnd: MESSAGE_END,
     messageCut: MESSAGE_CUT, replyInstruction: REPLY_INSTRUCTION, readRest: READ_REST, replyTool: REPLY_TOOL, noAgentSessionError: NO_AGENT_SESSION_ERROR } = HOOK.texts;
 export const BACKGROUND_WAIT_EVENT = HOOK.backgroundWaitEvent;
+/** Where every test session runs unless a test says otherwise. */
+export const TEST_MACHINE = { hostname: "box", platform: "linux", utcOffset: 0 };
 export const WAKE_RESULT_EVENT = HOOK.wakeResultEvent;
 
 const OBSERVER = "conformance-observer";
@@ -38,10 +43,20 @@ export function agentKit(host: Host) {
     const track = (client: HookClient, input: Record<string, unknown>) => {
         if (typeof input.session_id === "string" && input.session_id) touched.set(`${client}:${input.session_id}`, client);
     };
+    /** The machine each session reported last, sent again with its later events as a real client does. */
+    const machines = new Map<string, unknown>();
+    const withMachine = (client: HookClient, sessionId: string, extra: Record<string, unknown>) => {
+        const key = `${client}:${sessionId}`;
+        if ("machine" in extra) {
+            machines.set(key, extra.machine);
+            return extra;
+        }
+        return { machine: machines.get(key) ?? TEST_MACHINE, ...extra };
+    };
 
-    /** POST /api/hook with cwd /work/proj unless `extra` says otherwise. */
+    /** POST /api/hook with cwd /work/proj and TEST_MACHINE unless `extra` says otherwise. */
     const hookRaw = (client: HookClient, event: string, sessionId: string, extra: Record<string, unknown> = {}) => {
-        const input = { hook_event_name: event, session_id: sessionId, cwd: "/work/proj", ...extra };
+        const input = { hook_event_name: event, session_id: sessionId, cwd: "/work/proj", ...withMachine(client, sessionId, extra) };
         track(client, input);
         return host.request<{ output?: HookOutput; ok?: boolean; error?: string }>("POST", "/api/hook", { client, input });
     };
@@ -54,7 +69,7 @@ export function agentKit(host: Host) {
 
     /** A hook request held open (listening Stop, background wait); `cancel` kills it as the client does. No cwd, like the waiting hooks. */
     function openHook(client: HookClient, event: string, sessionId: string, extra: Record<string, unknown> = {}) {
-        const input = { hook_event_name: event, session_id: sessionId, ...extra };
+        const input = { hook_event_name: event, session_id: sessionId, ...withMachine(client, sessionId, extra) };
         track(client, input);
         const { response, cancel } = host.openRequest<{ output: HookOutput }>("POST", "/api/hook", { client, input });
         return { response, cancel };
@@ -79,10 +94,10 @@ export function agentKit(host: Host) {
     /** Every session the host lists (offline ones active within the peer window included), read by the observer. */
     async function sessions(): Promise<Profile[]> {
         // SessionEnd creates the observer offline (or ends it again after the previous read).
-        expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer" } })).status).toBe(200);
+        expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer", machine: TEST_MACHINE } })).status).toBe(200);
         const res = await host.callTool<{ peers: Profile[] }>("peers", { includeOffline: true }, "observer", { client: "codex", sessionId: OBSERVER });
         expect(res.status, res.body).toBe(200);
-        expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer" } })).status).toBe(200);
+        expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer", machine: TEST_MACHINE } })).status).toBe(200);
         return res.payload.result!.peers;
     }
 
@@ -92,7 +107,7 @@ export function agentKit(host: Host) {
     /** End every session the current test touched. */
     async function endSessions() {
         for (const [key, client] of touched) {
-            await host.request("POST", "/api/hook", { client, input: { hook_event_name: "SessionEnd", session_id: key.slice(client.length + 1) } });
+            await host.request("POST", "/api/hook", { client, input: { hook_event_name: "SessionEnd", session_id: key.slice(client.length + 1), machine: TEST_MACHINE } });
         }
         touched.clear();
     }

@@ -90,7 +90,7 @@ CODEX_JOB=$!
 for _ in $(seq 1 60); do grep -q "sleep 40" "$DIR/b3.log" 2>/dev/null && break; sleep 1; done
 "$NODE" -e '
     fetch(process.argv[1] + "/api/hook", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client: "claude", input: { hook_event_name: "PreToolUse", session_id: process.argv[2], tool_use_id: "toolu_e2e" } }) })
+        body: JSON.stringify({ client: "claude", input: { hook_event_name: "PreToolUse", session_id: process.argv[2], tool_use_id: "toolu_e2e", machine: { hostname: "e2e", platform: "linux", utcOffset: 0 } } }) })
     .then(() => fetch(process.argv[1] + "/api/tools/call", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: "send", args: { to: "codex:" + process.argv[3], text: "Status check while you are busy." }, instanceId: "e2e", caller: { client: "claude", toolUseId: "toolu_e2e" } }) }))
     .then(r => r.json()).then(r => { if (!r.ok) { console.error(r); process.exit(1); } })

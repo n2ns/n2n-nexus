@@ -14,6 +14,7 @@ import {
 } from "../contract.js";
 import { NexusClient, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../client/nexus-client.js";
 import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, resolveEndpoint } from "../client/discovery.js";
+import { machineInfo } from "./machine.js";
 import { readTitle } from "./title.js";
 
 /** Errors after which a discovered daemon is looked up again: it was never reached, so resending is safe. */
@@ -53,6 +54,8 @@ async function forward(argv: string[]): Promise<string> {
         const title = await readTitle(client, stdin);
         if (title !== undefined) input.title = title;
     }
+    // Every event says where the conversation runs; the host refuses one without it.
+    input.machine = machineInfo();
     // SessionEnd must finish within Codex's 3 s hook limit (discovery included): a short budget and a single attempt.
     const sessionEnd = stdin.hook_event_name === "SessionEnd";
     const timeoutMs = stdin.hook_event_name === "Stop" ? HOOK_STOP_REQUEST_TIMEOUT_MS : sessionEnd ? SESSION_END_REQUEST_TIMEOUT_MS : HOOK_REQUEST_TIMEOUT_MS;

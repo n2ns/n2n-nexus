@@ -138,6 +138,8 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 8. 升级
 
+每台机器上的 host 和客户端都要升到同一个版本：契约版本不同的 host 和客户端会拒绝对方的请求，`n2n-nexus doctor` 会报告不匹配。升级前先看该版本的 CHANGELOG，需要重置 host 数据目录时那里会写明。
+
 - 客户端：MCP 服务器不用管，每次新开对话都会启动最新版本（正在进行的对话保持它启动时的版本）。hooks 需要运行 `npm i -g n2n-nexus@latest`，之后立即用上新版本。
 - host：用当初安装它的包管理器升级（`scoop update n2n-nexus-host`、`brew upgrade n2n-nexus-host`）。Windows 上用发布的 zip 安装的，在新版本的发布包里运行 `n2n-nexus-host.exe install` 即可，它会自己重启托盘和后台服务。其他情况直接替换程序后重启（托盘：**重启**；服务：在管理员终端里再运行一次 `n2n-nexus-host service install`）。
 

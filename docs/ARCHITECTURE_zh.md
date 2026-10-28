@@ -67,7 +67,7 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 
 ### 对话与 hooks
 
-每个 Claude Code 或 Codex 对话是一个会话，ID 为 `claude:<会话 ID>` 或 `codex:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；出任何错误都以退出码 0 退出、不输出，所以 host 不在也不会卡住客户端。
+每个 Claude Code 或 Codex 对话是一个会话，ID 为 `claude:<会话 ID>` 或 `codex:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（去掉 `.local` 的 `hostname`、`platform`——用 `/proc/version` 区分 `wsl` 和 `linux`——以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器上的会话常常名字和工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题；出任何错误都以退出码 0 退出、不输出，所以 host 不在也不会卡住客户端。
 
 ```
 客户端事件 ──▶ n2n-nexus hook ──▶ POST /api/hook ──▶ 会话状态、通知
@@ -114,13 +114,13 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 全部数据都在 host 数据目录里的一个 SQLite 文件 `nexus.db` 中，同一目录下还有 `settings.json` 和 `host.lock`（各系统的位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）。
 
-- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql`、`0002_agents.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。比 host 新的数据库会被拒绝（“upgrade n2n-nexus-host”）。
+- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql`、`0002_agents.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。每个文件包含一个模块当前的完整表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；以后改表结构时新增编号文件。
 - **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status` 和 `is_default`）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`，以及对话用的 `agent_sessions`、`agent_messages`、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`，以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
 - **事务**：每个写操作一个事务，多行修改（会议消息，开始 / 结束 / 重开会议，项目改名）要么全部生效，要么都不生效。数据库使用 WAL 模式，开启 `foreign_keys`，忙等超时 5 秒，只用一个连接。
 - **只有 host 打开数据库**。MCP 适配器和 hooks 都走 HTTP。
 - **活动日志**：通过工具产生的状态变更（项目同步 / 更新 / 改名 / 删除 / 资产、文档同步、策略更新、会议开始 / 结束 / 归档 / 重开、维护）记录为结构化事件，用 `list_events` 读取，不混入聊天流。
 
-会议成员和表态记录实际解析出的身份类型；草案资格在发布事务中保存快照。迁移 `0009` 根据已注册会话的精确 ID 匹配回填旧身份，并纠正活跃草案中的实例审批者，不改变已结束会议的名单。旧可选成员的加入与草案若在同一毫秒，历史数据无法确定先后：已有必需审批者保留资格，未列入名单者不能再加入该草案的名单，发布新草案后按新快照取得资格。
+会议成员和表态记录实际解析出的身份类型；草案资格在发布事务中保存快照。
 
 ### 清理与保留期
 
