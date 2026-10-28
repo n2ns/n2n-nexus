@@ -17,15 +17,17 @@
   - Every cleanup writes a `maintenance.cleanup` event with the counts; `host_maintenance` gains "clean up now" (with a dry run listing what would go) and "export a meeting as markdown".
   - Selection and deletion in one transaction, re-checking the state; tests for every boundary and for running the cleanup twice.
   - Still open: how to fill the snapshot columns of the records already in the database (backfill with the names found at migration time, or reset the database again).
-- [ ] Meetings, from the feedback of the sessions in meetings 20261028195736-n2n-nexus-jseh and 20261028212543-n2n-nexus-dac6 (to be discussed, nothing decided):
-  - Concurrent posts: two sessions answering each other at the same moment swapped positions three times. Proposed: `send_message` reports the meeting messages posted since the caller last read (or refuses until it reads them).
-  - Notifications of meeting news carry only counts, so every new message costs a `read_messages` call; proposed: carry the texts like direct messages (cut at `notifyTextChars`).
-  - Every ordinary message wakes every active member, which floods the user with progress reports; proposed: wake at once only for a draft, a decision, an objection or a message naming the member, and deliver the rest at the next tool call.
-  - Consensus closes the meeting as decided although the user has not approved anything; proposed: an option to end in an "awaiting user" state that `list_meetings` shows.
+- [ ] Meetings with a user seat: decided in meeting 20261028221356-ius6uuex-7bch, plan in [docs/plans/human-seat-meetings.md](docs/plans/human-seat-meetings.md) (seat, user veto, host-made DECISION on the seat's endorse, evidence and change limits on stances, unread check before posting, meeting notifications with the texts, drafting rules for ASSISTANT_GUIDE). To implement; version number to be set by the user.
+- [ ] Meetings, from the feedback of the sessions in meetings 20261028195736-n2n-nexus-jseh and 20261028212543-n2n-nexus-dac6, not covered by the plan above (to be discussed, nothing decided):
   - Sessions do not learn that a meeting started unless invited; proposed: tell every online session (without waking it) when a meeting starts.
   - `join_meeting` refuses a closed meeting; proposed: say in the error that `read_messages(meetingId)` reads it.
   - The notes of endorsements reach only the draft's author; proposed: show them in the `stance` result and in `list_meetings`.
   - A participant's position is spread over several messages that retract each other; proposed: show each member's latest stance and the open objections in one place.
+  - Rounds instead of free posting: the chair opens a round, each member has one post in it, and the posts are released together when the round ends; free chat stays for small discussions.
+  - A revised draft records which draft it replaces and shows the changed paragraphs; endorsements of unchanged parts carry over.
+  - Messages addressed to members (`to` or @name): only those named are woken, the others see them at their next tool call.
+  - At the end of a meeting, a markdown document of the topics, positions, decisions and open questions for the user, merged with the manual meeting export.
+  - Show what a meeting cost: messages, reads, wakes and duration, so the user can tell what is worth a meeting.
 
 ### Future
 - [ ] Code signing for the Go host binaries — the first releases ship unsigned (Windows SmartScreen / Defender warnings; macOS avoided with a Homebrew formula built from source). Windows: apply for free open-source signing at SignPath.io (n2n-nexus is Apache-2.0), or buy a Certum open-source code signing certificate; macOS notarization needs the Apple Developer Program ($99/year). Signing adds one release step and changes nothing else
