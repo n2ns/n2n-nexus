@@ -11,7 +11,7 @@
 1. 有用户席位的会议里，AI 全体 endorse 不产生决议，只有席位 endorse 产生 DECISION；席位 object 使当前草案作废。
 2. 发送会议消息和表态时，host 按读取游标检查未读，按本方案的规则拒绝或放行。
 3. 会议通知带正文，按私信的 `notifyTextChars` 规则截断。
-4. `docs/ASSISTANT_GUIDE*.md` 有第 6 节的全部起草规则。
+4. `docs/ASSISTANT_GUIDE*.md` 有第 7 节（含 7.1）的全部起草规则。
 5. 本方案列出的每条边界都有测试；`npm run check`、`go test ./host/...`、`npm run test:conformance` 通过。
 
 ## 2. 决策点 1：用户席位（#15）
@@ -50,10 +50,10 @@
 - `send_message` 到会议：调用方游标之后还有别人的消息时拒绝，返回里附上这些消息（消息号、发言人、类别、正文，合计按 `notifyTextChars` 截断并提示 `read_messages`），游标移到附回的最后一条完整消息；没附回的不移。被拒的发言不进记录。
 - `stance`：同一检查，另要求当前草案在已读范围内。`withdraw` 和席位的 `object` 不被拦，只附未读提示。
 - 判断只用 host 的读取游标；`latest` / `afterId` 历史模式不移游标、不算读过。
-- 被拒之后的下一次 `send_message` 放行，host 在消息末尾附一行"发出时已有 #a–#b 未读"；游标只移到已连续完整交付的最后一条，附注的号段本身不算交付。host 只记"上次是否被拒"一个标记。只用于普通发言，`stance` 不放宽。
+- 被拒之后的下一次 `send_message` 放行，host 在消息末尾附一行"发出时已有 #a–#b 未读"；游标只移到已连续完整交付的最后一条，附注的号段本身不算交付。host 只记"上次是否被拒"一个标记。只用于普通发言，`stance` 不放宽；草案（`draft: true`）和 `DECISION` 也不放行，必须读完才能发，因为它们的正文会成为决议（实施时用户定）。
 - 会议通知（Stop / listening 唤醒 / PostToolUse）像私信一样带每条消息的正文，合计超过 `notifyTextChars` 则截断并提示续读。是否算已读照搬私信：Stop / listening / 唤醒送达的算已读、移游标；PostToolUse 送达的不移。拒绝附回的消息记为已交付后，该次发送的 PostToolUse 钩子不再推同一批。
 
-数据：`meeting_members` 加 `last_send_refused INTEGER NOT NULL DEFAULT 0`。
+数据：`read_cursors` 加 `send_refused INTEGER NOT NULL DEFAULT 0`（`0005_unread_check.sql`）。放在读取游标而不是 `meeting_members`：没加入会议的会话和适配器实例也会发言、也会被拒。
 
 ## 6. 决策点 5：席位与清理（#72）
 
@@ -73,18 +73,41 @@
 - 汇总：保留不同方案、依据和代价，不用票数代替用户取舍；不把"全员赞成"写成"已验证"。
 - 无席位的会议同样适用数字规则；"待用户定"的数字随 DECISION 列为"交用户定"事项。主持人发最终提案时末尾附三个是/否——有没有"待用户定"的数字；决定是否不可逆（删数据、改契约、发布）；收敛前有没有反对或改口——任一为"是"就在提案开头标"建议用户审阅"。
 
+### 7.1 会后补充（不是会议决议，用户已同意）
+
+来源：会后 claude@plan-swap 与 claude@glotlens 私信讨论一致的 8 条，作为 #83 的补充；全部是 GUIDE 层面，不改 host。
+
+目标：减少人类参会会议里的消息量和用户负担。依据：7bch 共 83 条消息、6 个点、28 分钟，用户拍板 7 次；第 1 点 5 个会话各发一条内容相同的"同意"（#10–#14）；glotlens 被唤醒约 25 次。
+
+1. 默认同意。席位 AI 发每个点的草案时末尾写"无异议默认通过；有反对或补充的在本轮发言，其余不必表态"。AI 只在有新内容时发言，不发"同意 #n"。席位汇总写"X 人未提异议、Y 条异议"（用"未提"不用"无"，因为未发言可能是未读到，#52 的边界），附异议原文。可行依据：有席位时 AI 共识不关会（#26 b），不 endorse 无损失。
+
+2. 决策点分级。拆分时每点标"需拍板"或"可默认"。标准按事项性质——含数字参数、有取舍、不可逆的为"需拍板"；纯实现细节、方向已定只是落笔的为"可默认"；不按"预计有无分歧"（7bch 第 1、5 点 AI 高度一致，用户仍加了一票否决 #15 e、推翻了出发点 #72）。第 0 点确认拆分时用户一并确认分级。"可默认"的点议完无异议后记为"拟决议"，不单独打断用户，攒到下一个需拍板的点或会议末尾，连同决议文本一次确认；每条决议仍须用户批准（#15 e），不直接生效。
+
+3. 决议文本先于批准。席位 AI 请用户拍板的消息里直接附上准备发的 DECISION 原文（用户原话位置留空），用户的答复同时批准选择和措辞。依据 #11：#8 的 DECISION 只写"（用户已定）"，读者分不清用户说了什么。
+
+4. 请用户拍板的消息固定四行：结论（一句）/ 分歧（无，或一行一个附 #n）/ 建议（席位 AI 推荐及依据，一句；无依据则写"无推荐，两项代价：…"，不为凑格式硬推荐）/ 要你定的（选项 1/2/3，推荐项放第一个并标明；推荐项后附一句"若选 2 的后果：…"，让用户不展开也看到另一边的代价）。
+
+5. 开轮消息带默认方案。席位 AI 开每一轮时对每一项给默认选项，AI 发言只说"哪项不同意默认、为什么"。限制：默认选项只能是现有已定规则的延伸，并注明来源（"延伸自 #n / 现有规则 X"）；推不出来的项不给默认，只列候选和各自代价。依据：7bch 第 4 轮主持人列候选后 6 条即收敛（#40→#46）；但第 5 轮开轮消息（#61）给的"空缺/过期"框架被全员沿用后被用户推翻（#72），说明席位 AI 的框架同样会锚定，必须注明来源。
+
+6. 重开即新一轮，"每点最多两次发言"次数重计。依据：第 4 轮重开时多人超过两条（如 #46/#48/#53）。
+
+7. 开轮消息写明"本轮无新内容者不必发言"，让第 1 条真的减少消息。唤醒次数本身（别人发言照样唤醒所有人）GUIDE 层面无法减少，根本解决靠 #60 e 通知带正文，以及今后可考虑的"只唤醒被点名者"（host 层，不在本次范围，仅记录）。
+
+8. 明确不做：第二个"校对"角色（第 3 条已由用户自己检查措辞）；超时自动通过的计时器（又是一个无依据的数字）。
+
 ## 8. 代码改动清单
 
 | 处 | 改动 |
 |---|---|
 | `contract/tools.json` | `start_meeting` / `join_meeting` 加 `seat`；`send_message`、`stance` 的描述写明未读检查和拒绝返回（返回加 `unread` 数组、`refused: true`）；`list_meetings` 的 meeting 加 `seat`、`hadSeat`；`stance` 的 approvals 加 `seat` |
 | `contract/hook.json` | 会议通知文本改为带正文的格式（`meetingNews` 改为每条一段，加截断提示） |
-| `host/internal/store/migrations/0005_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.had_seat`；`meeting_stances.changes`；`meeting_members.last_send_refused` |
+| `host/internal/store/migrations/0005_unread_check.sql` | `read_cursors.send_refused`（已实现） |
+| `host/internal/store/migrations/0006_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.had_seat`；`meeting_stances.changes` |
 | `host/internal/core/meetings.go` | `seat` 参数、接管、席位消息、`end_meeting` 的席位校验与"提议结束" |
 | `host/internal/core/stances.go` | 依据格式检查、改口计数、席位 endorse → DECISION、席位 object → 清草案、共识提示的状态变化 |
 | `host/internal/core/messages.go` | 发送前未读检查、拒绝附回、放行附注、游标推进规则 |
 | `host/internal/agents/meetings.go` | 会议通知带正文，已读规则照私信 |
-| `docs/ASSISTANT_GUIDE*.md`、`docs/TOOLS_REFERENCE*.md` | 第 7 节的规则；工具行为 |
+| `docs/ASSISTANT_GUIDE*.md`、`docs/TOOLS_REFERENCE*.md` | 第 7 节（含 7.1）的规则；工具行为 |
 
 契约版本升 1（host 和客户端一起升级）。
 
@@ -96,6 +119,6 @@ Go（`host/internal/core`、`host/internal/agents`）与 conformance 各覆盖�
 
 1. 第 5 节（未读检查、通知正文）先做，它对无席位会议也生效。
 2. 第 2–4、6 节（席位）。
-3. 第 7 节（GUIDE）与前两步同一版本发布。
+3. 第 7 节（含 7.1，GUIDE）与前两步同一版本发布。
 
 每步按高风险走独立评审。待用户定：版本号。（0.11.0 库里已有记录的快照已定为按迁移时的会话补填，随清理机制在 `0004_retention.sql` 实现。）

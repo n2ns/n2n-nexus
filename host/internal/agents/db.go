@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf16"
 
 	"github.com/google/uuid"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
@@ -612,36 +612,7 @@ func (a *Agents) resolveToolUse(toolUseID string, now time.Time) (string, error)
 func (a *Agents) preview(text string) string {
 	line, _, _ := strings.Cut(text, "\n")
 	line = strings.TrimSuffix(line, "\r")
-	return cutUnits(line, a.o.Contract.Hook.Limits.PreviewChars)
-}
-
-// unitLen is the length of s in UTF-16 code units.
-func unitLen(s string) int {
-	units := 0
-	for _, r := range s {
-		n := utf16.RuneLen(r)
-		if n < 0 {
-			n = 1
-		}
-		units += n
-	}
-	return units
-}
-
-// cutUnits cuts s to at most limit UTF-16 code units, never splitting a surrogate pair.
-func cutUnits(s string, limit int) string {
-	units := 0
-	for i, r := range s {
-		n := utf16.RuneLen(r)
-		if n < 0 {
-			n = 1
-		}
-		if units+n > limit {
-			return s[:i]
-		}
-		units += n
-	}
-	return s
+	return protocol.CutUnits(line, a.o.Contract.Hook.Limits.PreviewChars)
 }
 
 // displayName is how notifications name a session: its name, its machine in

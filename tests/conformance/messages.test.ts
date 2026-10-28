@@ -2,7 +2,7 @@
 // and host_maintenance on global chat. Meetings started here are ended again, so
 // send_message without meetingId goes to global chat in the other tests.
 import { describe, expect, it } from "vitest";
-import { useHost } from "./harness.js";
+import { HOOK, useHost } from "./harness.js";
 
 type Read = { source: string; mode: string; messages: { text: string; from: string; senderName: string | null; category: string | null }[]; count: number };
 
@@ -48,10 +48,33 @@ describe("meeting messages", () => {
         await host.callTool("send_message", { message: "A: hello", category: "UPDATE", meetingId }, "IDE-A");
         expect(await texts("IDE-B", 10, meetingId)).toHaveLength(1);
 
+        await read("IDE-C", 10, meetingId);
         await host.callTool("send_message", { message: "B: update", category: "UPDATE", meetingId }, "IDE-C");
         expect(await texts("IDE-B", 10, meetingId)).toHaveLength(1);
         expect(await texts("IDE-B", 10, meetingId)).toHaveLength(0);
         expect(await texts("IDE-D", 10, meetingId)).toEqual(["A: hello", "B: update"]);
+
+        await host.callTool("end_meeting", { meetingId }, "IDE-A");
+    });
+
+    it("refuses a post while messages of others are unread, attaching them, and lets the next one through with a note", async () => {
+        const meetingId = (await host.callTool<{ meetingId: string }>("start_meeting", { topic: "Read First" }, "IDE-A")).payload.result!.meetingId;
+        await host.callTool("send_message", { message: "A says", meetingId }, "IDE-A");
+        type Sent = { ok: boolean; refused?: boolean; messageId?: number; unread?: { id: number; text: string; cut: boolean }[] };
+        const refused = await host.callTool<Sent>("send_message", { message: "B says", meetingId }, "IDE-B");
+        expect(refused.status, refused.body).toBe(200);
+        expect(refused.payload.result).toMatchObject({ ok: false, refused: true, unread: [{ id: 1, text: "A says", cut: false }] });
+        expect(refused.payload.result!.messageId).toBeUndefined();
+        // The attached message counts as read.
+        expect(await texts("IDE-B", 10, meetingId)).toEqual([]);
+        expect((await host.callTool<Sent>("send_message", { message: "B says", meetingId }, "IDE-B")).payload.result).toMatchObject({ ok: true, messageId: 2 });
+
+        await host.callTool("send_message", { message: "A again", meetingId }, "IDE-A"); // A has not read #2: refused
+        await host.callTool("send_message", { message: "B more", meetingId }, "IDE-B"); // #3
+        const passed = await host.callTool<Sent>("send_message", { message: "A again", meetingId }, "IDE-A");
+        expect(passed.payload.result).toMatchObject({ ok: true, messageId: 4 });
+        const last = await host.callTool<Read>("read_messages", { meetingId, latest: true, count: 1 }, "IDE-A");
+        expect(last.payload.result!.messages[0].text).toBe(`A again\n\n${HOOK.texts.sentWithUnread.replace("%s", "#3")}`);
 
         await host.callTool("end_meeting", { meetingId }, "IDE-A");
     });

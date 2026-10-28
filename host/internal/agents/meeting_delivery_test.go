@@ -25,6 +25,9 @@ func (h *harness) meetingTool(session, tool string, args map[string]any) map[str
 	if r.status != 200 {
 		h.t.Fatalf("%s: %d %s", tool, r.status, r.error)
 	}
+	if r.result["refused"] == true {
+		h.t.Fatalf("%s refused: %v", tool, r.result["message"])
+	}
 	return r.result
 }
 
@@ -58,6 +61,7 @@ func TestLeftAuthorReceivesStanceWithoutWaking(t *testing.T) {
 			h.meetingTool("a", "leave_meeting", map[string]any{"meetingId": id})
 			h.hook("codex", "PostToolUse", "a")
 			h.hook("codex", "Stop", "a", stopActive)
+			h.meetingTool("b", "read_messages", map[string]any{"meetingId": id})
 			h.meetingTool("b", "stance", map[string]any{
 				"meetingId": id, "messageId": proposal, "stance": "endorse",
 			})
@@ -73,4 +77,23 @@ func TestLeftAuthorReceivesStanceWithoutWaking(t *testing.T) {
 			contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), "endorsed draft")
 		})
 	}
+}
+
+// What a refused send attached is announced: the tool call's own hook does not repeat it.
+func TestRefusedSendIsNotAnnouncedAgain(t *testing.T) {
+	h := startMeetingDelivery(t)
+	id := h.meetingTool("a", "start_meeting", map[string]any{"topic": "Refused"})["meetingId"].(string)
+	h.meetingTool("b", "join_meeting", map[string]any{"meetingId": id})
+	h.meetingTool("a", "send_message", map[string]any{"meetingId": id, "message": "news"})
+	r := h.codex("b", "send_message", map[string]any{"meetingId": id, "message": "mine"})
+	if r.result["refused"] != true {
+		t.Fatalf("not refused: %v", r.result)
+	}
+	if out := h.hook("codex", "PostToolUse", "b"); out != nil {
+		t.Fatalf("attached news repeated: %v", out)
+	}
+	h.meetingTool("a", "send_message", map[string]any{"meetingId": id, "message": "later"})
+	ctx := h.hook("codex", "PostToolUse", "b").context()
+	contains(t, ctx, "\nlater\n")
+	notContains(t, ctx, "\nnews\n")
 }

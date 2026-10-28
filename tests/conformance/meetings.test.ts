@@ -85,6 +85,7 @@ describe("meeting tools", () => {
     it("lists meetings with counts, summary and status filter", async () => {
         const a = await start("First", "ide-a");
         await host.callTool("send_message", { message: "p", category: "PROPOSAL" }, "ide-b");
+        await host.callTool("read_messages", { meetingId: a }, "ide-a");
         await host.callTool("send_message", { message: "d", category: "DECISION" }, "ide-a");
         await host.callTool("end_meeting", { meetingId: a, summary: "agreed" }, "ide-a");
         const b = await start("Second", "ide-b");
@@ -150,7 +151,8 @@ describe("meetings per conversation", () => {
         expect(joined.payload.result!.delivery).toBe("wake");
         await kit.claudeTool(b, "send_message", { meetingId, message: "a point" });
         const wake = (await waiting.response).payload.output?.wake ?? "";
-        expect(wake).toContain(`Meeting "Wake test" (${meetingId}): 1 new message(s) (#1–#1)`);
+        expect(wake).toContain(`Meeting "Wake test" (${meetingId}): 1 new message(s), #1–#1:\n--- Meeting message #1 from `);
+        expect(wake).toContain("\na point\n--- End of meeting message #1 ---");
         expect(wake).not.toContain("Automatic turn");
 
         await kit.claudeTool(a, "end_meeting", { meetingId, summary: "settled" });
@@ -173,6 +175,8 @@ describe("meetings per conversation", () => {
         type Stance = { counted: boolean; decided: boolean; approvals: { required: string[]; waiting: string[] } };
         const first = await kit.claudeTool<Stance>(a, "stance", { meetingId, messageId, stance: "endorse" });
         expect(first.payload.result).toMatchObject({ counted: true, decided: false, approvals: { required: [`claude:${a}`, `claude:${b}`], waiting: [`claude:${b}`] } });
+        // b reads the draft before taking a stance on it.
+        await kit.claudeTool(b, "read_messages", { meetingId });
         const last = await kit.claudeTool<Stance>(b, "stance", { meetingId, messageId, stance: "endorse" });
         expect(last.payload.result).toMatchObject({ counted: true, decided: true });
 

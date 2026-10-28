@@ -103,7 +103,8 @@ func (h *harness) callAs(tool string, args any, instance string, caller *api.Cal
 	return response{status: res.StatusCode, result: out.Result, err: out.Error}
 }
 
-// ok calls a tool that must succeed and decodes its result into a generic value.
+// ok calls a tool that must succeed, and not be refused for unread messages,
+// and decodes its result into a generic value.
 func (h *harness) ok(tool string, args any, instance string) map[string]any {
 	h.t.Helper()
 	r := h.call(tool, args, instance)
@@ -114,7 +115,33 @@ func (h *harness) ok(tool string, args any, instance string) map[string]any {
 	if err := json.Unmarshal(r.result, &v); err != nil {
 		h.t.Fatal(err)
 	}
+	if v["refused"] == true {
+		h.t.Fatalf("%s refused: %v", tool, v["message"])
+	}
 	return v
+}
+
+// refusedAs calls a tool as a Codex session; it must be refused for unread messages.
+func (h *harness) refusedAs(session, tool string, args map[string]any) map[string]any {
+	h.t.Helper()
+	r := h.callAs(tool, args, "mcp-1", codex(session))
+	var v map[string]any
+	if err := json.Unmarshal(r.result, &v); err != nil || r.status != 200 || v["refused"] != true || v["ok"] != false {
+		h.t.Fatalf("%s as %s: not refused: %d %s %s", tool, session, r.status, r.result, r.err)
+	}
+	return v
+}
+
+// catchUp reads a meeting's unread messages as an instance.
+func (h *harness) catchUp(meetingID, instance string) {
+	h.t.Helper()
+	h.ok("read_messages", map[string]any{"meetingId": meetingID, "count": 100}, instance)
+}
+
+// catchUpAs reads a meeting's unread messages as a Codex session.
+func (h *harness) catchUpAs(session, meetingID string) {
+	h.t.Helper()
+	h.as(session, "read_messages", map[string]any{"meetingId": meetingID, "count": 100})
 }
 
 // fails calls a tool that must fail with status and an error containing want.

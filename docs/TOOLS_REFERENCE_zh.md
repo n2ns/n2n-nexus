@@ -158,7 +158,7 @@
 
 `Profile` 包含 `id`、`name`、`title`、`client`（`claude` 或 `codex`）、`cwd`、`hostname`、`platform`、`environment`、`utcOffset`、`label`、`note`、`status` 和 `lastActiveAt`。`hostname`（macOS 上是系统设置里起的电脑名，其他系统是去掉 `.local` 后缀的主机名）、`platform`（`darwin`、`linux`、`wsl` 表示 Windows 下的 Linux 发行版、`win32`）、`environment`（WSL 发行版名，用来区分同一台 Windows 上的多个发行版，其他情况为 `""`）和 `utcOffset`（本地时间减 UTC 的分钟数）由会话的 hooks 随每个事件上报。介绍、通知和会议消息在名字后面显示机器，格式为 `<label 或主机名> · <macOS | Linux | WSL | Windows>[ <environment>]`，例如 `claude@_projects#3f9a (Vector · WSL Ubuntu_26)`。`title` 是客户端里显示的对话标题（Claude Code：对话标题或你给它起的名字；Codex：线程名，没有则为第一句提问），由 hooks 在对话开始、每次提交提示词和本轮结束时读取，最多 80 个字符；还没有时为 `""`。它显示在 `peers`、介绍、通知和会议成员里名称的旁边；`send` 仍用 `name`。会话的名称为 `<client>@<工作目录名>#<客户端会话 ID 的最后 4 个字母和数字>`；数据库里已有别的会话（不论状态）用了这个名称时，多取 ID 的位数，所以只要两个会话的记录都在，一个名称就不会指向两个会话；会话恢复时如果名称已被别的会话用 `set_profile` 占用，就按同样的规则重新取名。`status` 为 `working`（用户发送了提示词或有工具在运行）、`idle`（本轮已结束；有后台等待消息的会话改为显示 `listening`）、`listening`（在 listen 模式下等待）或 `offline`（对话已结束）。客户端不一定会报告对话结束，所以 `idle` 或 `working` 的会话 30 分钟没有任何活动也会变为 `offline`；它的下一个事件会让它恢复。只有 `listening` 的会话会立即回应；`idle` 和 `working` 的会话要等它的用户下次发送提示词或它下次调用工具时才会看到消息。
 
-送达。收件方的 hooks 提醒新消息时带上完整正文：每条列出的消息夹在 `--- Message <id> from <发送方> (<会话 ID>) at <时间> ---` 和 `--- End of message <id> ---` 之间，前面是它回复的消息，后面是怎么回复它。一条通知里所有正文合计截到 5000 个字符（`notifyTextChars`）；被截断的消息会标出来，`read` 返回它的全文。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名 `mcp__n2n-nexus__reply`）；收件方可以为一条消息做什么，由它的用户自己的指令决定，例如 `install claude` 写进 `CLAUDE.md` 的那段。完整显示的消息在提醒让一轮继续或开始时（本轮即将结束、待命、空闲）标为已读，无需回复的消息随提示词显示时也标为已读。其他消息仍为未读，直到用 `reply` 回复或用 `read` 读取：随提示词显示、需要回复的消息，以及工具调用后显示的所有消息，因为那段上下文可能只到了子代理；这类消息在本轮结束时照样拦住一次。每条消息只列出一次；它一直未读时，之后的通知只计数。`expectsReply: false` 的消息会标上 `(no reply needed)`，消息全都无需回复的通知不会要求回复。已加入的会议的新消息也这样送达，每个会议一行（见 [`join_meeting`](#join_meeting)）：
+送达。收件方的 hooks 提醒新消息时带上完整正文：每条列出的消息夹在 `--- Message <id> from <发送方> (<会话 ID>) at <时间> ---` 和 `--- End of message <id> ---` 之间，前面是它回复的消息，后面是怎么回复它。一条通知里所有正文合计截到 5000 个字符（`notifyTextChars`）；被截断的消息会标出来，`read` 返回它的全文。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名 `mcp__n2n-nexus__reply`）；收件方可以为一条消息做什么，由它的用户自己的指令决定，例如 `install claude` 写进 `CLAUDE.md` 的那段。完整显示的消息在提醒让一轮继续或开始时（本轮即将结束、待命、空闲）标为已读，无需回复的消息随提示词显示时也标为已读。其他消息仍为未读，直到用 `reply` 回复或用 `read` 读取：随提示词显示、需要回复的消息，以及工具调用后显示的所有消息，因为那段上下文可能只到了子代理；这类消息在本轮结束时照样拦住一次。每条消息只列出一次；它一直未读时，之后的通知只计数。`expectsReply: false` 的消息会标上 `(no reply needed)`，消息全都无需回复的通知不会要求回复。已加入的会议的新消息也这样送达，每条带正文（见 [`join_meeting`](#join_meeting)）：
 
 | 客户端事件 | 收件方看到的内容 |
 | --- | --- |
@@ -192,6 +192,8 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 否则写入全局聊天。
 - 会议中的 `DECISION` 消息还会记入该会议的决策（`list_meetings` 中的 `decisionCount`）。
 - 随消息保存的发送方是调用方对话的会话 ID，没装 hooks 时是适配器实例 ID。
+- 先读后发：会议里在你的读取游标之后还有别人的消息时，发言被拒。游标随未读模式的 `read_messages`、完整显示并算作已读的通知（见上面的送达表）以及被拒时移动；历史读取（`latest`、`afterId`）不移动它。被拒的消息不会发出；结果为 `{ ok: false, refused: true, sentTo: "meeting", meetingId, identity, unread, message }`，`unread` 是那些消息（`[{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp, cut }]`，从旧到新）。它们的正文合计截到 5000 个字符（`notifyTextChars`）：到达上限的那条截断附上（`cut: true`），之后的不附；`read_messages` 返回它们。完整附上的消息从此算已读，不再提醒。
+- 被拒之后对该会议的下一次 `send_message` 即使又有新消息也会发出，正文末尾附上 `[n2n-nexus: sent while #a–#b were unread by the sender.]`；那些消息仍为未读。草案（`draft: true`）和 `DECISION` 不放行：它们的正文会成为决议，必须读完才能发。全局聊天没有这项检查。
 - 结果：`{ ok: true, sentTo: "meeting" | "global", meetingId?, messageId, identity, currentProposalId?, message }`（带 `draft` 时有 `currentProposalId`）；`messageId` 是消息在所属会议里的编号（每个会议从 1 开始），或它的全局聊天 ID（可用于 `afterId`）。
 
 ### `read_messages`
@@ -207,7 +209,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 
 行为：
 
-- 未读模式按对话增量进行（没装 hooks 时按适配器实例）：每次调用返回尚未返回给它的他人消息，最早的在前，游标越过这些消息和它自己发的消息。
+- 未读模式按对话增量进行（没装 hooks 时按适配器实例）：每次调用返回读取游标之后的他人消息，最早的在前，游标越过这些消息和它自己发的消息。在会议里，通知完整显示并算作已读的消息、被拒的 `send_message` 或 `stance` 完整附上的消息也会让游标越过，不会再次返回。
 - 对话第一次以未读模式读全局聊天时从最新消息开始：本次不返回消息，带一条 `note`；更早的消息用 `latest` 或 `afterId` 读。第一次读某个会议时从该会议的第一条开始。
 - 历史模式不动游标，包含自己的消息，也不需要识别身份。
 - 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`，两者都是写这条消息时的样子，会话被清理后仍保留）或实例 ID（`senderName` 和 `senderMachine` 为 null）；`senderBackfilled` 为 true 表示 host 开始保存这两项之前写的消息，名字和机器是升级数据库时按会话当时的样子补填的；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
@@ -354,7 +356,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 行为：
 
 - 结果：`{ ok, meetingId, mode, approver, identity, delivery }`。`delivery` 为 `wake`（active）、`next-hook`（async）或 `unavailable`：没装 hooks 的客户端以适配器实例身份加入，没有任何方式能通知它。
-- 新消息通过 hooks 提醒，每个会议一行：`Meeting "<主题>" (<id>): N new message(s) (#a–#b) from <发送方>.`，后面附读取方法；正文用 `read_messages(meetingId)` 读。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
+- 新消息通过 hooks 按会议提醒：`Meeting "<主题>" (<id>): N new message(s), #a–#b:`，然后每条消息夹在 `--- Meeting message #n from <发送方> (<机器>) at <时间>[ (<类别>)] ---` 和 `--- End of meeting message #n ---` 之间。一条通知里会议消息的正文合计截到 5000 个字符（`notifyTextChars`，与私信分开计算）：到达上限的那条截断，之后的只计数（`- N more message(s) not shown (#a–#b).`）；`read_messages(meetingId)` 返回它们。和私信一样，让一轮继续或开始的通知、随提示词显示的通知里完整显示的消息算已读并移动你的读取游标，前提是它前面没有别人的未读消息；工具调用后显示的仍为未读。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
 - 加入前的消息不会提醒。已是成员时再次加入只修改 `mode` 和 `approver`；改为 `async` 即可暂停。`leave_meeting` 之后再加入，从最新一条开始。
 - 记录 `meeting.join` 事件。
 
@@ -385,9 +387,10 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 行为：
 
 - 当前稿是最近一次用 `send_message(..., draft: true)` 发布的消息；普通的 `PROPOSAL` 既不换稿，也不改变任何人的表态。发布草案时确定它的必需认可名单：通过 hooks 以 `required` 身份加入的成员（适配器实例不能认可）。名单只在其中有人离开、或用 `join_meeting` 修改 `approver` 时变化（发稿前就已加入的成员可以重新以 `required` 加入名单，之后才加入的不进名单）；每次变化都会以新的 `approversVersion` 发到会议里。
+- 先读后表态，同 [`send_message`](#send_message)：读取游标之后还有别人的消息时，`endorse` 和 `object` 被拒，返回 `{ ok: false, refused: true, meetingId, messageId, stance, unread, message }`，完整附上的消息算已读；`send_message` 被拒后的放行不适用于表态。`withdraw` 照常执行，并在 `unread` 和 `message` 里带上未读消息。
 - 每人对每份提案一条表态，新的覆盖旧的，`withdraw` 删除。反对会连同理由发到会议里。提案作者会收到每次表态的通知；认可不会叫醒其他人。
 - 当前稿至少有 2 名必需认可人、他们全部认可、且没有任何人反对（适配器实例的反对同样阻止）时，会议以共识结案：`n2n-nexus` 发一条带草案原文的 `DECISION`，会议以 `endReason: consensus` 关闭，其他成员收到结束通知，通知里写明草案编号和决议的消息编号。必需认可人少于 2 名时，只能用 `end_meeting` 结束。
-- 结果：`{ ok, meetingId, messageId, stance, currentProposalId, counted, approvals: { required, endorsed, waiting, objections: [{ id, note }] }, decided }`。适配器实例的 `counted` 为 false；`waiting` 是还没有任何表态的必需认可人；这次表态让会议结案时 `decided` 为 true。
+- 结果：`{ ok, meetingId, messageId, stance, currentProposalId, counted, approvals: { required, endorsed, waiting, objections: [{ id, note }] }, decided, unread?, message? }`。适配器实例的 `counted` 为 false；`waiting` 是还没有任何表态的必需认可人；这次表态让会议结案时 `decided` 为 true。
 - 有草案的会议安静超过 `stanceReminderMinutes`（host `settings.json`，默认 10）、且有必需认可人还没表态时，每人被提醒一次，作者收到一份缺谁的汇总。提醒从不结束会议。
 
 ## 任务管理

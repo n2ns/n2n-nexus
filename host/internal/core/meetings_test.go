@@ -122,7 +122,9 @@ func TestMeetingMessagesAndList(t *testing.T) {
 	if res["messageId"] != float64(h.count(`SELECT MAX(id) FROM meeting_messages`)) || res["identity"] != "instance" {
 		t.Fatalf("send %v", res)
 	}
+	h.catchUp(a, "ide-a")
 	h.ok("send_message", map[string]any{"message": "d", "category": "DECISION"}, "ide-a")
+	h.catchUp(a, "ide-b")
 	h.ok("send_message", map[string]any{"message": "plain"}, "ide-b")
 
 	// Cursors per instance and meeting.
@@ -204,6 +206,7 @@ func TestMeetingsPerSession(t *testing.T) {
 	h := newHarnessWith(t, fakeIdentities{})
 	id := h.as("a", "start_meeting", map[string]any{"topic": "Plan"})["meetingId"].(string)
 	h.ok("send_message", map[string]any{"message": "m1"}, "mcp-0")
+	h.catchUpAs("c", id)
 	sent := h.as("c", "send_message", map[string]any{"message": "m2"})
 	if sent["sentTo"] != "meeting" || sent["identity"] != "session" ||
 		sent["messageId"] != float64(h.count(`SELECT MAX(id) FROM meeting_messages`)) {

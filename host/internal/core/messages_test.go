@@ -244,6 +244,9 @@ func (h *harness) as(session, tool string, args map[string]any) map[string]any {
 	if err := json.Unmarshal(r.result, &v); err != nil {
 		h.t.Fatal(err)
 	}
+	if v["refused"] == true {
+		h.t.Fatalf("%s as %s refused: %v", tool, session, v["message"])
+	}
 	return v
 }
 

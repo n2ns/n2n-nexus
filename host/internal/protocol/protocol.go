@@ -135,32 +135,37 @@ type Hook struct {
 		MaxHostnameChars    int    `json:"maxHostnameChars"`
 	} `json:"limits"`
 	Texts struct {
-		NoticePrefix        string `json:"noticePrefix"`
-		NotifyClosing       string `json:"notifyClosing"`
-		StopClosing         string `json:"stopClosing"`
-		StatusNote          string `json:"statusNote"`
-		SessionStartClosing string `json:"sessionStartClosing"`
-		CollaborationRules  string `json:"collaborationRules"`
-		MessageTrustNote    string `json:"messageTrustNote"`
-		MessageInfoNote     string `json:"messageInfoNote"`
-		MessageHeader       string `json:"messageHeader"`
-		MessageEnd          string `json:"messageEnd"`
-		MessageReplyTo      string `json:"messageReplyTo"`
-		MessageCut          string `json:"messageCut"`
-		ReplyInstruction    string `json:"replyInstruction"`
-		ReadRest            string `json:"readRest"`
-		ReplyTool           string `json:"replyTool"`
-		NoReplyMark         string `json:"noReplyMark"`
-		EarlierUnread       string `json:"earlierUnread"`
-		MeetingNews         string `json:"meetingNews"`
-		MeetingClosing      string `json:"meetingClosing"`
-		MeetingEnded        string `json:"meetingEnded"`
-		StanceNotice        string `json:"stanceNotice"`
-		ApproversChanged    string `json:"approversChanged"`
-		ConsensusDecision   string `json:"consensusDecision"`
-		StanceReminder      string `json:"stanceReminder"`
-		StanceWaiting       string `json:"stanceWaiting"`
-		NoAgentSessionError string `json:"noAgentSessionError"`
+		NoticePrefix         string `json:"noticePrefix"`
+		NotifyClosing        string `json:"notifyClosing"`
+		StopClosing          string `json:"stopClosing"`
+		StatusNote           string `json:"statusNote"`
+		SessionStartClosing  string `json:"sessionStartClosing"`
+		CollaborationRules   string `json:"collaborationRules"`
+		MessageTrustNote     string `json:"messageTrustNote"`
+		MessageInfoNote      string `json:"messageInfoNote"`
+		MessageHeader        string `json:"messageHeader"`
+		MessageEnd           string `json:"messageEnd"`
+		MessageReplyTo       string `json:"messageReplyTo"`
+		MessageCut           string `json:"messageCut"`
+		ReplyInstruction     string `json:"replyInstruction"`
+		ReadRest             string `json:"readRest"`
+		ReplyTool            string `json:"replyTool"`
+		NoReplyMark          string `json:"noReplyMark"`
+		EarlierUnread        string `json:"earlierUnread"`
+		MeetingNews          string `json:"meetingNews"`
+		MeetingMessageHeader string `json:"meetingMessageHeader"`
+		MeetingMessageEnd    string `json:"meetingMessageEnd"`
+		MeetingNotShown      string `json:"meetingNotShown"`
+		MeetingReadRest      string `json:"meetingReadRest"`
+		MeetingClosing       string `json:"meetingClosing"`
+		SentWithUnread       string `json:"sentWithUnread"`
+		MeetingEnded         string `json:"meetingEnded"`
+		StanceNotice         string `json:"stanceNotice"`
+		ApproversChanged     string `json:"approversChanged"`
+		ConsensusDecision    string `json:"consensusDecision"`
+		StanceReminder       string `json:"stanceReminder"`
+		StanceWaiting        string `json:"stanceWaiting"`
+		NoAgentSessionError  string `json:"noAgentSessionError"`
 	} `json:"texts"`
 }
 

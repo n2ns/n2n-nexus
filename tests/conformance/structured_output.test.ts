@@ -29,8 +29,17 @@ describe("tool results", () => {
             const result = res.payload.result!;
             const validate = validators[name];
             expect(validate(result), `${name}: ${ajv.errorsText(validate.errors)}\n${JSON.stringify(result)}`).toBe(true);
+            expect(result.refused, `${name} refused: ${JSON.stringify(result)}`).toBeUndefined();
             called.add(name);
             return result;
+        };
+        // A call refused for unread meeting messages: its result is valid too.
+        const refused = async (name: string, args: Record<string, unknown>, sessionId: string) => {
+            const res = await host.callTool<Record<string, unknown>>(name, args, "structured", { client: "codex", sessionId });
+            const result = res.payload.result!;
+            const validate = validators[name];
+            expect(validate(result), `${name}: ${ajv.errorsText(validate.errors)}\n${JSON.stringify(result)}`).toBe(true);
+            expect(result).toMatchObject({ ok: false, refused: true });
         };
 
         await call("sync_project_assets", { manifest: manifest("web_b"), internalDocs: "# b" });
@@ -60,7 +69,13 @@ describe("tool results", () => {
         await call("read_messages", { meetingId: meeting.meetingId, afterId: 0 }, "peer");
         await call("join_meeting", { meetingId: meeting.meetingId, mode: "async", since: "beginning" }, "peer");
         const draft = await call("send_message", { meetingId: meeting.meetingId, message: "the plan", draft: true });
+        await refused("send_message", { meetingId: meeting.meetingId, message: "unread" }, "peer");
+        await call("send_message", { meetingId: meeting.meetingId, message: "goes through" }, "peer");
+        await call("read_messages", { meetingId: meeting.meetingId });
+        await call("send_message", { meetingId: meeting.meetingId, message: "more" });
+        await refused("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet" }, "peer");
         await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet" }, "peer");
+        await call("read_messages", { meetingId: meeting.meetingId });
         await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "endorse" });
         await call("list_meetings", {});
         await call("leave_meeting", { meetingId: meeting.meetingId }, "peer");

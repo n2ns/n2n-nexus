@@ -54,7 +54,42 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 			}
 		}
 		if meetingID != "" {
-			messageID, err := c.addMeetingMessage(tx, meetingID, id.ID, a.Message, a.Category)
+			m, err := loadMeeting(tx, meetingID)
+			if err != nil {
+				return err
+			}
+			if m.status != "active" {
+				return api.Errorf("Meeting '%s' is %s, cannot add messages.", meetingID, m.status)
+			}
+			u, err := loadUnread(tx, meetingID, id.ID)
+			if err != nil {
+				return err
+			}
+			text := a.Message
+			if len(u.messages) > 0 {
+				// A draft or a DECISION becomes a decision's text: it is never let through unread.
+				final := a.Draft || a.Category == "DECISION"
+				if !u.refused || final {
+					attached, note, err := c.attach(tx, u)
+					if err != nil {
+						return err
+					}
+					next := " Your next send_message to this meeting goes through even if more arrive, with a note of what was unread; a draft or a DECISION is posted only once everything is read."
+					if final {
+						next = " A draft or a DECISION is posted only once everything is read."
+					}
+					result = map[string]any{"ok": false, "refused": true, "sentTo": "meeting", "meetingId": meetingID, "identity": id.Kind, "unread": attached,
+						"message": "Not sent: " + unreadNote(u) + " Take them into account and post again only if you still have something to add; do not resend the same text." + next + note}
+					return c.setSendRefused(tx, u, true)
+				}
+				text += "\n\n" + fmt.Sprintf(c.d.Contract.Hook.Texts.SentWithUnread, u.span())
+			}
+			if u.refused {
+				if err := c.setSendRefused(tx, u, false); err != nil {
+					return err
+				}
+			}
+			messageID, err := c.addMeetingMessage(tx, meetingID, id.ID, text, a.Category)
 			if err != nil {
 				return err
 			}
@@ -90,7 +125,7 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if meetingID, ok := result["meetingId"].(string); ok && c.d.Meetings != nil {
+	if meetingID, ok := result["meetingId"].(string); ok && result["ok"] == true && c.d.Meetings != nil {
 		c.d.Meetings.MeetingUpdated(meetingID)
 	}
 	return result, nil

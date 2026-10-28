@@ -1549,7 +1549,7 @@
     {
       "name": "send_message",
       "title": "Post Message",
-      "description": "Post to a meeting or to the global chat; a direct message to one session is send (or reply). Post to a meeting (meetingId, else the active meeting) or, when no meeting is active, to the shared global chat that every session can read with read_messages. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither.",
+      "description": "Post to a meeting or to the global chat; a direct message to one session is send (or reply). Post to a meeting (meetingId, else the active meeting) or, when no meeting is active, to the shared global chat that every session can read with read_messages. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither. Before posting to a meeting, read what others said: when messages of others came after you last read the meeting (read_messages in unread mode, a notification that showed them whole, or an earlier refusal; history reads do not count), the message is not sent: ok is false, refused true and unread has those messages, which now count as read. Take them into account rather than resending the same text. The next send_message to that meeting goes through even if more messages arrived, with a note of the unread numbers appended to its text; a draft or a DECISION never does: it is posted only once everything is read. Global chat has no such check.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1593,8 +1593,7 @@
         "type": "object",
         "properties": {
           "ok": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
           },
           "message": {
             "type": "string"
@@ -1625,13 +1624,84 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "refused": {
+            "type": "boolean",
+            "const": true
+          },
+          "unread": {
+            "description": "The messages of others you had not read, oldest first, texts together cut to the notification limit; those attached whole now count as read.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "from": {
+                  "type": "string"
+                },
+                "senderName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "senderMachine": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "senderBackfilled": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "MEETING_START",
+                    "PROPOSAL",
+                    "DECISION",
+                    "UPDATE",
+                    "CHAT",
+                    null
+                  ]
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "cut": {
+                  "type": "boolean",
+                  "description": "The text was cut to fit; read_messages returns it whole."
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "senderName",
+                "senderMachine",
+                "senderBackfilled",
+                "text",
+                "category",
+                "timestamp",
+                "cut"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "ok",
           "message",
           "sentTo",
-          "messageId",
           "identity"
         ],
         "additionalProperties": false
@@ -2732,7 +2802,7 @@
     {
       "name": "stance",
       "title": "Take Stance",
-      "description": "Endorse or object to a PROPOSAL of an active meeting (messageId: its number in the meeting), or withdraw your stance on it. You have one stance per proposal; a new one replaces it. object needs a note with the reason and also posts it to the meeting; the proposal's author is told of every stance. When the proposal is the meeting's current draft (published with send_message draft) and it has at least 2 required approvers, every one of them endorsed it and nobody objects to it, the meeting closes by consensus: a DECISION with the draft is posted and decided is true. An MCP adapter instance (no n2n-nexus hooks) cannot approve (counted: false), but its objection blocks like any other. approvals are the proposal's: required (its required approvers, empty unless it is the current draft), endorsed, waiting (required approvers without a stance) and objections.",
+      "description": "Endorse or object to a PROPOSAL of an active meeting (messageId: its number in the meeting), or withdraw your stance on it. You have one stance per proposal; a new one replaces it. object needs a note with the reason and also posts it to the meeting; the proposal's author is told of every stance. When the proposal is the meeting's current draft (published with send_message draft) and it has at least 2 required approvers, every one of them endorsed it and nobody objects to it, the meeting closes by consensus: a DECISION with the draft is posted and decided is true. An MCP adapter instance (no n2n-nexus hooks) cannot approve (counted: false), but its objection blocks like any other. approvals are the proposal's: required (its required approvers, empty unless it is the current draft), endorsed, waiting (required approvers without a stance) and objections. Read first: when messages of others came after you last read the meeting, an endorse or object is refused (ok false, refused true, unread has those messages, which now count as read); take the stance again once you have weighed them. A withdraw goes through and carries them in unread.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -2775,8 +2845,7 @@
         "type": "object",
         "properties": {
           "ok": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
           },
           "meetingId": {
             "type": "string"
@@ -2856,17 +2925,88 @@
           },
           "decided": {
             "type": "boolean"
+          },
+          "refused": {
+            "type": "boolean",
+            "const": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "unread": {
+            "description": "The messages of others you had not read, oldest first, texts together cut to the notification limit; those attached whole now count as read.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "from": {
+                  "type": "string"
+                },
+                "senderName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "senderMachine": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "senderBackfilled": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "MEETING_START",
+                    "PROPOSAL",
+                    "DECISION",
+                    "UPDATE",
+                    "CHAT",
+                    null
+                  ]
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "cut": {
+                  "type": "boolean",
+                  "description": "The text was cut to fit; read_messages returns it whole."
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "senderName",
+                "senderMachine",
+                "senderBackfilled",
+                "text",
+                "category",
+                "timestamp",
+                "cut"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "ok",
           "meetingId",
           "messageId",
-          "stance",
-          "currentProposalId",
-          "counted",
-          "approvals",
-          "decided"
+          "stance"
         ],
         "additionalProperties": false
       },

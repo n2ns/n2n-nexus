@@ -4,24 +4,36 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
-	"strings"
+
+	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 )
 
 // Meetings reach their members through the same notifications as direct
 // messages. A member's notified_id (meeting_members) is the newest meeting
-// message it was told about: the messages of others above it are its news, one
-// line per meeting. Active members are woken by news; async members see it at
-// their next hook. Instance members (clients without hooks) are never told.
+// message it was told about: the messages of others above it are its news,
+// each shown with its text. Active members are woken by news; async members
+// see it at their next hook. Instance members (clients without hooks) are
+// never told. As with direct messages, what a notification that drives the
+// turn or reaches the conversation shows whole is read: the member's read
+// cursor (read_cursors) moves to the last message shown whole, when every
+// message of others before it was read or shown whole too.
 
 // meetingNews is what a member has not been told about one meeting.
 type meetingNews struct {
 	meetingID, topic string
 	active           bool
-	count            int
-	// first and last are message numbers in the meeting; upTo the table id of the newest.
-	first, last, upTo int64
-	senders           []string
+	// messages: the news, oldest first.
+	messages []newsMessage
 }
+
+// newsMessage is a meeting message of news; row is its table id, seq its number in the meeting.
+type newsMessage struct {
+	row, seq                          int64
+	name, machine, category, text, at string
+}
+
+// upTo is the table id of the newest message of the news.
+func (n meetingNews) upTo() int64 { return n.messages[len(n.messages)-1].row }
 
 // news lists the meetings with news for a session: active meetings it takes part in, oldest membership first.
 func (a *Agents) news(sessionID string) ([]meetingNews, error) {
@@ -51,49 +63,79 @@ func (a *Agents) news(sessionID string) ([]meetingNews, error) {
 	var out []meetingNews
 	for _, m := range list {
 		n := meetingNews{meetingID: m.id, topic: m.topic, active: m.mode == "active"}
-		var first, last, upTo sql.NullInt64
-		if err := a.db().QueryRowContext(bg, `SELECT COUNT(*), MIN(seq), MAX(seq), MAX(id) FROM meeting_messages
-			WHERE meeting_id = ? AND id > ? AND sender != ?`, m.id, m.notified, sessionID).Scan(&n.count, &first, &last, &upTo); err != nil {
-			return nil, err
-		}
-		if n.count == 0 {
-			continue
-		}
-		n.first, n.last, n.upTo = first.Int64, last.Int64, upTo.Int64
-		senders, err := a.db().QueryContext(bg, `SELECT COALESCE(MAX(mm.sender_name), mm.sender) FROM meeting_messages mm
-			WHERE mm.meeting_id = ? AND mm.id > ? AND mm.sender != ? GROUP BY mm.sender ORDER BY MIN(mm.id)`, m.id, m.notified, sessionID)
+		rows, err := a.db().QueryContext(bg, `SELECT id, seq, COALESCE(sender_name, sender), COALESCE(sender_machine, ''), COALESCE(category, ''), text, timestamp
+			FROM meeting_messages WHERE meeting_id = ? AND id > ? AND sender != ? ORDER BY id`, m.id, m.notified, sessionID)
 		if err != nil {
 			return nil, err
 		}
-		for senders.Next() {
-			var name string
-			if err := senders.Scan(&name); err != nil {
-				senders.Close()
+		for rows.Next() {
+			var msg newsMessage
+			if err := rows.Scan(&msg.row, &msg.seq, &msg.name, &msg.machine, &msg.category, &msg.text, &msg.at); err != nil {
+				rows.Close()
 				return nil, err
 			}
-			n.senders = append(n.senders, name)
+			n.messages = append(n.messages, msg)
 		}
-		senders.Close()
-		if err := senders.Err(); err != nil {
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		out = append(out, n)
+		if len(n.messages) > 0 {
+			out = append(out, n)
+		}
 	}
 	return out, nil
 }
 
-// newsLine is the one-line notification of a meeting's news.
-func (a *Agents) newsLine(n meetingNews) string {
+// newsLines shows the news of the meetings, every text whole until the texts
+// together reach the contract's notifyTextChars; the message that reaches it
+// is cut and the later ones are only counted. It returns the lines, whether
+// something was cut or left out, and per meeting the table id of the last
+// message shown whole with every one before it shown whole too (0: none).
+func (a *Agents) newsLines(news []meetingNews) ([]string, bool, map[string]int64) {
 	h := a.o.Contract.Hook
-	return h.Texts.NoticePrefix + " " + fmt.Sprintf(h.Texts.MeetingNews, n.topic, n.meetingID, n.count, n.first, n.last, strings.Join(n.senders, ", "))
+	budget := h.Limits.NotifyTextChars
+	var lines []string
+	rest := false
+	whole := map[string]int64{}
+	for _, n := range news {
+		first, last := n.messages[0].seq, n.messages[len(n.messages)-1].seq
+		lines = append(lines, h.Texts.NoticePrefix+" "+fmt.Sprintf(h.Texts.MeetingNews, n.topic, n.meetingID, len(n.messages), first, last))
+		cut := false
+		for i, m := range n.messages {
+			if cut || budget <= 0 {
+				rest = true
+				lines = append(lines, fmt.Sprintf(h.Texts.MeetingNotShown, len(n.messages)-i, m.seq, last))
+				break
+			}
+			category := ""
+			if m.category != "" {
+				category = " (" + m.category + ")"
+			}
+			lines = append(lines, fmt.Sprintf(h.Texts.MeetingMessageHeader, m.seq, displayName(m.name, m.machine, ""), m.at, category))
+			text := protocol.CutUnits(m.text, budget)
+			budget -= protocol.UnitLen(text)
+			lines = append(lines, text)
+			if len(text) < len(m.text) {
+				cut, rest = true, true
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, protocol.UnitLen(text), protocol.UnitLen(m.text)))
+			} else {
+				whole[n.meetingID] = m.row
+			}
+			lines = append(lines, fmt.Sprintf(h.Texts.MeetingMessageEnd, m.seq))
+		}
+	}
+	return lines, rest, whole
 }
 
-// memberState is a member's notification state, kept to undo a wake whose delivery failed.
+// memberState is a member's notification and read state, kept to undo a wake whose delivery failed.
 type memberState struct {
 	meetingID string
 	notified  int64
 	wakes     int64
 	wokenAt   sql.NullString
+	// cursor is the member's read cursor, NULL when it had none.
+	cursor sql.NullInt64
 }
 
 // countMeetingWakes counts active meeting wakes and saves every announced
@@ -103,8 +145,10 @@ func (a *Agents) countMeetingWakes(sessionID string, news []meetingNews) ([]memb
 	now := a.iso(a.o.Clock.Now())
 	for _, n := range news {
 		s := memberState{meetingID: n.meetingID}
-		if err := a.db().QueryRowContext(bg, "SELECT notified_id, wakes, last_woken_at FROM meeting_members WHERE meeting_id = ? AND member_id = ?",
-			n.meetingID, sessionID).Scan(&s.notified, &s.wakes, &s.wokenAt); err != nil {
+		if err := a.db().QueryRowContext(bg, `SELECT mm.notified_id, mm.wakes, mm.last_woken_at, rc.last_read_id
+			FROM meeting_members mm LEFT JOIN read_cursors rc ON rc.instance_id = mm.member_id AND rc.context_type = 'meeting' AND rc.context_id = mm.meeting_id
+			WHERE mm.meeting_id = ? AND mm.member_id = ?`,
+			n.meetingID, sessionID).Scan(&s.notified, &s.wakes, &s.wokenAt, &s.cursor); err != nil {
 			return nil, err
 		}
 		if n.active {
@@ -118,23 +162,49 @@ func (a *Agents) countMeetingWakes(sessionID string, news []meetingNews) ([]memb
 	return before, nil
 }
 
-// markMeetingsNotified moves the session's watermarks past the news.
-func (a *Agents) markMeetingsNotified(tx *sql.Tx, sessionID string, news []meetingNews) error {
+// markMeetingsNotified moves the session's watermarks past the news and, for
+// the meetings in read, its read cursor to the given message when no message
+// of others between the cursor and the news is left unread.
+func (a *Agents) markMeetingsNotified(tx *sql.Tx, sessionID string, news []meetingNews, read map[string]int64) error {
+	now := a.iso(a.o.Clock.Now())
 	for _, n := range news {
 		if _, err := tx.ExecContext(bg, "UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?",
-			n.upTo, n.meetingID, sessionID, n.upTo); err != nil {
+			n.upTo(), n.meetingID, sessionID, n.upTo()); err != nil {
+			return err
+		}
+		to, ok := read[n.meetingID]
+		if !ok || to == 0 {
+			continue
+		}
+		var gap int
+		if err := tx.QueryRowContext(bg, `SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = ? AND sender != ? AND id < ?
+			AND id > COALESCE((SELECT last_read_id FROM read_cursors WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?), 0)`,
+			n.meetingID, sessionID, n.messages[0].row, sessionID, n.meetingID).Scan(&gap); err != nil {
+			return err
+		}
+		if gap > 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(bg, `
+			INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, 'meeting', ?, ?, ?)
+			ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), updated_at = excluded.updated_at`,
+			sessionID, n.meetingID, to, now); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// restoreMembers puts members' notification states back (a wake whose delivery failed).
+// restoreMembers puts members' notification and read states back (a wake whose delivery failed).
 func (a *Agents) restoreMembers(sessionID string, states []memberState) error {
 	return a.tx(func(tx *sql.Tx) error {
 		for _, s := range states {
 			if _, err := tx.ExecContext(bg, "UPDATE meeting_members SET notified_id = ?, wakes = ?, last_woken_at = ? WHERE meeting_id = ? AND member_id = ?",
 				s.notified, s.wakes, s.wokenAt, s.meetingID, sessionID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(bg, "UPDATE read_cursors SET last_read_id = ? WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?",
+				s.cursor.Int64, sessionID, s.meetingID); err != nil {
 				return err
 			}
 		}

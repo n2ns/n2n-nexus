@@ -266,6 +266,11 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 	var currentID any
 	var appr approvals
 	var posted, decided bool
+	// refused is the result of a stance refused for unread messages; a
+	// withdrawal goes through with them attached.
+	var refused map[string]any
+	var unreadAttached []unreadMessage
+	var unreadMessage string
 	err = c.tx(call, func(tx *sql.Tx) error {
 		m, err := loadMeeting(tx, a.MeetingID)
 		if err != nil {
@@ -287,6 +292,23 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 		}
 		if category.String != "PROPOSAL" {
 			return api.Errorf("Message %d of meeting '%s' is not a PROPOSAL; stances are taken on proposals.", a.MessageID, a.MeetingID)
+		}
+		// A stance needs what others said read first; withdrawing one does not.
+		u, err := loadUnread(tx, a.MeetingID, who.ID)
+		if err != nil {
+			return err
+		}
+		if len(u.messages) > 0 {
+			attached, note, err := c.attach(tx, u)
+			if err != nil {
+				return err
+			}
+			if a.Stance != "withdraw" {
+				refused = map[string]any{"ok": false, "refused": true, "meetingId": a.MeetingID, "messageId": a.MessageID, "stance": a.Stance, "unread": attached,
+					"message": "Stance not taken: " + unreadNote(u) + " Read them, then take your stance again if it still holds." + note}
+				return nil
+			}
+			unreadAttached, unreadMessage = attached, unreadNote(u)+note
 		}
 		switch a.Stance {
 		case "withdraw":
@@ -329,6 +351,9 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if refused != nil {
+		return refused, nil
+	}
 	if c.d.Meetings != nil && isSessionID(author) && author != who.ID {
 		name := who.Name
 		if name == "" {
@@ -342,6 +367,10 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 			fmt.Sprintf(c.d.Contract.Hook.Texts.StanceNotice, name, stanceVerbs[a.Stance], a.MessageID, topic, a.MeetingID, suffix))
 	}
 	c.afterMeetingChange(a.MeetingID, who.ID, posted || decided, decided)
-	return map[string]any{"ok": true, "meetingId": a.MeetingID, "messageId": a.MessageID, "stance": a.Stance,
-		"currentProposalId": currentID, "counted": who.Kind == api.IdentitySession, "approvals": appr, "decided": decided}, nil
+	result := map[string]any{"ok": true, "meetingId": a.MeetingID, "messageId": a.MessageID, "stance": a.Stance,
+		"currentProposalId": currentID, "counted": who.Kind == api.IdentitySession, "approvals": appr, "decided": decided}
+	if unreadAttached != nil {
+		result["unread"], result["message"] = unreadAttached, "Stance withdrawn. "+unreadMessage
+	}
+	return result, nil
 }

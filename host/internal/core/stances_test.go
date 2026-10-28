@@ -49,8 +49,10 @@ func (h *harness) lastMessage(meetingID string) (from, category, text string) {
 	return m["from"].(string), category, m["text"].(string)
 }
 
+// stanceAs takes a stance as a Codex session, after reading what is unread.
 func (h *harness) stanceAs(session string, meetingID string, messageID int, stance, note string) map[string]any {
 	h.t.Helper()
+	h.catchUpAs(session, meetingID)
 	args := map[string]any{"meetingId": meetingID, "messageId": messageID, "stance": stance}
 	if note != "" {
 		args["note"] = note
@@ -86,6 +88,7 @@ func TestDraftSetsTheCurrentProposalAndItsApprovers(t *testing.T) {
 	}
 	h.failsAs("a", "A draft is a PROPOSAL", "send_message", map[string]any{"meetingId": id, "message": "x", "draft": true, "category": "CHAT"})
 
+	h.catchUpAs("a", id)
 	res := h.as("a", "send_message", map[string]any{"meetingId": id, "message": "plan v1", "draft": true})
 	if res["currentProposalId"] != 2.0 || res["messageId"] != 2.0 {
 		t.Fatalf("draft %v", res)
@@ -102,6 +105,7 @@ func TestDraftSetsTheCurrentProposalAndItsApprovers(t *testing.T) {
 
 	// A plain PROPOSAL keeps the draft and its stances.
 	h.stanceAs("b", id, 2, "endorse", "")
+	h.catchUpAs("c", id)
 	h.as("c", "send_message", map[string]any{"meetingId": id, "message": "other idea", "category": "PROPOSAL"})
 	if p := h.listing(id).Proposal; p.MessageID != 2 || p.ApproversVersion != 1 || !slices.Equal(p.Endorsed, []string{"codex:b"}) {
 		t.Fatalf("after a plain proposal %+v", p)
@@ -109,6 +113,7 @@ func TestDraftSetsTheCurrentProposalAndItsApprovers(t *testing.T) {
 	// A new draft replaces it: a new list version, no stances.
 	h.exec(`UPDATE meetings SET draft_reminded_at = 'x' WHERE id = ?`, id)
 	h.exec(`UPDATE meeting_approvers SET reminded_at = 'x' WHERE meeting_id = ?`, id)
+	h.catchUpAs("b", id)
 	if res := h.as("b", "send_message", map[string]any{"meetingId": id, "message": "plan v2", "draft": true, "category": "PROPOSAL"}); res["currentProposalId"] != 4.0 {
 		t.Fatalf("second draft %v", res)
 	}
@@ -252,6 +257,7 @@ func TestInstanceStancesAreNotCounted(t *testing.T) {
 	h.as("b", "join_meeting", map[string]any{"meetingId": id})
 	h.ok("join_meeting", map[string]any{"meetingId": id}, "mcp-plain")
 	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "p", "draft": true})
+	h.catchUp(id, "mcp-plain")
 	res := h.ok("stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "object", "note": "no"}, "mcp-plain")
 	if res["counted"] != false || res["decided"] != false {
 		t.Fatalf("instance stance %v", res)
@@ -425,6 +431,7 @@ func TestSessionLikeInstanceIDsDoNotApprove(t *testing.T) {
 				t.Fatalf("instance added to approvers %v", got)
 			}
 			h.stanceAs("a", id, 1, "endorse", "")
+			h.catchUp(id, instance)
 			res := h.ok("stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "endorse"}, instance)
 			if res["counted"] != false || res["decided"] != false || h.listing(id).Status != "active" {
 				t.Fatalf("instance endorsement decided %v", res)
@@ -439,6 +446,7 @@ func TestInstanceCannotEndorseAsSameNamedSession(t *testing.T) {
 	h.as("b", "join_meeting", map[string]any{"meetingId": id})
 	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "p", "draft": true})
 	h.stanceAs("a", id, 1, "endorse", "")
+	h.catchUp(id, "codex:b")
 	res := h.ok("stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "endorse"}, "codex:b")
 	if res["counted"] != false || res["decided"] != false {
 		t.Fatalf("same-named instance counted %v", res)
@@ -471,6 +479,7 @@ func TestDraftEligibilityUsesMembershipSnapshot(t *testing.T) {
 		t.Fatalf("draft eligibility %v", got)
 	}
 	// A new draft takes a new snapshot, including the late and rejoined members.
+	h.catchUpAs("a", id)
 	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "next", "draft": true})
 	if got := h.listing(id).Proposal.Required; !slices.Equal(got, []string{"codex:a", "codex:before", "codex:rejoined", "codex:late"}) {
 		t.Fatalf("next draft eligibility %v", got)

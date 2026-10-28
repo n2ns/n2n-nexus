@@ -714,12 +714,12 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			if m.ReplyTo != nil {
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
-			text := cutUnits(m.Text, budget)
-			budget -= unitLen(text)
+			text := protocol.CutUnits(m.Text, budget)
+			budget -= protocol.UnitLen(text)
 			lines = append(lines, text)
 			if len(text) < len(m.Text) {
 				rest = true
-				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, unitLen(text), unitLen(m.Text)))
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, protocol.UnitLen(text), protocol.UnitLen(m.Text)))
 			} else if mark == markShown || (mark == markNoReply && !m.ExpectsReply) {
 				shown = append(shown, m.ID)
 			}
@@ -768,11 +768,17 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			lines = append(lines, h.Texts.ReadRest)
 		}
 	}
-	for _, n := range b.news {
-		lines = append(lines, a.newsLine(n))
-	}
+	var read map[string]int64
 	if len(b.news) > 0 {
+		news, cut, whole := a.newsLines(b.news)
+		lines = append(lines, news...)
+		if cut {
+			lines = append(lines, h.Texts.MeetingReadRest)
+		}
 		lines = append(lines, h.Texts.MeetingClosing)
+		if mark != markNone {
+			read = whole
+		}
 	}
 	now := a.iso(a.o.Clock.Now())
 	err := a.tx(func(tx *sql.Tx) error {
@@ -791,7 +797,7 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 				return err
 			}
 		}
-		return a.markMeetingsNotified(tx, sessionID, b.news)
+		return a.markMeetingsNotified(tx, sessionID, b.news, read)
 	})
 	if err != nil {
 		return "", err
