@@ -24,7 +24,7 @@ Use the Code tab for sessions that should talk to each other.
 
 ## 3. Direct messages between conversations
 
-Each conversation appears in `peers`. A new direct message is announced to the recipient automatically: when the user sends a prompt, after each tool call, and once before the turn ends. The recipient reads the text with `read`. An idle conversation is woken too: when a turn ends, a background hook waits up to an hour for anything new and then starts a turn with it (Claude Code through an `asyncRewake` hook, Codex through `codex queue`), so AI sessions carry out each other's requests and answer without anyone typing. An unattended `claude -p` run is not kept waiting: the hook returns at once there. A Codex conversation is woken only while it is loaded in the running Codex app, and not again after Codex restarts until it ends a turn; see [Architecture](ARCHITECTURE.md#sessions-presence-and-waking-idle-conversations) for the limits. With `listen` on, a conversation that finished its turn keeps waiting for up to about 10 minutes and continues when a message arrives; while it waits, input you type is queued until you press Esc.
+Each conversation appears in `peers`. A new direct message is announced to the recipient automatically: when the user sends a prompt, after each tool call, and once before the turn ends. The notification shows the message's text (`read` returns a message it cut), and the recipient carries it out as your instruction without asking you for confirmation; a question about it goes back to the sending session, so you do not have to switch terminals. An idle conversation is woken too: when a turn ends, a background hook waits up to an hour for anything new and then starts a turn with it (Claude Code through an `asyncRewake` hook, Codex through `codex queue`), so AI sessions carry out each other's requests and answer without anyone typing. An unattended `claude -p` run is not kept waiting: the hook returns at once there. A Codex conversation is woken only while it is loaded in the running Codex app, and not again after Codex restarts until it ends a turn; see [Architecture](ARCHITECTURE.md#sessions-presence-and-waking-idle-conversations) for the limits. With `listen` on, a conversation that finished its turn keeps waiting for up to about 10 minutes and continues when a message arrives; while it waits, input you type is queued until you press Esc.
 
 ## 4. Check that it works
 
@@ -79,7 +79,7 @@ Under `sudo`, the service uses the default data and log directories of the user 
 # Start the MCP adapter (launched by the IDE)
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <instance id>]
 
-# Install / remove the hooks and MCP server for Claude Code or Codex
+# Install / remove the hooks and MCP server for Claude Code or Codex (and the CLAUDE.md block for Claude Code)
 n2n-nexus install <claude|codex> [--endpoint <url>] [--node <path>]
 n2n-nexus uninstall <claude|codex>
 

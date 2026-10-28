@@ -416,11 +416,12 @@ func (a *Agents) addNotice(q querier, sessionID, text, meetingID string, now tim
 	return err
 }
 
-// unmarkNotified marks messages and notices as not notified again (a wake whose delivery failed).
+// unmarkNotified marks messages and notices as not notified again (a wake
+// whose delivery failed); the messages it showed whole are unread again.
 func (a *Agents) unmarkNotified(messageIDs []string, noticeIDs []int64) error {
 	return a.tx(func(tx *sql.Tx) error {
 		for _, id := range messageIDs {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET notified_at = NULL WHERE id = ?", id); err != nil {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET notified_at = NULL, status = 'unread', read_at = NULL WHERE id = ? AND status IN ('unread', 'read')", id); err != nil {
 				return err
 			}
 		}
@@ -578,6 +579,19 @@ func (a *Agents) preview(text string) string {
 	line, _, _ := strings.Cut(text, "\n")
 	line = strings.TrimSuffix(line, "\r")
 	return cutUnits(line, a.o.Contract.Hook.Limits.PreviewChars)
+}
+
+// unitLen is the length of s in UTF-16 code units.
+func unitLen(s string) int {
+	units := 0
+	for _, r := range s {
+		n := utf16.RuneLen(r)
+		if n < 0 {
+			n = 1
+		}
+		units += n
+	}
+	return units
 }
 
 // cutUnits cuts s to at most limit UTF-16 code units, never splitting a surrogate pair.

@@ -131,6 +131,7 @@ type Hook struct {
 		SessionNamePattern  string `json:"sessionNamePattern"`
 		PreviewChars        int    `json:"previewChars"`
 		NotifyListLimit     int    `json:"notifyListLimit"`
+		NotifyTextChars     int    `json:"notifyTextChars"`
 	} `json:"limits"`
 	Texts struct {
 		NoticePrefix        string `json:"noticePrefix"`
@@ -138,8 +139,15 @@ type Hook struct {
 		StopClosing         string `json:"stopClosing"`
 		StatusNote          string `json:"statusNote"`
 		SessionStartClosing string `json:"sessionStartClosing"`
+		CollaborationRules  string `json:"collaborationRules"`
 		MessageTrustNote    string `json:"messageTrustNote"`
 		MessageInfoNote     string `json:"messageInfoNote"`
+		MessageHeader       string `json:"messageHeader"`
+		MessageEnd          string `json:"messageEnd"`
+		MessageReplyTo      string `json:"messageReplyTo"`
+		MessageCut          string `json:"messageCut"`
+		ReplyInstruction    string `json:"replyInstruction"`
+		ReadRest            string `json:"readRest"`
 		NoReplyMark         string `json:"noReplyMark"`
 		EarlierUnread       string `json:"earlierUnread"`
 		MeetingNews         string `json:"meetingNews"`

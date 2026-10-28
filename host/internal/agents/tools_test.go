@@ -207,7 +207,7 @@ func TestReply(t *testing.T) {
 
 	notMine := h.claude("other", "reply", map[string]any{"messageId": original, "text": "x"})
 	eq(t, notMine.status, 400)
-	contains(t, notMine.error, "Message '"+original+"' not found or not sent to you; use a messageId from read.")
+	contains(t, notMine.error, "Message '"+original+"' not found or not sent to you; use a messageId from a notification or read.")
 	eq(t, h.codex("s", "reply", map[string]any{"messageId": original, "text": "x"}).status, 400) // the sender cannot reply to its own message
 	eq(t, h.claude("r", "reply", map[string]any{"messageId": "no-such", "text": "x"}).status, 400)
 

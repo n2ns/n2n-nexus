@@ -33,6 +33,7 @@ func wokenCodex(t *testing.T, h *harness) hookOutput {
 	}
 	eq(t, h.status("codex:r"), "working")
 	eq(t, h.notifiedCount(), 2)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'read'"), 1) // shown whole in the wake
 	return out
 }
 
@@ -64,6 +65,7 @@ func TestWakeResultFailedUndoesTheWake(t *testing.T) {
 	}
 	eq(t, h.status("codex:r"), "idle")
 	eq(t, h.notifiedCount(), 0)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'unread' AND read_at IS NULL"), 1)
 	turns, woken, pending = h.agentState("codex:r")
 	eq(t, turns, 0)
 	eq(t, woken, false)

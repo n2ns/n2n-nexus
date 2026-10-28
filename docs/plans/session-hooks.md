@@ -2,7 +2,7 @@
 
 状态：已实施，随 0.8.0 发布（2026-10-21）　｜　日期：2026-10-20
 
-> 后续变更：3.8 节的“自动拉起 daemon”已在 0.8.2 之后移除，客户端不再自己启动 daemon，改由 `n2n-nexus install host` 或手动 `n2n-nexus daemon` 启动（见 CHANGELOG [Unreleased]）；`src/cli/autostart.ts` 已删除。下文保留原方案原貌。
+> 后续变更：3.8 节的“自动拉起 daemon”已在 0.8.2 之后移除，客户端不再自己启动 daemon，改由 `n2n-nexus install host` 或手动 `n2n-nexus daemon` 启动（见 CHANGELOG [Unreleased]）；`src/cli/autostart.ts` 已删除。第 3 节“通知只放第一行预览、正文只能通过 `read` 读取”已改为通知带完整正文（合计截到 `notifyTextChars`），完整显示的消息在无需回复或通知驱动本轮时标为已读，`reply` 也会把被回复的消息标为已读，见 [工具参考](../TOOLS_REFERENCE_zh.md#对话之间的直接消息)。下文保留原方案原貌。
 
 ## 1. 目标与完成标准
 

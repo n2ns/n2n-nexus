@@ -171,13 +171,22 @@ func (a *Agents) toolReply(c api.Call) (any, error) {
 		return nil, err
 	}
 	if original == nil || original.ToID != self.ID {
-		return nil, api.Errorf("Message '%s' not found or not sent to you; use a messageId from read.", args.MessageID)
+		return nil, api.Errorf("Message '%s' not found or not sent to you; use a messageId from a notification or read.", args.MessageID)
 	}
 	sender, err := getSession(a.db(), original.FromID)
 	if err != nil {
 		return nil, err
 	}
-	return a.deliver(self, sender, args.Text, &original.ID, false, args.kind)
+	out, err := a.deliver(self, sender, args.Text, &original.ID, false, args.kind)
+	if err != nil {
+		return nil, err
+	}
+	// Answered: a message shown in a notification needs no read, and Stop no longer holds the turn for it.
+	at := a.iso(a.o.Clock.Now())
+	if _, err := a.db().ExecContext(bg, "UPDATE agent_messages SET status = 'read', read_at = ?, notified_at = COALESCE(notified_at, ?) WHERE id = ? AND status = 'unread'", at, at, original.ID); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (a *Agents) toolRead(c api.Call) (any, error) {

@@ -114,7 +114,7 @@ func TestSessionStartIntroduction(t *testing.T) {
 	notContains(t, text, "- claude@proj#2 (claude:h)")
 	contains(t, text, "...and 1 more")
 	contains(t, text, texts.StatusNote)
-	if !strings.HasSuffix(text, texts.SessionStartClosing) {
+	if !strings.HasSuffix(text, texts.SessionStartClosing+"\n"+texts.CollaborationRules) {
 		t.Fatal(text)
 	}
 	eq(t, h.status("claude:h"), "idle")
@@ -168,9 +168,8 @@ func TestUserPromptSubmitNotification(t *testing.T) {
 	if out := h.hook("claude", "UserPromptSubmit", "rcv"); out != nil {
 		t.Fatalf("nothing to tell, got %v", out)
 	}
-	previewChars := testContract.Hook.Limits.PreviewChars
-	long := strings.Repeat("x", previewChars+50)
-	h.send("sender", "claude:rcv", long+"\r\nsecond line", false)
+	long := strings.Repeat("x", testContract.Hook.Limits.PreviewChars+50) + "\r\nsecond line"
+	first := h.send("sender", "claude:rcv", long, false)
 	for i := 2; i <= 7; i++ {
 		h.send("sender", "claude:rcv", "message "+string(rune('0'+i)), false)
 	}
@@ -180,24 +179,24 @@ func TestUserPromptSubmitNotification(t *testing.T) {
 	if !strings.HasPrefix(text, prefix+" 7 unread direct messages:") {
 		t.Fatal(text)
 	}
-	contains(t, text, "From codex@proj (codex:sender) at ")
-	contains(t, text, ": "+strings.Repeat("x", previewChars)+"\n")
-	notContains(t, text, strings.Repeat("x", previewChars+1))
-	notContains(t, text, "second line")
-	contains(t, text, "message 5")
-	notContains(t, text, "message 6")
+	// Each listed message is shown whole, between its header and end lines, with how to answer it.
+	contains(t, text, "--- Message "+first+" from codex@proj (codex:sender) at ")
+	contains(t, text, " ---\n"+long+"\n"+fmt.Sprintf(texts.MessageEnd, first)+"\n"+fmt.Sprintf(texts.ReplyInstruction, first)+"\n")
+	contains(t, text, "\nmessage 5\n")
+	notContains(t, text, "\nmessage 6\n")
 	contains(t, text, "...and 2 more")
-	contains(t, text, texts.MessageTrustNote+" "+texts.NotifyClosing)
+	contains(t, text, texts.MessageTrustNote+" "+texts.NotifyClosing+"\n"+texts.ReadRest)
 	eq(t, h.status("claude:rcv"), "working")
 
 	// Every unread message was marked notified, so a tool call adds nothing.
 	if out := h.hook("claude", "PostToolUse", "rcv"); out != nil {
 		t.Fatalf("PostToolUse repeated %v", out)
 	}
-	// The next prompt only counts them while they are unread: each was announced in full once.
+	// The next prompt only counts them while they are unread: each was announced in full once
+	// (a prompt's notification is no turn of its own, so it marks nothing read).
 	again := h.hook("claude", "UserPromptSubmit", "rcv").context()
 	contains(t, again, fmt.Sprintf(texts.EarlierUnread, 7))
-	notContains(t, again, "message 1")
+	notContains(t, again, "\nmessage 1\n")
 }
 
 func TestPreviewCountsUTF16Units(t *testing.T) {
@@ -226,19 +225,19 @@ func TestPostToolUseOnlyNew(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")
 	h.hook("claude", "SessionStart", "r")
-	h.send("s", "claude:r", "first", false)
+	h.send("s", "claude:r", "msg-one", false)
 	first := h.hook("claude", "PostToolUse", "r", map[string]any{"tool_use_id": "t1", "tool_name": "Bash"})
 	eq(t, first["hookSpecificOutput"].(map[string]any)["hookEventName"], any("PostToolUse"))
 	contains(t, first.context(), prefix+" 1 new direct message:")
-	contains(t, first.context(), "first")
+	contains(t, first.context(), "msg-one")
 	eq(t, h.status("claude:r"), "working")
 	if out := h.hook("claude", "PostToolUse", "r"); out != nil {
 		t.Fatalf("repeated %v", out)
 	}
-	h.send("s", "claude:r", "second", false)
+	h.send("s", "claude:r", "msg-two", false)
 	second := h.hook("claude", "PostToolUse", "r").context()
-	contains(t, second, "second")
-	notContains(t, second, "first")
+	contains(t, second, "msg-two")
+	notContains(t, second, "msg-one")
 }
 
 func TestStopBlocksOnce(t *testing.T) {
@@ -270,6 +269,74 @@ func TestStopBlocksOnce(t *testing.T) {
 	eq(t, h.status("claude:r"), "idle")
 }
 
+func TestStopShowsMessagesWholeAndMarksThemRead(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	asked := h.claude("r", "send", map[string]any{"to": "codex:s", "text": "status?"}).result["messageId"].(string)
+	sent := h.codex("s", "reply", map[string]any{"messageId": asked, "text": "deploy it\nthen report"})
+	eq(t, sent.status, 200)
+	id := sent.result["messageId"].(string)
+
+	blocked := h.hook("claude", "Stop", "r", stopInactive)
+	eq(t, blocked.str("decision"), "block")
+	contains(t, blocked.str("reason"), strings.Join([]string{
+		fmt.Sprintf(texts.MessageReplyTo, asked),
+		"deploy it\nthen report",
+		fmt.Sprintf(texts.MessageEnd, id),
+		fmt.Sprintf(texts.ReplyInstruction, id),
+	}, "\n"))
+	contains(t, blocked.str("reason"), texts.MessageTrustNote+" "+texts.StopClosing)
+	notContains(t, blocked.str("reason"), texts.ReadRest)
+	// Shown whole in the text that drives the turn: read, so read and the next Stop have nothing left.
+	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
+	h.hook("claude", "Stop", "r", stopActive)
+	if out := h.hook("claude", "Stop", "r", stopInactive); out != nil {
+		t.Fatalf("Stop held again: %v", out)
+	}
+}
+
+func TestReplyMarksTheAnsweredMessageRead(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "UserPromptSubmit", "r")
+	id := h.send("s", "claude:r", "check the logs", false)
+	// Shown during the turn: it stays unread, so a turn that ignores it is held at Stop ...
+	contains(t, h.hook("claude", "PostToolUse", "r").context(), "check the logs")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread'", id), 1)
+	// ... but answering it with reply marks it read: no Stop hold, no automatic turn, nothing for read.
+	eq(t, h.claude("r", "reply", map[string]any{"messageId": id, "text": "logs are clean", "expectsReply": false}).status, 200)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'read' AND read_at IS NOT NULL", id), 1)
+	if out := h.hook("claude", "Stop", "r", stopInactive); out != nil {
+		t.Fatalf("Stop held for an answered message: %v", out)
+	}
+	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
+}
+
+func TestNotificationTextBudget(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	budget := testContract.Hook.Limits.NotifyTextChars
+	emoji := "\U0001F600" // two UTF-16 units
+	big := strings.Repeat("y", budget-1) + emoji + "tail"
+	first := h.send("s", "claude:r", big, false)
+	second := h.send("s", "claude:r", "small", false)
+
+	reason := h.hook("claude", "Stop", "r", stopInactive).str("reason")
+	// The emoji does not fit whole: the cut keeps budget-1 units and never splits it.
+	contains(t, reason, " ---\n"+strings.Repeat("y", budget-1)+"\n"+fmt.Sprintf(texts.MessageCut, budget-1, budget+5)+"\n"+fmt.Sprintf(texts.MessageEnd, first))
+	// The one unit left of the budget goes to the second message.
+	contains(t, reason, " ---\ns\n"+fmt.Sprintf(texts.MessageCut, 1, 5)+"\n"+fmt.Sprintf(texts.MessageEnd, second))
+	contains(t, reason, texts.ReadRest)
+	// Cut messages stay unread: read returns them whole.
+	read := h.claude("r", "read", nil).result["messages"].([]any)
+	eq(t, len(read), 2)
+	eq(t, read[0].(map[string]any)["text"], any(big))
+	eq(t, read[1].(map[string]any)["text"], any("small"))
+}
+
 // ---------------------------------------------------------------------------
 // Background wait
 // ---------------------------------------------------------------------------
@@ -290,9 +357,12 @@ func TestBackgroundWaitWakes(t *testing.T) {
 	if out := h.hook("claude", "UserPromptSubmit", "r"); out != nil {
 		t.Fatalf("woken prompt repeated the wake: %v", out)
 	}
-	// A prompt of the user later still counts the unread message.
+	// The wake showed the message whole and marked it read: a later prompt and read have nothing left.
 	h.at(ms(timing.WakePromptWindowMs) + time.Second)
-	contains(t, h.hook("claude", "UserPromptSubmit", "r").context(), fmt.Sprintf(texts.EarlierUnread, 1))
+	if out := h.hook("claude", "UserPromptSubmit", "r"); out != nil {
+		t.Fatalf("prompt after the wake: %v", out)
+	}
+	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
 }
 
 func texts0BackgroundWait() string { return testContract.Hook.BackgroundWaitEvent }
@@ -873,10 +943,10 @@ func TestSessionTitles(t *testing.T) {
 	contains(t, intro, "- codex@proj \"Mine\" (codex:a), codex, ")
 	contains(t, intro, "- claude@proj \"Review\" (claude:b), claude, ")
 	h.send("a", "claude:c", "hello", false)
-	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), "- From codex@proj \"Mine\" (codex:a) at ")
+	contains(t, h.hook("claude", "UserPromptSubmit", "c").context(), " from codex@proj \"Mine\" (codex:a) at ")
 	// Without a title, only the name.
 	h.claude("c", "send", map[string]any{"to": "codex:a", "text": "hi"})
-	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), "- From claude@proj#2 (claude:c) at ")
+	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), " from claude@proj#2 (claude:c) at ")
 
 	// An empty title clears it, and the client's title applies again.
 	cleared := h.codex("a", "set_profile", map[string]any{"title": ""})

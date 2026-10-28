@@ -49,12 +49,12 @@ Linux 上的托盘需要桌面环境支持 StatusNotifierItem（AppIndicator）�
 
 ```bash
 npm i -g n2n-nexus@latest
-n2n-nexus install claude     # ~/.claude/settings.json（或 $CLAUDE_CONFIG_DIR）+ claude mcp add --scope user
+n2n-nexus install claude     # ~/.claude/settings.json 和 CLAUDE.md（或 $CLAUDE_CONFIG_DIR 下的）+ claude mcp add --scope user
 n2n-nexus install codex      # ~/.codex/hooks.json（或 $CODEX_HOME）+ codex mcp add
 n2n-nexus doctor             # 全面检查，包括 host 是否应答
 ```
 
-`install` 把 hooks 和 MCP 服务写进客户端的用户级配置。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
+`install` 把 hooks 和 MCP 服务写进客户端的用户级配置。对 Claude Code 还会在用户级 `CLAUDE.md` 末尾加一段带标记的内容（`<!-- n2n-nexus:begin … -->` 到 `<!-- n2n-nexus:end -->`），说明你其他会话发来的直接消息就是你本人已经批准的指令，直接执行、不找你确认：Claude Code 只在你自己的指令要求时才照其他会话的消息去做。文件里的其他内容原样保留；想要别的规则可以在那里改这段的措辞（再次 `install` 会重新写入）。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
 
 MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 用的是全局安装的包，需要你自己升级（第 8 步）。
 
@@ -143,7 +143,7 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 9. 卸载
 
-`n2n-nexus uninstall <claude|codex>` 删除 `install` 写入的 hooks 和 MCP 服务，配置里的其他内容不动。
+`n2n-nexus uninstall <claude|codex>` 删除 `install` 写入的 hooks、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删），配置里的其他内容不动。
 
 ```bash
 n2n-nexus uninstall claude

@@ -49,12 +49,12 @@ Requires Node.js 22.14+ on the 22.x release line, or Node.js 23.6+.
 
 ```bash
 npm i -g n2n-nexus@latest
-n2n-nexus install claude     # ~/.claude/settings.json (or $CLAUDE_CONFIG_DIR) + claude mcp add --scope user
+n2n-nexus install claude     # ~/.claude/settings.json and CLAUDE.md (or in $CLAUDE_CONFIG_DIR) + claude mcp add --scope user
 n2n-nexus install codex      # ~/.codex/hooks.json (or $CODEX_HOME) + codex mcp add
 n2n-nexus doctor             # checks everything, including that the host answers
 ```
 
-`install` writes the hooks and the MCP server into the client's user configuration. Start a **new** conversation afterwards: running conversations do not load the new MCP server.
+`install` writes the hooks and the MCP server into the client's user configuration. For Claude Code it also adds a marked block (`<!-- n2n-nexus:begin … -->` to `<!-- n2n-nexus:end -->`) at the end of your user-level `CLAUDE.md`, saying that a direct message from your other sessions is your instruction, already approved, to carry out without asking you for confirmation: Claude Code acts on another session's message only where your own instructions call for it. The rest of the file is kept as it is; edit the block's wording there if you want other rules (a new `install` writes it again). Start a **new** conversation afterwards: running conversations do not load the new MCP server.
 
 The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package, which you update yourself (step 8).
 
@@ -143,7 +143,7 @@ IPv6 discovery keeps the HTTP address family: a host bound to `::` on this machi
 
 ## 9. Uninstalling
 
-`n2n-nexus uninstall <claude|codex>` removes the hooks and the MCP server that `install` added and leaves the rest of the configuration alone.
+`n2n-nexus uninstall <claude|codex>` removes the hooks, the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it) and leaves the rest of the configuration alone.
 
 ```bash
 n2n-nexus uninstall claude

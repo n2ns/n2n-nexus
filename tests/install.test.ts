@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/executable.js";
 
-import { npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
+import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
 import { isOurCodexHook } from "../src/cli/codex-trust.js";
 
 // Runs the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
@@ -198,7 +198,35 @@ describe("install claude", () => {
         ]);
         expect(result.stdout).toContain(claudeSettings());
         expect(result.stdout).toContain(`Ran: ${mcpAdd("claude").join(" ")}\n`);
-        expect(fs.readdirSync(claudeDir)).toEqual(["settings.json"]);
+        expect(fs.readdirSync(claudeDir).sort()).toEqual(["CLAUDE.md", "settings.json"]);
+    });
+
+    it("writes the instructions into CLAUDE.md after the user's own text, once, and uninstall restores the file", () => {
+        const claudeMd = path.join(claudeDir, "CLAUDE.md");
+        const own = "# Mine\n\nKeep   this\n\n\nas it is.\n";
+        fs.mkdirSync(claudeDir, { recursive: true });
+        fs.writeFileSync(claudeMd, own);
+
+        const result = run(["install", "claude"]);
+        expect(result.code).toBe(0);
+        expect(result.stdout).toContain(`Wrote the n2n-nexus instructions to ${claudeMd}\n`);
+        expect(fs.readFileSync(claudeMd, "utf8")).toBe(`${own}\n${INSTRUCTIONS}\n`);
+        expect(run(["install", "claude"]).code).toBe(0);
+        expect(fs.readFileSync(claudeMd, "utf8")).toBe(`${own}\n${INSTRUCTIONS}\n`);
+
+        // Text the user added after the block stays too.
+        fs.appendFileSync(claudeMd, "\nLater note.\n");
+        const uninstalled = run(["uninstall", "claude"]);
+        expect(uninstalled.code).toBe(0);
+        expect(uninstalled.stdout).toContain(`Removed the n2n-nexus instructions from ${claudeMd}\n`);
+        expect(fs.readFileSync(claudeMd, "utf8")).toBe(`${own}\nLater note.\n`);
+    });
+
+    it("creates CLAUDE.md for the instructions and uninstall removes the file it holds alone", () => {
+        expect(run(["install", "claude"]).code).toBe(0);
+        expect(fs.readFileSync(path.join(claudeDir, "CLAUDE.md"), "utf8")).toBe(`${INSTRUCTIONS}\n`);
+        expect(run(["uninstall", "claude"]).code).toBe(0);
+        expect(fs.existsSync(path.join(claudeDir, "CLAUDE.md"))).toBe(false);
     });
 
     it("gives the same result when installed twice, and replaces the endpoint", () => {

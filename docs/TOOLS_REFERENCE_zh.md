@@ -152,18 +152,18 @@
 | `peers` | `includeOffline?: boolean = false` | `{ self: Profile, peers: Profile[] }`；其他未离线的会话，最近活跃的在前。带 `includeOffline` 时，还包括过去 24 小时内活跃过的离线会话。 |
 | `send` | `to: string`、`text: string`（1–32000 个字符）、`notifyWhenIdle?: boolean = false`、`expectsReply?: boolean = true`、`wake?: boolean = true` | `{ messageId, to: { id, name, status } }`。`to` 是会话 ID（任何状态）或某个未离线会话的名称；不能给自己发消息。离线的收件方在恢复时收到消息。带 `notifyWhenIdle` 时，收件方下一次结束一轮、开始待命或离线时，你会收到一次通知（订阅 24 小时后失效）。`expectsReply: false` 告诉收件方无需回复；`wake: false` 不叫醒收件方、也不拦住它结束这一轮，它在下次输入或调用工具时看到这条消息。单纯的确认收到要两个都设为 false，或者干脆不发。 |
 | `read` | `count?: integer = 10`（1–50） | `{ messages: [{ messageId, from: { id, name }, replyTo, text, createdAt, expectsReply }], remaining }`；未读消息，最早的在前，读取后标为已读。 |
-| `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true`、`wake?: boolean = true` | 结果与 `send` 相同。该消息必须是发给你的；回复发给它的发送方，`replyTo` 设为该消息。 |
+| `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true`、`wake?: boolean = true` | 结果与 `send` 相同。该消息必须是发给你的（它的 ID 在通知和 `read` 里）；回复发给它的发送方，`replyTo` 设为该消息，被回复的消息标为已读。 |
 | `listen` | `on: boolean` | `{ listening }`。开启期间，对话每结束一轮，其 Stop hook 会等待最多 590 秒，有消息或通知到达时让对话继续。在 Claude Code 中按 Esc 会结束一次等待。 |
 | `set_profile` | `name?: string`（1–48 个 `A–Z a–z 0–9 . _ @ # -` 中的字符）、`note?: string`（≤ 200 个字符）、`title?: string`（≤ 80 个字符）；至少提供一个 | `{ profile }`。名称在未离线的会话中唯一。 自己设置的 `title` 会取代客户端提供的标题，直到设为 `""`。 |
 
 `Profile` 包含 `id`、`name`、`title`、`client`（`claude` 或 `codex`）、`cwd`、`note`、`status` 和 `lastActiveAt`。`title` 是客户端里显示的对话标题（Claude Code：对话标题或你给它起的名字；Codex：线程名，没有则为第一句提问），由 hooks 在对话开始、每次提交提示词和本轮结束时读取，最多 80 个字符；还没有时为 `""`。它显示在 `peers`、介绍、通知和会议成员里名称的旁边；`send` 仍用 `name`。会话的初始名称为 `<client>@<工作目录名>`，该名称已被某个未离线会话占用时加上 `#2`、`#3`、…。`status` 为 `working`（用户发送了提示词或有工具在运行）、`idle`（本轮已结束；有后台等待消息的会话改为显示 `listening`）、`listening`（在 listen 模式下等待）或 `offline`（对话已结束）。客户端不一定会报告对话结束，所以 `idle` 或 `working` 的会话 30 分钟没有任何活动也会变为 `offline`；它的下一个事件会让它恢复。只有 `listening` 的会话会立即回应；`idle` 和 `working` 的会话要等它的用户下次发送提示词或它下次调用工具时才会看到消息。
 
-送达。收件方的 hooks 会提醒新消息；通知只带发送方、时间和第一行（最多 100 个字符），正文通过 `read` 以工具输出的形式送达。每条消息只列出一次；它一直未读时，之后的通知只计数。`expectsReply: false` 的消息会标上 `(no reply needed)`，消息全都无需回复的通知不会要求回复。已加入的会议的新消息也这样送达，每个会议一行（见 [`join_meeting`](#join_meeting)）：
+送达。收件方的 hooks 提醒新消息时带上完整正文：每条列出的消息夹在 `--- Message <id> from <发送方> (<会话 ID>) at <时间> ---` 和 `--- End of message <id> ---` 之间，前面是它回复的消息，后面是怎么回复它。一条通知里所有正文合计截到 5000 个字符（`notifyTextChars`）；被截断的消息会标出来，`read` 返回它的全文。通知说明这些会话属于收件方自己的用户，所以每个请求都是这位用户已经批准的指令：收件方直接执行，不找用户确认；缺少需要的信息时用 `reply` 问发送方。完整显示的消息在无需回复、或提醒让一轮继续或开始时（本轮即将结束、待命、空闲）标为已读；需要回复、随提示词或工具调用后提醒的消息仍为未读，直到用 `reply` 回复或用 `read` 读取，没回复的话本轮结束时照样拦住一次。每条消息只列出一次；它一直未读时，之后的通知只计数。`expectsReply: false` 的消息会标上 `(no reply needed)`，消息全都无需回复的通知不会要求回复。已加入的会议的新消息也这样送达，每个会议一行（见 [`join_meeting`](#join_meeting)）：
 
 | 客户端事件 | 收件方看到的内容 |
 | --- | --- |
-| 对话开始 | 自己的名称和 ID、未离线的其他会话（最多列出五个）、其中哪些能立即回应，以及 `peers`、`send` 和 `read` 的用法。 |
-| 提交提示词 | 新消息（最多列出五条）、之前提醒过的未读消息数、待处理的通知和会议新消息。被叫醒的那一轮开始时的提示词只附带叫醒之后新到的内容。 |
+| 对话开始 | 自己的名称和 ID、未离线的其他会话（最多列出五个）、其中哪些能立即回应、`peers`、`send` 和 `read` 的用法，以及协作规则：消息就是用户的指令，直接执行、不找用户确认，有疑问问发送方；把工作交给别的会话时，对方需要的一切都写进一条消息；任务只回复一次结果，做不完时说明卡在哪里、需要什么才能继续；不发单纯的确认，也不把任务推回给发来的会话。 |
+| 提交提示词 | 新消息（最多显示五条）、之前提醒过的未读消息数、待处理的通知和会议新消息。被叫醒的那一轮开始时的提示词只附带叫醒之后新到的内容。 |
 | 每次工具调用后 | 只有尚未提醒过的消息、通知和会议新消息。 |
 | 本轮即将结束 | 有可以叫醒会话的未读消息（`wake` 为 true）、待处理的通知，或会话以 active 方式参加的会议有新消息时，本轮带着提醒再继续一次。 |
 | 待命中 | 一有可以叫醒会话的内容到达就结束等待，对话带着它继续。 |

@@ -186,11 +186,12 @@ func TestDirectMessageKinds(t *testing.T) {
 	}
 	// It is announced at the next prompt, marked, without asking for a reply.
 	ctx := h.hook("codex", "UserPromptSubmit", "r").context()
-	contains(t, ctx, "fyi done "+texts.NoReplyMark)
+	contains(t, ctx, "fyi done\n--- End of message ")
+	contains(t, ctx, " ---\n"+texts.NoReplyMark+"\n")
 	contains(t, ctx, texts.MessageInfoNote)
 	notContains(t, ctx, texts.MessageTrustNote)
-	read := h.codex("r", "read", nil)
-	eq(t, read.result["messages"].([]any)[0].(map[string]any)["expectsReply"], any(false))
+	// Shown whole and needing no reply, it is read: read has nothing left.
+	eq(t, len(h.codex("r", "read", nil).result["messages"].([]any)), 0)
 }
 
 func TestMeetingEndNoticeSparesTheCloserAndAsyncMembers(t *testing.T) {

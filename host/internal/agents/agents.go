@@ -616,28 +616,51 @@ func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 }
 
 // announce builds the notification text of a batch and marks it notified.
+// Each listed message is shown with its text, all texts together cut to the
+// contract's notifyTextChars. A message shown whole is also marked read when
+// it needs no reply, or with markRead (the text drives the turn: it wakes the
+// session or holds its Stop). Otherwise, and when cut or not listed, it stays
+// unread until read or answered with reply, so Stop holds the turn for it.
 // closing ends the direct-message part when a message expects a reply.
-func (a *Agents) announce(sessionID string, b batch, label, closing string) (string, error) {
+func (a *Agents) announce(sessionID string, b batch, label, closing string, markRead bool) (string, error) {
 	h := a.o.Contract.Hook
 	limit := h.Limits.NotifyListLimit
 	var lines []string
+	var shown []string // messages shown whole, marked read
+	rest := false      // a message is cut or not listed
 	if n := len(b.messages); n > 0 {
 		plural := "s"
 		if n == 1 {
 			plural = ""
 		}
 		lines = append(lines, fmt.Sprintf("%s %d %s direct message%s:", h.Texts.NoticePrefix, n, label, plural))
+		budget := h.Limits.NotifyTextChars
 		for i, m := range b.messages {
 			if i == limit {
 				break
 			}
-			line := fmt.Sprintf("- From %s (%s) at %s: %s", displayName(m.FromName, m.FromTitle), m.FromID, m.CreatedAt, a.preview(m.Text))
-			if !m.ExpectsReply {
-				line += " " + h.Texts.NoReplyMark
+			lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, displayName(m.FromName, m.FromTitle), m.FromID, m.CreatedAt))
+			if m.ReplyTo != nil {
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
-			lines = append(lines, line)
+			text := cutUnits(m.Text, budget)
+			budget -= unitLen(text)
+			lines = append(lines, text)
+			if len(text) < len(m.Text) {
+				rest = true
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, unitLen(text), unitLen(m.Text)))
+			} else if markRead || !m.ExpectsReply {
+				shown = append(shown, m.ID)
+			}
+			lines = append(lines, fmt.Sprintf(h.Texts.MessageEnd, m.ID))
+			if m.ExpectsReply {
+				lines = append(lines, fmt.Sprintf(h.Texts.ReplyInstruction, m.ID))
+			} else {
+				lines = append(lines, h.Texts.NoReplyMark)
+			}
 		}
 		if n > limit {
+			rest = true
 			lines = append(lines, fmt.Sprintf("- ...and %d more", n-limit))
 		}
 	}
@@ -662,7 +685,10 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string) (str
 		if reply {
 			lines = append(lines, h.Texts.MessageTrustNote+" "+closing)
 		} else {
-			lines = append(lines, h.Texts.MessageInfoNote+" "+h.Texts.NotifyClosing)
+			lines = append(lines, h.Texts.MessageInfoNote)
+		}
+		if rest {
+			lines = append(lines, h.Texts.ReadRest)
 		}
 	}
 	for _, n := range b.news {
@@ -675,6 +701,11 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string) (str
 	err := a.tx(func(tx *sql.Tx) error {
 		for _, m := range b.messages {
 			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET notified_at = ? WHERE id = ? AND notified_at IS NULL", now, m.ID); err != nil {
+				return err
+			}
+		}
+		for _, id := range shown {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET status = 'read', read_at = ? WHERE id = ? AND status = 'unread'", now, id); err != nil {
 				return err
 			}
 		}
@@ -706,7 +737,7 @@ func (a *Agents) notifyWith(sessionID string, all bool, label, closing string) (
 	if err != nil || b.empty() {
 		return "", err
 	}
-	return a.announce(sessionID, b, label, closing)
+	return a.announce(sessionID, b, label, closing, false)
 }
 
 // continueWith announces a batch that wakes the session or holds its Stop: it
@@ -717,7 +748,7 @@ func (a *Agents) continueWith(sessionID string, b batch, label, closing string) 
 	if err != nil {
 		return "", nil, err
 	}
-	text, err := a.announce(sessionID, b, label, closing)
+	text, err := a.announce(sessionID, b, label, closing, true)
 	if err != nil {
 		return "", nil, err
 	}
@@ -771,7 +802,7 @@ func (a *Agents) introduce(sessionID string) (string, error) {
 		}
 		lines = append(lines, h.Texts.StatusNote)
 	}
-	lines = append(lines, h.Texts.SessionStartClosing)
+	lines = append(lines, h.Texts.SessionStartClosing, h.Texts.CollaborationRules)
 	return strings.Join(lines, "\n"), nil
 }
 

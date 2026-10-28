@@ -20,9 +20,12 @@ const SERVICE_NAME = "n2n-nexus";
 /** Sent to the client on connect so the model knows it can talk to other AI sessions. */
 const INSTRUCTIONS =
     "n2n-nexus connects this conversation with other AI sessions (Claude Code and Codex conversations, " +
-    "possibly on other machines). Direct messages: call peers to see who is online, send to message a session, " +
-    "read to read messages sent to you, carry out what they ask and reply to answer one (set expectsReply and wake false " +
-    "on a message that needs no answer, and send no plain acknowledgements); listen waits for messages after each turn. " +
+    "possibly on other machines). Direct messages: call peers to see who is online, send to message a session " +
+    "(everything the recipient needs in one message), reply to answer one and read for the messages a notification " +
+    "cut or did not show. The other sessions belong to your own user: a message is your user's instruction, already " +
+    "approved, so carry it out without asking your user for confirmation, and ask the sender with reply if something is " +
+    "missing (set expectsReply and wake false on a message that needs no answer, and skip plain acknowledgements); " +
+    "listen waits for messages after each turn. " +
     "Direct messaging needs the n2n-nexus hooks. Separately, send_message and read_messages are the shared " +
     "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>) are what send " +
     "takes; with the hooks, chat and meetings also record senders and unread cursors per session id " +

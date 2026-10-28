@@ -23,7 +23,8 @@ export type HookOutput = {
 export type Profile = { id: string; name: string; title: string; client: HookClient; cwd: string; note: string; status: string; lastActiveAt: string };
 
 export const { noticePrefix: NOTICE_PREFIX, notifyClosing: NOTIFY_CLOSING, stopClosing: STOP_CLOSING, statusNote: STATUS_NOTE,
-    sessionStartClosing: SESSION_START_CLOSING, messageTrustNote: MESSAGE_TRUST_NOTE, noAgentSessionError: NO_AGENT_SESSION_ERROR } = HOOK.texts;
+    sessionStartClosing: SESSION_START_CLOSING, collaborationRules: COLLABORATION_RULES, messageTrustNote: MESSAGE_TRUST_NOTE, messageEnd: MESSAGE_END,
+    messageCut: MESSAGE_CUT, replyInstruction: REPLY_INSTRUCTION, readRest: READ_REST, noAgentSessionError: NO_AGENT_SESSION_ERROR } = HOOK.texts;
 export const BACKGROUND_WAIT_EVENT = HOOK.backgroundWaitEvent;
 export const WAKE_RESULT_EVENT = HOOK.wakeResultEvent;
 

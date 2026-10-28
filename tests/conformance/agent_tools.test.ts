@@ -183,7 +183,7 @@ describe("direct-message tools: send, reply, read", () => {
 
         const notMine = await claude(s("other"), "reply", { messageId: original, text: "x" });
         expect(notMine.status).toBe(400);
-        expect(notMine.payload.error).toContain(`Message '${original}' not found or not sent to you; use a messageId from read.`);
+        expect(notMine.payload.error).toContain(`Message '${original}' not found or not sent to you; use a messageId from a notification or read.`);
         expect((await codex(s("s"), "reply", { messageId: original, text: "x" })).status).toBe(400);   // the sender cannot reply to its own message
         expect((await claude(s("r"), "reply", { messageId: "no-such", text: "x" })).status).toBe(400);
 

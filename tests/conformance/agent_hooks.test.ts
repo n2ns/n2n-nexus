@@ -4,12 +4,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost, type ToolReply } from "./harness.js";
 import {
-    BACKGROUND_WAIT_EVENT, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
+    BACKGROUND_WAIT_EVENT, COLLABORATION_RULES, MESSAGE_CUT, MESSAGE_END, MESSAGE_TRUST_NOTE, NOTICE_PREFIX, NOTIFY_CLOSING, NO_AGENT_SESSION_ERROR, READ_REST, REPLY_INSTRUCTION, SESSION_START_CLOSING, STATUS_NOTE, STOP_CLOSING,
     agentKit, context, ids
 } from "./agents.js";
 
 const LISTEN_MS = 300;
 const PREVIEW_CHARS = HOOK.limits.previewChars;
+const NOTIFY_TEXT_CHARS = HOOK.limits.notifyTextChars;
 
 const host = useHost({ listenWaitMs: LISTEN_MS, rateLimit: 0 });
 const { hook, openHook, claudeTool, codexTool, send, sessions, profile, status, endSessions } = agentKit(host);
@@ -116,7 +117,7 @@ describe("POST /api/hook: SessionStart introduction", () => {
         expect(text).toContain(`This conversation is claude@proj#2 (claude:${s("h")})`);
         expect(text).not.toContain(`- claude@proj#2 (claude:${s("h")})`);      // not listed among the others
         expect(text).toContain("...and 1 more");
-        expect(text.endsWith(SESSION_START_CLOSING)).toBe(true);
+        expect(text.endsWith(`${SESSION_START_CLOSING}\n${COLLABORATION_RULES}`)).toBe(true);
         expect(text).toContain(STATUS_NOTE);
         expect(await status(`claude:${s("h")}`)).toBe("idle");
     });
@@ -127,33 +128,31 @@ describe("POST /api/hook: SessionStart introduction", () => {
         const text = context(await hook("claude", "SessionStart", s("b")));
         expect(text).toContain(`- codex@proj "Fix login" (codex:${s("a")}), codex, idle, /work/proj`);
         await send(s("a"), `claude:${s("b")}`, "hello");
-        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(`- From codex@proj "Fix login" (codex:${s("a")}) at `);
+        expect(context(await hook("claude", "UserPromptSubmit", s("b")))).toContain(` from codex@proj "Fix login" (codex:${s("a")}) at `);
     });
 });
 
 describe("POST /api/hook: notifications", () => {
-    it("UserPromptSubmit lists unread messages and pending notices, at most five individually, with first-line previews", async () => {
+    it("UserPromptSubmit shows unread messages whole, at most five, and keeps them unread", async () => {
         const s = ids();
         await hook("codex", "SessionStart", s("sender"));
         await hook("claude", "SessionStart", s("rcv"));
         expect(await hook("claude", "UserPromptSubmit", s("rcv"))).toBeNull();  // nothing to tell
 
-        const long = "x".repeat(PREVIEW_CHARS + 50);
-        await send(s("sender"), `claude:${s("rcv")}`, `${long}\nsecond line`);
+        const long = `${"x".repeat(PREVIEW_CHARS + 50)}\nsecond line`;
+        const first = await send(s("sender"), `claude:${s("rcv")}`, long);
         for (let i = 2; i <= 7; i++) await send(s("sender"), `claude:${s("rcv")}`, `message ${i}`);
 
         const out = await hook("claude", "UserPromptSubmit", s("rcv"));
         expect(out?.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
         const text = context(out);
         expect(text.startsWith(`${NOTICE_PREFIX} 7 unread direct messages:`)).toBe(true);
-        expect(text).toContain(`From codex@proj (codex:${s("sender")}) at `);
-        expect(text).toContain(`: ${"x".repeat(PREVIEW_CHARS)}\n`);
-        expect(text).not.toContain("x".repeat(PREVIEW_CHARS + 1));
-        expect(text).not.toContain("second line");
-        expect(text).toContain("message 5");
-        expect(text).not.toContain("message 6");
+        expect(text).toContain(`--- Message ${first} from codex@proj (codex:${s("sender")}) at `);
+        expect(text).toContain(` ---\n${long}\n${MESSAGE_END.replace("%s", first)}\n${REPLY_INSTRUCTION.replace("%s", first)}\n`);
+        expect(text).toContain("\nmessage 5\n");
+        expect(text).not.toContain("\nmessage 6\n");
         expect(text).toContain("...and 2 more");
-        expect(text).toContain(`${MESSAGE_TRUST_NOTE} ${NOTIFY_CLOSING}`);
+        expect(text).toContain(`${MESSAGE_TRUST_NOTE} ${NOTIFY_CLOSING}\n${READ_REST}`);
         expect(await status(`claude:${s("rcv")}`)).toBe("working");
 
         // Every unread message was marked notified, so a tool call adds nothing.
@@ -161,7 +160,7 @@ describe("POST /api/hook: notifications", () => {
         // The next prompt only counts them while they are unread: each was announced in full once.
         const again = context(await hook("claude", "UserPromptSubmit", s("rcv")));
         expect(again).toContain("7 earlier direct message(s) still unread");
-        expect(again).not.toContain("message 1");
+        expect(again).not.toContain("\nmessage 1\n");
     });
 
     it("lists notices alone without the message note", async () => {
@@ -181,19 +180,19 @@ describe("POST /api/hook: notifications", () => {
         const s = ids();
         await hook("codex", "SessionStart", s("s"));
         await hook("claude", "SessionStart", s("r"));
-        await send(s("s"), `claude:${s("r")}`, "first");
+        await send(s("s"), `claude:${s("r")}`, "msg-one");
         const first = await hook("claude", "PostToolUse", s("r"), { tool_use_id: "t1", tool_name: "Bash" });
         expect(first?.hookSpecificOutput?.hookEventName).toBe("PostToolUse");
         expect(context(first)).toContain(`${NOTICE_PREFIX} 1 new direct message:`);
-        expect(context(first)).toContain("first");
+        expect(context(first)).toContain("msg-one");
         expect(await status(`claude:${s("r")}`)).toBe("working");
 
         expect(await hook("claude", "PostToolUse", s("r"))).toBeNull();
 
-        await send(s("s"), `claude:${s("r")}`, "second");
+        await send(s("s"), `claude:${s("r")}`, "msg-two");
         const second = context(await hook("claude", "PostToolUse", s("r")));
-        expect(second).toContain("second");
-        expect(second).not.toContain("first");
+        expect(second).toContain("msg-two");
+        expect(second).not.toContain("msg-one");
     });
 
     it("Stop blocks once while anything is unread, then lets the turn end", async () => {
@@ -216,6 +215,49 @@ describe("POST /api/hook: notifications", () => {
 
         expect(await hook("claude", "Stop", s("r"), { stop_hook_active: true })).toBeNull();
         expect(await status(`claude:${s("r")}`)).toBe("idle");
+    });
+
+    it("Stop shows a message whole and marks it read", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"));
+        await hook("claude", "SessionStart", s("r"));
+        const sent = await codexTool<{ messageId: string }>(s("s"), "send", { to: `claude:${s("r")}`, text: "deploy it\nthen report" });
+        const id = sent.payload.result!.messageId;
+
+        const blocked = await hook("claude", "Stop", s("r"), { stop_hook_active: false });
+        expect(blocked?.decision).toBe("block");
+        expect(blocked?.reason).toContain(` ---\ndeploy it\nthen report\n${MESSAGE_END.replace("%s", id)}\n${REPLY_INSTRUCTION.replace("%s", id)}`);
+        expect(blocked?.reason).toContain(`${MESSAGE_TRUST_NOTE} ${STOP_CLOSING}`);
+        expect(blocked?.reason).not.toContain(READ_REST);
+        expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
+    });
+
+    it("a message shown during a turn stays unread until reply answers it, and a no-reply one is read once shown", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"));
+        await hook("claude", "SessionStart", s("r"));
+        await hook("claude", "UserPromptSubmit", s("r"));
+        const id = await send(s("s"), `claude:${s("r")}`, "check the logs");
+        await codexTool(s("s"), "send", { to: `claude:${s("r")}`, text: "fyi deployed", expectsReply: false });
+        expect(context(await hook("claude", "PostToolUse", s("r")))).toContain("check the logs");
+
+        expect((await claudeTool(s("r"), "reply", { messageId: id, text: "logs are clean", expectsReply: false })).status).toBe(200);
+        expect(await hook("claude", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
+        expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
+    });
+
+    it("cuts the message texts of one notification to notifyTextChars and keeps a cut message unread", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"));
+        await hook("claude", "SessionStart", s("r"));
+        const big = `${"y".repeat(NOTIFY_TEXT_CHARS)}tail`;
+        const id = await send(s("s"), `claude:${s("r")}`, big);
+
+        const reason = (await hook("claude", "Stop", s("r"), { stop_hook_active: false }))?.reason;
+        expect(reason).toContain(` ---\n${"y".repeat(NOTIFY_TEXT_CHARS)}\n${MESSAGE_CUT.replace("%d", String(NOTIFY_TEXT_CHARS)).replace("%d", String(NOTIFY_TEXT_CHARS + 4))}\n${MESSAGE_END.replace("%s", id)}`);
+        expect(reason).toContain(READ_REST);
+        const read = await claudeTool<{ messages: { text: string }[] }>(s("r"), "read");
+        expect(read.payload.result?.messages.map((m) => m.text)).toEqual([big]);
     });
 });
 
