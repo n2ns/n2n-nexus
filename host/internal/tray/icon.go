@@ -18,11 +18,14 @@ var (
 	iconLinks = [][2][2]float64{{iconHub, iconNodes[0]}, {iconHub, iconNodes[1]}, {iconHub, iconNodes[2]}, {iconHub, iconNodes[3]}, {iconNodes[1], iconNodes[2]}}
 )
 
-const iconHubR, iconNodeR, iconLinkW = 0.094, 0.066, 0.025
+const iconHubR, iconNodeR, iconLinkW = 0.1, 0.07, 0.03
 
-// network says which part of the network (x, y) is on, scaled by zoom around the centre.
+// iconCentre is the middle of the network, which network places at the middle of the icon.
+var iconCentre = [2]float64{0.52, 0.516}
+
+// network says which part of the network (x, y) is on, centred and scaled by zoom.
 func network(x, y, zoom float64) (hub, node, link bool) {
-	x, y = (x-0.5)/zoom+0.5, (y-0.5)/zoom+0.5
+	x, y = (x-0.5)/zoom+iconCentre[0], (y-0.5)/zoom+iconCentre[1]
 	if math.Hypot(x-iconHub[0], y-iconHub[1]) <= iconHubR {
 		return true, false, false
 	}
@@ -39,27 +42,22 @@ func network(x, y, zoom float64) (hub, node, link bool) {
 	return false, false, false
 }
 
-// iconPNG draws the tray icon at size×size: a charcoal rounded tile with a
-// one-pixel grey edge, the hub red, the other nodes white, the links light
+// iconPNG draws the tray icon at size×size: the network nearly filling a
+// dark grey rounded tile, the hub red, the other nodes white, the links light
 // blue. The README logo (assets/n2n-nexus-logo.png) is the same drawing at 512 px.
 func iconPNG(size int) []byte {
 	var (
-		top, bottom = color.NRGBA{R: 0x2a, G: 0x2a, B: 0x2e, A: 0xff}, color.NRGBA{R: 0x0e, G: 0x0e, B: 0x10, A: 0xff}
-		edge        = color.NRGBA{R: 0x8e, G: 0x8e, B: 0x93, A: 0xff}
+		top, bottom = color.NRGBA{R: 0x4a, G: 0x4a, B: 0x52, A: 0xff}, color.NRGBA{R: 0x26, G: 0x26, B: 0x2c, A: 0xff}
 		link        = color.NRGBA{R: 0x8c, G: 0xc4, B: 0xff, A: 0xff}
 		white       = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 		red         = color.NRGBA{R: 0xff, G: 0x2d, B: 0x3a, A: 0xff}
 	)
 	const half, radius = 0.48, 0.14 // the tile
-	px := 1 / float64(size)
 	return draw(size, func(x, y float64) (color.NRGBA, bool) {
 		if !inRoundRect(x, y, half, radius) {
 			return color.NRGBA{}, false
 		}
-		if !inRoundRect(x, y, half-px, radius-px) {
-			return edge, true
-		}
-		switch h, n, l := network(x, y, 1); {
+		switch h, n, l := network(x, y, 1.3); {
 		case h:
 			return red, true
 		case n:
@@ -78,7 +76,7 @@ func iconPNG(size int) []byte {
 func templatePNG(size int) []byte {
 	black := color.NRGBA{A: 0xff}
 	return draw(size, func(x, y float64) (color.NRGBA, bool) {
-		h, n, l := network(x, y, 1.3)
+		h, n, l := network(x, y, 1.25)
 		return black, h || n || l
 	})
 }

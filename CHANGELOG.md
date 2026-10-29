@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The tray icon and the README logo are larger and plainer: the network nearly fills the tile, which is a lighter grey and has no grey edge.
+
 ## [0.12.1] - 2026-10-29
 
 ### Changed
