@@ -31,6 +31,7 @@ n2n-nexus is an open-source Model Context Protocol (MCP) coordination server for
 - [Real-world example](#-real-world-example)
 - [FAQ](#-faq)
 - [Documentation](#-documentation)
+- [License](#-license)
 
 ## 🔎 Looking for
 
@@ -61,8 +62,10 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 ## 🎯 Why use it?
 
 - Coordinate multiple AI assistants working on the same project.
+- Let Claude Code and Codex conversations message each other directly: a message arrives whole through the client's hooks, wakes a waiting conversation, and is answered with `reply`; each session shows the machine and environment it runs on.
+- Hold meetings among assistants and keep their decisions. When you take part, your conversation holds the user's seat: you decide each draft and end the meeting, and the assistants' consensus is only reported.
 - Share project manifests, decisions, and assets across IDEs and machines.
-- Keep decisions, proposals, and updates in a local meeting and message log.
+- Keep decisions, proposals, and updates in a local meeting and message log; old data is cleaned up after the retention you set.
 - Run the host once; connect adapters from Windows, WSL, SSH hosts, or multiple editors.
 - Avoid giving each assistant broad filesystem or backend access.
 
@@ -84,7 +87,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 
 - **The host is the source of truth**: install it once and keep it running, as a tray app or as a background service.
 - **MCP adapters are stateless**: each IDE starts an adapter (`n2n-nexus mcp`), which forwards tool calls to the host.
-- **Every Claude Code and Codex conversation has its own identity**: client hooks register the conversation with the host and notify it of new direct messages; each tool call names its conversation through the request metadata the client attaches, never through model-supplied arguments.
+- **Every Claude Code and Codex conversation has its own identity**: client hooks register the conversation with the host and deliver new direct messages and meeting messages to it; each tool call names its conversation through the request metadata the client attaches, never through model-supplied arguments.
 - **Cross-environment by design**: point `NEXUS_ENDPOINT` at the same host from different machines or shells. The host listens on `127.0.0.1` by default; turn on LAN access only on a trusted network.
 
 ## 🚀 Quick start
@@ -106,7 +109,7 @@ The host exposes 36 tools, grouped by purpose:
 | **Global docs** | `list_global_docs`, `get_global_doc`, `sync_global_doc`, `get_global_strategy`, `update_global_strategy` | List, read, create and update shared global documents and the master strategy document. |
 | **Messaging** | `send_message`, `read_messages`, `list_events` | Post meeting or global messages; read them and the activity log. |
 | **Direct messages** | `peers`, `send`, `read`, `reply`, `listen`, `set_profile` | Find other Claude Code / Codex conversations, message them, read and answer what arrives, wait for messages, and name yourself. |
-| **Meetings** | `list_meetings`, `start_meeting`, `join_meeting`, `leave_meeting`, `stance`, `end_meeting`, `archive_meeting`, `reopen_meeting` | List and open meetings; join (woken by new messages) or leave them; endorse or object to the current draft, which closes the meeting by consensus; close, archive, and reopen them. |
+| **Meetings** | `list_meetings`, `start_meeting`, `join_meeting`, `leave_meeting`, `stance`, `end_meeting`, `archive_meeting`, `reopen_meeting` | List and open meetings; join (woken by new messages) or leave them; endorse or object to the current draft, which closes the meeting by consensus or, with the user's seat, is decided by the user; close, archive, and reopen them. |
 | **Tasks** | `create_task`, `get_task`, `list_tasks`, `update_task`, `cancel_task` | Create, update and track tasks that assistants manage themselves. |
 | **Maintenance** | `host_maintenance`, `host_delete_project` | Prune or clear the global chat stream; run the retention cleanup now; export a meeting as markdown; delete a project. |
 
@@ -150,6 +153,10 @@ Yes. Run the host in one environment and point every adapter at it with `NEXUS_E
 ### Does it send data to the cloud?
 
 No cloud service is needed. Data stays in the configured local directory. Exposing the host to remote machines is your own network configuration.
+
+### How long does it keep data?
+
+Meetings for 30 days after they end, everything else (direct messages, events, finished tasks, inactive sessions) for 7 days; set `meetingRetentionDays` and `retentionDays` in the host's `settings.json`. `host_maintenance` exports a meeting as markdown before it goes ([User guide](docs/USER_GUIDE.md#settingsjson)).
 
 ### Is it a vector database or a source code indexer?
 

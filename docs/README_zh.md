@@ -31,6 +31,7 @@ n2n-nexus 是一个开源的 Model Context Protocol (MCP) 协同服务器，适�
 - [实战示例](#-实战示例)
 - [FAQ](#-faq)
 - [文档](#-文档)
+- [许可证](#-许可证)
 
 ## 🔎 搜索定位
 
@@ -50,7 +51,7 @@ n2n-nexus 面向这些场景设计：共享 host 状态、轻量 MCP 适配器�
 
 n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 host（`n2n-nexus-host`）保存项目状态、会议、消息、任务、共享文档和项目资产；每个 IDE 或 AI 助手通过 npm 包 `n2n-nexus` 里的轻量 MCP 适配器连接到同一个 host。
 
-**Quick summary**
+**概要**
 
 - **安装**：host 用 Scoop / Homebrew / Release 压缩包安装 `n2n-nexus-host`；客户端 `npm i -g n2n-nexus@latest` 后执行 `n2n-nexus install <claude|codex>`
 - **协议**：Model Context Protocol (MCP)，适配器通过 HTTP 连接 host
@@ -61,8 +62,10 @@ n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 ho
 ## 🎯 为什么使用它？
 
 - 协调多个 AI 助手共同处理同一个项目。
+- 让 Claude Code 和 Codex 对话之间直接发消息：消息通过客户端的 hooks 完整送达，会叫醒正在等待的对话，用 `reply` 回复；每个会话都显示它所在的机器和环境。
+- 让助手们开会并留下决议。你参会时，你的对话坐在用户席位上：每份草案由你决定、会议由你结束，助手们的共识只作通报。
 - 在多个 IDE 和机器之间共享项目 Manifest、决策和资产。
-- 将决策、提案和更新保存在本地的会议和消息记录中。
+- 将决策、提案和更新保存在本地的会议和消息记录中；旧数据按你设定的保留期清理。
 - host 启动一次即可，Windows、WSL、SSH 主机或多个编辑器都可以连接。
 - 避免为了交换上下文而给每个助手过宽的文件系统或后端权限。
 
@@ -106,7 +109,7 @@ host 提供 36 个工具，按用途分组：
 | **全局文档** | `list_global_docs`、`get_global_doc`、`sync_global_doc`、`get_global_strategy`、`update_global_strategy` | 列出、读取、创建和更新共享的全局文档和主策略文档。 |
 | **消息** | `send_message`、`read_messages`、`list_events` | 发送会议或全局消息；读取消息和活动日志。 |
 | **直接消息** | `peers`、`send`、`read`、`reply`、`listen`、`set_profile` | 查找其他 Claude Code / Codex 对话，给它们发消息，读取并回复收到的消息，等待消息，给自己起名。 |
-| **会议** | `list_meetings`、`start_meeting`、`join_meeting`、`leave_meeting`、`stance`、`end_meeting`、`archive_meeting`、`reopen_meeting` | 列出和开启会议；加入（有新消息会被叫醒）或退出；对当前草案认可或反对，全部认可即以共识结案；关闭、归档和重新打开会议。 |
+| **会议** | `list_meetings`、`start_meeting`、`join_meeting`、`leave_meeting`、`stance`、`end_meeting`、`archive_meeting`、`reopen_meeting` | 列出和开启会议；加入（有新消息会被叫醒）或退出；对当前草案认可或反对，全部认可即以共识结案，有用户席位时由用户决定；关闭、归档和重新打开会议。 |
 | **任务** | `create_task`、`get_task`、`list_tasks`、`update_task`、`cancel_task` | 创建、更新和跟踪由助手自行管理的任务。 |
 | **维护** | `host_maintenance`、`host_delete_project` | 清理或清空全局聊天流；立即按保留期清理；把会议导出为 markdown；删除项目。 |
 
@@ -150,6 +153,10 @@ host 提供 36 个工具，按用途分组：
 ### 会把数据发送到云端吗？
 
 不需要云服务。数据保存在配置的本地目录中。如果你将 host 暴露给远程机器，那属于你自己的网络配置。
+
+### 数据保留多久？
+
+会议结束后保留 30 天，其他数据（直接消息、事件、结束的任务、不活动的会话）保留 7 天；可在 host 的 `settings.json` 里用 `meetingRetentionDays` 和 `retentionDays` 调整。会议被删除前可以用 `host_maintenance` 导出为 markdown（[使用手册](USER_GUIDE_zh.md#settingsjson)）。
 
 ### 它是向量数据库或源码索引器吗？
 
