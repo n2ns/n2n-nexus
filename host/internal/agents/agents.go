@@ -491,9 +491,9 @@ func newDispatchID() string {
 // wake is undone: its messages and notices count as not notified again, the
 // session leaves working (listening while another wait holds it, else idle),
 // and the automatic turn and wake time it counted are taken back; any wait
-// still held is woken to deliver it again. A success, an unknown id or a wake
-// that a real hook event of the session already followed changes nothing
-// (mu held).
+// still held is woken to deliver it again; the failure is logged (host.log).
+// A success, an unknown id or a wake that a real hook event of the session
+// already followed changes nothing (mu held).
 func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 	d := a.dispatches[sessionID]
 	if d == nil || dispatchID == "" || d.id != dispatchID {
@@ -503,6 +503,7 @@ func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 	if ok {
 		return nil
 	}
+	a.o.Logger.Printf("agents: wake %s of %s was not delivered (the client reported the wake failed): its %d message(s) and %d notice(s) count as not announced and are delivered again", dispatchID, sessionID, len(d.messageIDs), len(d.noticeIDs))
 	if err := a.unmarkNotified(d.messageIDs, d.noticeIDs); err != nil {
 		return err
 	}

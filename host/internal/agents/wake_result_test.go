@@ -1,9 +1,19 @@
 package agents
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"testing"
 	"time"
 )
+
+// logTo makes the host log into buf from now on.
+func (h *harness) logTo(buf *bytes.Buffer) {
+	h.ag.mu.Lock()
+	defer h.ag.mu.Unlock()
+	h.ag.o.Logger = log.New(buf, "", 0)
+}
 
 // wakeResult reports a delivery as the Codex background wait does after `codex queue`.
 func wakeResult(dispatchID string, ok bool) map[string]any {
@@ -58,12 +68,18 @@ func TestWakeResultFailedUndoesTheWake(t *testing.T) {
 	eq(t, woken, true)
 	eq(t, pending, true)
 	before := h.session("codex:r").LastActiveAt
+	var logged bytes.Buffer
+	h.logTo(&logged)
 
 	h.at(time.Minute)
 	if res := h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false)); res != nil {
 		t.Fatalf("WakeResult output: %v", res)
 	}
 	eq(t, h.status("codex:r"), "idle")
+	// The failed wake is in the host log, with the session, the wake and what is delivered again.
+	eq(t, strings.Count(logged.String(), "\n"), 1)
+	contains(t, logged.String(), "wake "+out.str("dispatchId")+" of codex:r was not delivered")
+	contains(t, logged.String(), "1 message(s) and 1 notice(s)")
 	eq(t, h.notifiedCount(), 0)
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'unread' AND read_at IS NULL"), 1)
 	turns, woken, pending = h.agentState("codex:r")
@@ -94,12 +110,15 @@ func TestWakeResultFailedAfterRealEventChangesNothing(t *testing.T) {
 func TestWakeResultDelivered(t *testing.T) {
 	h := start(t, listenWait(5*time.Second), maxTurns(2))
 	out := wokenCodex(t, h)
+	var logged bytes.Buffer
+	h.logTo(&logged)
 	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), true))
 	_, _, pending := h.agentState("codex:r")
 	eq(t, pending, false)
 	// A later failure report for the same wake is ignored: it was settled.
 	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
 	eq(t, h.status("codex:r"), "working")
+	eq(t, logged.String(), "") // a delivered wake and an ignored report log nothing
 	eq(t, h.notifiedCount(), 2)
 	turns, _, _ := h.agentState("codex:r")
 	eq(t, turns, 1)

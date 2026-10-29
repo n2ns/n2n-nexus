@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.4] - 2026-10-30
+
+### Changed
+
+- A wake the client reports as failed (`codex queue` returned an error or a non-zero exit) is logged in `host.log` when the host undoes it: the session, the wake and how many messages and notices are delivered again. Before, the undo and the retry left no trace.
+
 ## [0.12.3] - 2026-10-29
 
 ### Fixed
