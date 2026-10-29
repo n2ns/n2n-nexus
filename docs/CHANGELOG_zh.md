@@ -6,6 +6,10 @@
 
 ## [0.12.4] - 2026-10-30
 
+### 修复
+
+- Windows 上空闲的 Codex 对话重新能被叫醒。Stop `--wait` hook 启动的后台等待进程继承了 Codex 读取 hook 输出用的管道（Codex 通过 PowerShell 运行 hook），Codex 一直等这些管道直到 hook 超时，然后连等待进程一起结束：会话从不显示为 `listening`，只在下次输入或调用工具时才看到消息。现在等待进程由 PowerShell 的 `Start-Process` 启动，它不传递任何句柄。
+
 ### 变更
 
 - 客户端回报失败的唤醒（`codex queue` 出错或退出码非 0）在 host 撤销它时记入 `host.log`：会话、唤醒 ID、再次送达的消息和通知各有几条。此前撤销和重试不留任何痕迹。

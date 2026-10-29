@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.12.4] - 2026-10-30
 
+### Fixed
+
+- On Windows, a Codex conversation is woken while idle again. The background wait copy that the Stop `--wait` hook starts inherited the pipes Codex reads the hook's output from (Codex runs the hook through PowerShell), so Codex waited for them until the hook's timeout and ended the copy with the hook: the session never showed as `listening` and only saw messages at its next prompt or tool call. The copy is now started by PowerShell's `Start-Process`, which passes no handles on.
+
 ### Changed
 
 - A wake the client reports as failed (`codex queue` returned an error or a non-zero exit) is logged in `host.log` when the host undoes it: the session, the wake and how many messages and notices are delivered again. Before, the undo and the retry left no trace.
