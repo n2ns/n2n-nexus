@@ -81,7 +81,7 @@ export class NexusClient {
                     res.on("close", () => { if (!res.complete) interrupted(); });
                     res.on("data", chunk => { data += chunk; });
                     res.on("end", () => {
-                        let parsed: { error?: string };
+                        let parsed: unknown;
                         try {
                             parsed = data ? JSON.parse(data) : {};
                         } catch {
@@ -90,7 +90,9 @@ export class NexusClient {
                         }
                         const status = res.statusCode ?? 0;
                         if (status >= 400) {
-                            reject(new NexusToolError(parsed.error || `HTTP ${status}`, status));
+                            // The body may be any JSON value (null, a number, ...): only an object carries an error text.
+                            const error = typeof parsed === "object" && parsed !== null ? (parsed as { error?: unknown }).error : undefined;
+                            reject(new NexusToolError(typeof error === "string" && error ? error : `HTTP ${status}`, status));
                         } else {
                             resolve(parsed as T);
                         }
@@ -111,8 +113,9 @@ export class NexusClient {
     }
 
     async fetchTools(): Promise<ToolDefinition[]> {
-        const res = await this.request<{ tools: ToolDefinition[] }>("GET", "/api/tools");
-        return res.tools;
+        const res = await this.request<{ tools?: unknown }>("GET", "/api/tools");
+        if (typeof res !== "object" || res === null || !Array.isArray(res.tools)) throw new NexusTransportError("Invalid tools response from n2n-nexus-host");
+        return res.tools as ToolDefinition[];
     }
 
     /** Forward a client hook event; `timeoutMs` overrides the client timeout (a listening Stop waits long). */

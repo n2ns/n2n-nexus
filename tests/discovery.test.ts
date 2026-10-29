@@ -180,6 +180,17 @@ describe("resolveEndpoint", () => {
         expect(await resolveEndpoint(DISCOVER_ENDPOINT, { fresh: true })).toBe(LOCAL_ENDPOINT);
     });
 
+    it("writes the cache next to its file and renames it over, so a concurrent reader never sees a partial URL", async () => {
+        await responder(4321);
+        const writes = vi.spyOn(fs, "writeFileSync");
+        const found = await resolveEndpoint(DISCOVER_ENDPOINT);
+        expect(portOf(found)).toBe(4321);
+        // Never written in place: a reader sees either no file or the whole URL.
+        expect(writes.mock.calls.map((call) => String(call[0]))).not.toContain(CACHE);
+        expect(fs.readFileSync(CACHE, "utf8")).toBe(`${found}\n`);
+        expect(fs.readdirSync(path.dirname(CACHE))).toEqual(["discovered-endpoint"]);
+    });
+
     it("caches 'none answered' only for a minute", async () => {
         expect(await resolveEndpoint(DISCOVER_ENDPOINT)).toBe(LOCAL_ENDPOINT);
         await responder(4321);

@@ -246,6 +246,35 @@ describe("MCP proxy when the daemon drops a tool", () => {
     });
 });
 
+describe("MCP proxy with a daemon whose tool list is not a list", () => {
+    it("treats it as no host: an empty list and a 'not available' call error, not a half-connected state", async () => {
+        const fake = await listen((req, res) => {
+            req.resume();
+            req.on("end", () => { res.writeHead(200, { "Content-Type": "application/json" }); res.end("{}"); });
+        });
+        process.env.NEXUS_ENDPOINT = fake.endpoint;
+        process.env.NEXUS_INSTANCE_ID = "no-list-test";
+
+        const proxy = new NexusServer({ retryIntervalMs: 50 });
+        const internals = proxy as unknown as { connected: boolean; cachedTools: unknown };
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        await proxy.run({ transport: serverSide });
+        const client = new Client({ name: "ide", version: "1" });
+        await client.connect(clientSide);
+
+        expect((await client.listTools()).tools).toEqual([]);
+        const call = await client.callTool({ name: "peers", arguments: {} });
+        expect(call.isError).toBe(true);
+        expect(JSON.stringify(call.content)).toContain("n2n-nexus-host is not available");
+        expect(internals.connected).toBe(false);
+        expect(internals.cachedTools).toEqual([]);
+
+        await client.close();
+        await proxy.shutdown();
+        await fake.close();
+    });
+});
+
 describe("MCP proxy reconnect loop", () => {
     it("never has more than one daemon request in flight while the daemon hangs", async () => {
         const net = await import("node:net");

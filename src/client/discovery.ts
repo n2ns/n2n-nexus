@@ -125,8 +125,12 @@ export async function resolveEndpoint(configured: string, options: { fresh?: boo
     if (cached && (cached.endpoint !== LOCAL_ENDPOINT || cached.ageMs < NOT_FOUND_TTL_MS)) return cached.endpoint;
     const endpoint = await discoverEndpoint() ?? LOCAL_ENDPOINT;
     try {
-        fs.mkdirSync(path.dirname(cacheFile()), { recursive: true });
-        fs.writeFileSync(cacheFile(), endpoint + "\n");
+        // Written next to the file and renamed over it: a hook reading it at the same time never sees a partial URL.
+        const target = cacheFile();
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        const tmp = `${target}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, endpoint + "\n");
+        fs.renameSync(tmp, target);
     } catch { /* caching is best effort */ }
     return endpoint;
 }

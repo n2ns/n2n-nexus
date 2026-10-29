@@ -262,6 +262,21 @@ describe("n2n-nexus hook, conversation title", () => {
     });
 });
 
+describe("NexusClient, error status with a non-object body", () => {
+    it("rejects with the status instead of crashing the process", async () => {
+        const server = await listen((req, res) => {
+            req.resume();
+            req.on("end", () => { res.writeHead(500, { "Content-Type": "application/json" }); res.end("null"); });
+        });
+        try {
+            const client = new NexusClient({ endpoint: server.endpoint, timeoutMs: 2000 });
+            await expect(client.hook({ client: "claude", input: {} })).rejects.toMatchObject({ name: "NexusToolError", message: "HTTP 500", status: 500 });
+        } finally {
+            await server.close();
+        }
+    });
+});
+
 describe("waitForWake recovery", () => {
     const endpoint = "http://127.0.0.1:5799";
     beforeEach(() => { vi.useFakeTimers(); });
