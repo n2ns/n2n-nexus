@@ -212,7 +212,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 未读模式按对话增量进行（没装 hooks 时按适配器实例）：每次调用返回读取游标之后的他人消息，最早的在前，游标越过这些消息和它自己发的消息。在会议里，通知完整显示并算作已读的消息、被拒的 `send_message` 或 `stance` 完整附上的消息也会让游标越过，不会再次返回。
 - 对话第一次以未读模式读全局聊天时从最新消息开始：本次不返回消息，带一条 `note`；更早的消息用 `latest` 或 `afterId` 读。第一次读某个会议时从该会议的第一条开始。
 - 历史模式不动游标，包含自己的消息，也不需要识别身份。
-- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`，两者都是写这条消息时的样子，会话被清理后仍保留）或实例 ID（`senderName` 和 `senderMachine` 为 null）；`senderBackfilled` 为 true 表示 host 开始保存这两项之前写的消息，名字和机器是升级数据库时按会话当时的样子补填的；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
+- 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，用户席位的消息为 `user's seat (via <名字>)`；`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`，两者都是写这条消息时的样子，会话被清理后仍保留）或实例 ID（`senderName` 和 `senderMachine` 为 null）；`senderBackfilled` 为 true 表示 host 开始保存这两项之前写的消息，名字和机器是升级数据库时按会话当时的样子补填的；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
 - 没装 hooks 时未读模式需要调用方实例：没有 `instanceId` 的调用会失败，并返回 `read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically); unread cursors are kept per instance.` MCP 适配器总会带上它。
 
 ### `list_events`
@@ -293,8 +293,8 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 
 行为：
 
-- 返回 `{ count, activeMeetingId, meetings: [{ id, topic, status, initiator, startTime, endTime?, participants, members, messageCount, decisionCount, wakes, summary?, endReason, proposal }] }`。
-- `endReason` 为 `consensus`（由 [`stance`](#stance) 自动结案）、`manual`（`end_meeting`）、`expired`（连续 `meetingRetentionDays` 天没有发言，被 host 的清理关闭）或 null。`proposal` 是当前待决稿，没有时为 null：`{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }] }`。
+- 返回 `{ count, activeMeetingId, meetings: [{ id, topic, status, initiator, startTime, endTime?, participants, members, messageCount, decisionCount, wakes, summary?, endReason, seat, proposal }] }`。`seat` 是坐在用户席位上的会话（见[用户席位](#用户席位)），没有席位的会议为 null。
+- `endReason` 为 `consensus`（由 [`stance`](#stance) 自动结案）、`manual`（`end_meeting`）、`expired`（连续 `meetingRetentionDays` 天没有发言，被 host 的清理关闭）或 null。`proposal` 是当前待决稿，没有时为 null：`{ messageId, author, approversVersion, required, endorsed, waiting, objections: [{ id, note }], seat }`。
 - `participants` 是所有发过言的人；`members` 是加入了且没有离开的成员：`[{ id, name, title, machine, backfilled, mode, approver, status, joinedAt, wakes, lastWokenAt }]`，`name`、`title`、`machine` 是会话加入时的样子（适配器实例为 null；升级数据库时补填的 `backfilled` 为 true），`status` 是会话现在的状态（适配器实例或已被清理的会话为 null）。`wakes` 统计这个会议引起的叫醒和拦住结束的次数，按成员和按会议各一个；它只用于展示，不会因此结束会议。
 - 用 `read_messages(meetingId)` 读取会议的消息。
 
@@ -305,6 +305,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `topic` | string | 是 | 会议主题。用于创建会议记录。 |
+| `seat` | string | 否 | `user`：你坐上用户席位（见[用户席位](#用户席位)）。 |
 
 行为：
 
@@ -318,7 +319,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `meetingId` | string | 否 | 要关闭的会议。不传时使用活跃会议。 |
-| `summary` | string | 否 | 可选的结束总结。 |
+| `summary` | string | 否 | 可选的结束总结；用户席位结束会议时必填。 |
 
 ### `archive_meeting`
 
@@ -338,7 +339,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 
 行为：
 
-- 任何适配器实例都能结束、存档或重新开启会议，不只是它的 `initiator`。
+- 任何适配器实例都能结束、存档或重新开启会议，不只是它的 `initiator`。有用户席位的会议只能由席位结束：其他人的 `end_meeting` 改为发一条 `Proposed end of the meeting (only the user's seat ends it): <summary>`，返回 `{ ok: false, refused: true, meetingId, status: "active", messageId, message }`。
 - `end_meeting` 关闭时 `endReason` 为 `manual`，不算共识；`reopen_meeting` 清除它和当前稿：重新开启的会议要对新草案表态（之前的表态保留为历史）。
 - 结束会议时，除结束者以外的每个成员收到一条会议已结束的通知（附总结），无需回复；active 成员会被它叫醒，async 成员在下次输入或调用工具时看到。重新开启不会恢复已离开的成员。
 
@@ -352,6 +353,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 | `mode` | string | 否 | `active` | `active`：他人的新消息会叫醒你（或拦住本轮结束）；`async`：你在下次输入或调用工具时看到。 |
 | `approver` | string | 否 | active 为 `required`，async 为 `optional` | 形成决议时是否必须得到你的认可。 |
 | `since` | `beginning`、`latest` 或整数 | 否 | 首次加入为 `latest` | 这个会议的 `read_messages` 从哪里开始读：从第一条、从最新一条之后，或从该编号之后（`0` 即从头）。之后再次加入时不给 `since` 会保留你的游标。 |
+| `seat` | string | 否 |  | `user`：你坐上用户席位（见[用户席位](#用户席位)）。 |
 
 行为：
 
@@ -388,10 +390,21 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 
 - 当前稿是最近一次用 `send_message(..., draft: true)` 发布的消息；普通的 `PROPOSAL` 既不换稿，也不改变任何人的表态。发布草案时确定它的必需认可名单：通过 hooks 以 `required` 身份加入的成员（适配器实例不能认可）。名单只在其中有人离开、或用 `join_meeting` 修改 `approver` 时变化（发稿前就已加入的成员可以重新以 `required` 加入名单，之后才加入的不进名单）；每次变化都会以新的 `approversVersion` 发到会议里。
 - 先读后表态，同 [`send_message`](#send_message)：读取游标之后还有别人的消息时，`endorse` 和 `object` 被拒，返回 `{ ok: false, refused: true, meetingId, messageId, stance, unread, message }`，完整附上的消息算已读；`send_message` 被拒后的放行不适用于表态。`withdraw` 照常执行，并在 `unread` 和 `message` 里带上未读消息。
+- 依据：`object`，以及和你在这份提案上一次表态（撤回的也算）不同的表态，`note` 里至少要有一项：本会议存在的消息 `#n`、文件路径、URL，或以 `实测：`、`文档：`、`数据：`（`Measured:`、`Docs:`、`Data:`）开头的一句。host 只查格式和 `#n` 是否存在，不查真假；缺了表态失败，并提示需要什么。
+- 同一份提案上最多改变立场 2 次，第 3 次失败（有新依据请用 `send_message` 说明，等下一稿）。`withdraw` 始终可用，不计入次数。失败的表态不计任何次数。
 - 每人对每份提案一条表态，新的覆盖旧的，`withdraw` 删除。反对会连同理由发到会议里。提案作者会收到每次表态的通知；认可不会叫醒其他人。
 - 当前稿至少有 2 名必需认可人、他们全部认可、且没有任何人反对（适配器实例的反对同样阻止）时，会议以共识结案：`n2n-nexus` 发一条带草案原文的 `DECISION`，会议以 `endReason: consensus` 关闭，其他成员收到结束通知，通知里写明草案编号和决议的消息编号。必需认可人少于 2 名时，只能用 `end_meeting` 结束。
-- 结果：`{ ok, meetingId, messageId, stance, currentProposalId, counted, approvals: { required, endorsed, waiting, objections: [{ id, note }] }, decided, unread?, message? }`。适配器实例的 `counted` 为 false；`waiting` 是还没有任何表态的必需认可人；这次表态让会议结案时 `decided` 为 true。
+- 结果：`{ ok, meetingId, messageId, stance, currentProposalId, counted, approvals: { required, endorsed, waiting, objections: [{ id, note }], seat }, decided, decisionId?, unread?, message? }`。`approvals.seat` 是用户席位的 `{ id, stance, note }`，没有席位时为 null；席位不出现在其他列表里。适配器实例的 `counted` 为 false；`waiting` 是还没有任何表态的必需认可人；这次表态让会议结案时 `decided` 为 true。
 - 有草案的会议安静超过 `stanceReminderMinutes`（host `settings.json`，默认 10）、且有必需认可人还没表态时，每人被提醒一次，作者收到一份缺谁的汇总。提醒从不结束会议。
+
+### 用户席位
+
+一个会议可以有一个代表用户的会话：用 `seat: "user"` 调用 `start_meeting` 或 `join_meeting` 的会话（需要装 hooks）。坐上席位会把它从原来的会话转过来，原会话照旧是成员；host 发一条 `The user's seat is taken by …` 或 `The user's seat moved from … to …`。席位的发言发送方显示为 `user's seat (via <名字>)`。有席位的会议里：
+
+- 席位对当前稿的表态就是用户的决定。`endorse`：host 发一条带草案原文的 `DECISION`（附席位的说明和仍未解决的反对），之后到下一稿之前没有当前稿；`decisionId` 是它的编号。`object`：host 发 `Draft #n was vetoed by the user's seat (…): <说明>`，草案作废。会议继续进行下一个点。认可已不是当前稿的草案只记录表态。
+- 其他人的共识不做决定：席位以外的必需认可人（至少两名）全部认可当前稿且无人反对时，host 发 `AI consensus on draft #n …`，不再成立时发 `AI consensus on draft #n is lost.`；只在状态变化时发。表态提醒不提醒席位。
+- 席位不需要依据、没有改口次数限制，它的 `object` 也不因未读被拒（未读消息照样附上）。
+- 只有席位能结束会议，且要给 `summary`（见 [`end_meeting`](#end_meeting)）。席位会话不在时什么都不变；用户可以在任一对话里重新坐上席位。有过席位的会议在席位会话被清理后仍按这些规则进行。
 
 ## 任务管理
 

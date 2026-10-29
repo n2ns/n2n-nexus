@@ -6,8 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Upgrade the host and the client on every machine together (contract version 4). The database is upgraded in place: keep `nexus.db`.
+
+### Added
+
+- Meetings with the user's seat: the conversation the user sits at takes the seat with `seat: "user"` on `start_meeting` or `join_meeting`; taking it moves it from whoever held it. The seat's `endorse` of the current draft makes the host post the `DECISION` (with the objections still open) and the meeting goes on to the next point; its `object` vetoes the draft. The others' consensus decides nothing there and is only reported when it is reached or lost. Only the seat ends such a meeting, with a summary; anyone else's `end_meeting` is posted as a proposal to end it. `list_meetings` returns `seat`, and `approvals` the seat's stance.
+- Cleanup by age, at startup and every hour, with two `settings.json` fields: `meetingRetentionDays` (default 30) and `retentionDays` (default 7). Read or expired direct messages, delivered notices, events, finished tasks, sessions without activity (unless a direct message still references them) and adapter instances not seen go after `retentionDays`; an active meeting without a message for `meetingRetentionDays` closes with `endReason: expired`, and a closed or archived meeting goes `meetingRetentionDays` after it ended. Each cleanup that changed something writes a `maintenance.cleanup` event.
+- `host_maintenance` actions `cleanup` (with `dryRun` to see what would go) and `export` (a meeting as markdown).
+
 ### Changed
 
+- Read before posting: `send_message` to a meeting, and `endorse` / `object`, are refused while messages of others are unread; the result attaches them (texts cut at `notifyTextChars`) and they count as read. The next post after a refusal goes through with a note of what was unread; a draft or a `DECISION` only once everything is read. `withdraw` goes through with the unread messages attached.
+- Meeting notifications show each message with its text, like direct messages; what a wake, a Stop or a prompt shows whole counts as read.
+- An objection, and a stance that changes your last one, need grounds in the note (`#n`, a file path, a URL, or a sentence starting with 实测：/文档：/数据： or Measured:/Docs:/Data:); a stance on a proposal can change at most twice.
+- Meeting messages, global chat and meeting members keep the sender's name and machine as they were when written; `read_messages` returns `senderBackfilled` and members `machine` and `backfilled` for the rows of older databases, filled in at the upgrade.
+- Sessions report their environment (the WSL distribution, shown after the platform: `Vector · WSL Ubuntu_26`); on macOS the hostname is the computer name set in System Settings. A session is named `<client>@<dir>#<the last 4 letters and digits of its id>`, with more of the id while another recorded session has that name, so names are not reused.
 - The tray menu's first line says only whether the host runs (`Running`, `Running · background service` or `Not running`); the address is on its own line, and the error takes that line when no host answers. The `(LAN)` suffix is gone: the **Allow LAN access** item shows the same.
 
 ## [0.11.0] - 2026-10-29

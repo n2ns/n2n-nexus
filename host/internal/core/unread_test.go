@@ -124,7 +124,7 @@ func TestStanceNeedsWhatOthersSaidReadFirst(t *testing.T) {
 	stance := func(s string) map[string]any {
 		args := map[string]any{"meetingId": id, "messageId": 1, "stance": s}
 		if s == "object" {
-			args["note"] = "no"
+			args["note"] = "no, see #1"
 		}
 		return args
 	}

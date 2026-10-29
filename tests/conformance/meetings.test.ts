@@ -189,4 +189,30 @@ describe("meetings per conversation", () => {
         const read = await host.callTool<{ messages: { from: string; category: string; text: string }[] }>("read_messages", { meetingId, latest: true, count: 1 });
         expect(read.payload.result!.messages[0]).toMatchObject({ from: "n2n-nexus", category: "DECISION", text: expect.stringContaining("ship it") });
     });
+
+    it("lets the user's seat decide drafts and end the meeting; others only propose the end", async () => {
+        const s = ids();
+        const [a, b] = [s("a"), s("b")];
+        for (const id of [a, b]) await kit.hook("claude", "SessionStart", id);
+        const meetingId = (await kit.claudeTool<{ meetingId: string }>(a, "start_meeting", { topic: "Seat", seat: "user" })).payload.result!.meetingId;
+        await kit.claudeTool(b, "join_meeting", { meetingId, since: "beginning" });
+        await kit.claudeTool(b, "read_messages", { meetingId });
+        const draft = (await kit.claudeTool<{ currentProposalId: number }>(b, "send_message", { meetingId, message: "Decision point 1/1: plan", draft: true })).payload.result!.currentProposalId;
+
+        await kit.claudeTool(a, "read_messages", { meetingId });
+        type Stance = { decided: boolean; decisionId?: number; currentProposalId: number | null; approvals: { seat: { id: string; stance: string | null } | null } };
+        const approved = await kit.claudeTool<Stance>(a, "stance", { meetingId, messageId: draft, stance: "endorse", note: "go" });
+        expect(approved.payload.result).toMatchObject({ decided: false, decisionId: expect.any(Number), currentProposalId: null,
+            approvals: { seat: { id: `claude:${a}`, stance: "endorse" } } });
+        type Meeting = { id: string; status: string; seat: string | null; decisionCount: number; proposal: unknown };
+        let meeting = (await listed()).meetings.find((m) => m.id === meetingId) as unknown as Meeting;
+        expect(meeting).toMatchObject({ status: "active", seat: `claude:${a}`, decisionCount: 1, proposal: null });
+
+        const proposed = await kit.claudeTool<{ ok: boolean; refused: boolean; status: string; messageId: number }>(b, "end_meeting", { meetingId, summary: "done" });
+        expect(proposed.payload.result).toMatchObject({ ok: false, refused: true, status: "active", messageId: expect.any(Number) });
+        expect((await kit.claudeTool(a, "end_meeting", { meetingId })).status).toBe(400);
+        expect((await kit.claudeTool(a, "end_meeting", { meetingId, summary: "decided point 1" })).payload.result).toMatchObject({ ok: true, status: "closed" });
+        meeting = (await listed()).meetings.find((m) => m.id === meetingId) as unknown as Meeting;
+        expect(meeting.status).toBe("closed");
+    });
 });

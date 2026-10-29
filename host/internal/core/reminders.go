@@ -63,9 +63,9 @@ func (c *Core) RemindStances(ctx context.Context, after time.Duration) (string, 
 				SELECT a.member_id, COALESCE(s.name, ''), st.stance, a.reminded_at IS NULL
 				FROM meeting_approvers a
 				JOIN meetings m ON m.id = a.meeting_id
-				LEFT JOIN meeting_stances st ON st.meeting_id = a.meeting_id AND st.message_id = m.current_proposal_id AND st.member_id = a.member_id
+				LEFT JOIN meeting_stances st ON st.meeting_id = a.meeting_id AND st.message_id = m.current_proposal_id AND st.member_id = a.member_id AND st.withdrawn = 0
 				LEFT JOIN agent_sessions s ON s.id = a.member_id
-				WHERE a.meeting_id = ? AND (st.stance IS NULL OR st.stance != 'endorse')
+				WHERE a.meeting_id = ? AND (st.stance IS NULL OR st.stance != 'endorse') AND a.member_id IS NOT m.seat_member_id
 				ORDER BY a.rowid`, d.meetingID)
 			if err != nil {
 				return err

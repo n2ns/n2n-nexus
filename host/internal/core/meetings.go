@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -89,6 +90,8 @@ func loadMeeting(tx *sql.Tx, id string) (meetingRow, error) {
 
 type startMeetingArgs struct {
 	Topic string `json:"topic"`
+	// Seat "user": the caller takes the user's seat.
+	Seat string `json:"seat"`
 }
 
 func (c *Core) startMeeting(call api.Call, a startMeetingArgs) (any, error) {
@@ -115,7 +118,14 @@ func (c *Core) startMeeting(call api.Call, a startMeetingArgs) (any, error) {
 			id, who.ID, who.Kind, c.now(), who.ID, who.ID, who.ID); err != nil {
 			return err
 		}
-		return c.recordEvent(tx, who.ID, "meeting.start", id, map[string]any{"topic": a.Topic})
+		if err := c.recordEvent(tx, who.ID, "meeting.start", id, map[string]any{"topic": a.Topic}); err != nil {
+			return err
+		}
+		if a.Seat == "" {
+			return nil
+		}
+		_, err := c.takeSeat(tx, id, who)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -141,6 +151,8 @@ func (c *Core) endMeeting(call api.Call, a endMeetingArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// proposal is the message an end_meeting by another than the seat posted.
+	var proposal int64
 	err = c.tx(call, func(tx *sql.Tx) error {
 		if id == "" {
 			var err error
@@ -158,6 +170,25 @@ func (c *Core) endMeeting(call api.Call, a endMeetingArgs) (any, error) {
 		if m.status != "active" {
 			return api.Errorf("Meeting '%s' is already %s.", id, m.status)
 		}
+		// With the user's seat, only the seat ends the meeting; anyone else proposes it.
+		seat, err := seatOf(tx, id)
+		if err != nil {
+			return err
+		}
+		if seat != "" && seat != who.ID {
+			reason := summary
+			if strings.TrimSpace(reason) == "" {
+				reason = "(no summary)"
+			}
+			text := fmt.Sprintf(c.d.Contract.Hook.Texts.ProposedEnd, reason)
+			if proposal, err = c.addMeetingMessage(tx, id, who.ID, text, "CHAT"); err != nil {
+				return err
+			}
+			return nil
+		}
+		if seat != "" && strings.TrimSpace(summary) == "" {
+			return api.Errorf("The user's seat ends a meeting with a summary: what was decided, what was not (\"open: point k\"), and who does what next.")
+		}
 		if err := c.closeMeeting(tx, id, nullString(summary), "manual"); err != nil {
 			return err
 		}
@@ -169,6 +200,11 @@ func (c *Core) endMeeting(call api.Call, a endMeetingArgs) (any, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if proposal != 0 {
+		c.afterMeetingChange(id, who.ID, true, false)
+		return map[string]any{"ok": false, "refused": true, "meetingId": id, "status": "active", "messageId": proposal,
+			"message": fmt.Sprintf("Only the user's seat ends meeting %s; your end_meeting was posted as message #%d proposing it.", id, proposal)}, nil
 	}
 	if c.d.Meetings != nil {
 		c.d.Meetings.MeetingClosed(id, who.ID)
@@ -262,8 +298,10 @@ type meetingSummary struct {
 	// Wakes is the number of wakes the meeting caused, members that left included.
 	Wakes   int64           `json:"wakes"`
 	Members []meetingMember `json:"members"`
-	// EndReason is manual or consensus for a meeting that ended, else null.
+	// EndReason is manual, consensus or expired for a meeting that ended, else null.
 	EndReason *string `json:"endReason"`
+	// Seat is the session holding the user's seat, null in a meeting without one.
+	Seat *string `json:"seat"`
 	// Proposal is the current draft and its approvals; null when none was published.
 	Proposal *proposalSummary `json:"proposal"`
 }
@@ -330,7 +368,7 @@ func (c *Core) listMeetings(call api.Call, a listMeetingsArgs) (any, error) {
 	var active string
 	err := c.tx(call, func(tx *sql.Tx) error {
 		rows, err := tx.Query(`
-			SELECT m.id, m.topic, m.status, m.initiator, m.participants, m.created_at, m.closed_at, m.summary, m.end_reason,
+			SELECT m.id, m.topic, m.status, m.initiator, m.participants, m.created_at, m.closed_at, m.summary, m.end_reason, m.seat_member_id,
 				(SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = m.id),
 				(SELECT COUNT(*) FROM decisions WHERE meeting_id = m.id),
 				(SELECT COALESCE(SUM(wakes), 0) FROM meeting_members WHERE meeting_id = m.id)
@@ -344,14 +382,14 @@ func (c *Core) listMeetings(call api.Call, a listMeetingsArgs) (any, error) {
 		for rows.Next() {
 			var m meetingSummary
 			var participants string
-			var closed, summary, reason sql.NullString
-			if err := rows.Scan(&m.ID, &m.Topic, &m.Status, &m.Initiator, &participants, &m.StartTime, &closed, &summary, &reason,
+			var closed, summary, reason, seat sql.NullString
+			if err := rows.Scan(&m.ID, &m.Topic, &m.Status, &m.Initiator, &participants, &m.StartTime, &closed, &summary, &reason, &seat,
 				&m.MessageCount, &m.DecisionCount, &m.Wakes); err != nil {
 				rows.Close()
 				return err
 			}
 			m.Participants = json.RawMessage(participants)
-			m.EndTime, m.Summary, m.EndReason = closed.String, summary.String, nullable(reason)
+			m.EndTime, m.Summary, m.EndReason, m.Seat = closed.String, summary.String, nullable(reason), nullable(seat)
 			meetings = append(meetings, m)
 		}
 		rows.Close()
@@ -396,6 +434,8 @@ type joinMeetingArgs struct {
 	Approver  string `json:"approver"`
 	// Since is "beginning", "latest" or a message number in the meeting; nil keeps the read cursor.
 	Since json.RawMessage `json:"since"`
+	// Seat "user": the caller takes the user's seat.
+	Seat string `json:"seat"`
 }
 
 func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
@@ -466,6 +506,11 @@ func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
 		if err := c.recordEvent(tx, who.ID, "meeting.join", a.MeetingID, map[string]any{"mode": a.Mode, "approver": a.Approver}); err != nil {
 			return err
 		}
+		if a.Seat != "" {
+			if posted, err = c.takeSeat(tx, a.MeetingID, who); err != nil {
+				return err
+			}
+		}
 		if !member {
 			return nil // a new member is not an approver of a draft published before it joined
 		}
@@ -488,7 +533,9 @@ func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
 		if err != nil {
 			return err
 		}
-		posted, decided, err = c.approversChanged(tx, a.MeetingID, who.ID, d)
+		var told bool
+		told, decided, err = c.approversChanged(tx, a.MeetingID, who.ID, d)
+		posted = posted || told
 		return err
 	})
 	if err != nil {

@@ -2411,6 +2411,41 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "seat": {
+                      "description": "The user's seat and its stance on the proposal, null in a meeting without a seat. The seat is in none of the other lists.",
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "stance": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "endorse",
+                            "object",
+                            null
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "stance",
+                        "note"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -2420,9 +2455,17 @@
                     "required",
                     "endorsed",
                     "waiting",
-                    "objections"
+                    "objections",
+                    "seat"
                   ],
                   "additionalProperties": false
+                },
+                "seat": {
+                  "description": "The session holding the user's seat, null in a meeting without one.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -2437,7 +2480,8 @@
                 "wakes",
                 "members",
                 "endReason",
-                "proposal"
+                "proposal",
+                "seat"
               ],
               "additionalProperties": false
             }
@@ -2455,7 +2499,7 @@
     {
       "name": "start_meeting",
       "title": "Start Meeting",
-      "description": "Start a meeting and return its id. It becomes the active meeting that send_message and end_meeting use when no meetingId is given. The initiator (this conversation's session id when the n2n-nexus hooks are installed, else the MCP adapter instance) joins it as an active, required member.",
+      "description": "Start a meeting and return its id. It becomes the active meeting that send_message and end_meeting use when no meetingId is given. The initiator (this conversation's session id when the n2n-nexus hooks are installed, else the MCP adapter instance) joins it as an active, required member. seat \"user\": you take the user's seat (see stance).",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -2469,6 +2513,13 @@
             "type": "string",
             "minLength": 1,
             "description": "What the meeting is about."
+          },
+          "seat": {
+            "type": "string",
+            "enum": [
+              "user"
+            ],
+            "description": "Take the user's seat: this conversation acts for the user (one seat per meeting; taking it moves it from whoever held it). Needs the n2n-nexus hooks."
           }
         },
         "required": [
@@ -2510,7 +2561,7 @@
     {
       "name": "end_meeting",
       "title": "End Meeting",
-      "description": "End a meeting (default: the active one) with an optional summary; its history is then read-only.",
+      "description": "End a meeting (default: the active one) with an optional summary; its history is then read-only. In a meeting with the user's seat only the seat ends it, with a summary (required: what was decided, what was not, who does what next); an end_meeting by anyone else is posted to the meeting as a proposal to end it, ok false, refused true, messageId its number.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -2535,17 +2586,31 @@
         "type": "object",
         "properties": {
           "ok": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
           },
           "meetingId": {
             "type": "string"
           },
           "status": {
             "type": "string",
-            "const": "closed"
+            "enum": [
+              "closed",
+              "active"
+            ]
           },
           "summary": {
+            "type": "string"
+          },
+          "refused": {
+            "type": "boolean",
+            "const": true
+          },
+          "messageId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "message": {
             "type": "string"
           }
         },
@@ -2653,7 +2718,7 @@
     {
       "name": "join_meeting",
       "title": "Join Meeting",
-      "description": "Join an active meeting, or change how you take part in it. mode active (default): new messages of others wake this conversation; async: you see them at your next prompt or tool call. approver: whether your approval is required for a decision (default: required when active, optional when async). since sets where read_messages starts for this meeting: beginning, latest (default on the first join) or after a message number. delivery says how you will be told about new messages: wake, next-hook, or unavailable (no n2n-nexus hooks, so nothing can notify you). Switch to async to pause; leave_meeting to stop.",
+      "description": "Join an active meeting, or change how you take part in it. mode active (default): new messages of others wake this conversation; async: you see them at your next prompt or tool call. approver: whether your approval is required for a decision (default: required when active, optional when async). since sets where read_messages starts for this meeting: beginning, latest (default on the first join) or after a message number. delivery says how you will be told about new messages: wake, next-hook, or unavailable (no n2n-nexus hooks, so nothing can notify you). Switch to async to pause; leave_meeting to stop. seat \"user\": you take the user's seat (see stance); the session that held it stays a member.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -2700,6 +2765,13 @@
               }
             ],
             "description": "Where read_messages starts for this meeting: beginning, latest, or after this message number (0: the beginning). Default on the first join: latest; on a later join the cursor stays."
+          },
+          "seat": {
+            "type": "string",
+            "enum": [
+              "user"
+            ],
+            "description": "Take the user's seat: this conversation acts for the user (one seat per meeting; taking it moves it from whoever held it). Needs the n2n-nexus hooks."
           }
         },
         "required": [
@@ -2802,7 +2874,7 @@
     {
       "name": "stance",
       "title": "Take Stance",
-      "description": "Endorse or object to a PROPOSAL of an active meeting (messageId: its number in the meeting), or withdraw your stance on it. You have one stance per proposal; a new one replaces it. object needs a note with the reason and also posts it to the meeting; the proposal's author is told of every stance. When the proposal is the meeting's current draft (published with send_message draft) and it has at least 2 required approvers, every one of them endorsed it and nobody objects to it, the meeting closes by consensus: a DECISION with the draft is posted and decided is true. An MCP adapter instance (no n2n-nexus hooks) cannot approve (counted: false), but its objection blocks like any other. approvals are the proposal's: required (its required approvers, empty unless it is the current draft), endorsed, waiting (required approvers without a stance) and objections. Read first: when messages of others came after you last read the meeting, an endorse or object is refused (ok false, refused true, unread has those messages, which now count as read); take the stance again once you have weighed them. A withdraw goes through and carries them in unread.",
+      "description": "Endorse or object to a PROPOSAL of an active meeting (messageId: its number in the meeting), or withdraw your stance on it. You have one stance per proposal; a new one replaces it. object needs a note with the reason and also posts it to the meeting; the proposal's author is told of every stance. When the proposal is the meeting's current draft (published with send_message draft) and it has at least 2 required approvers, every one of them endorsed it and nobody objects to it, the meeting closes by consensus: a DECISION with the draft is posted and decided is true. An MCP adapter instance (no n2n-nexus hooks) cannot approve (counted: false), but its objection blocks like any other. approvals are the proposal's: required (its required approvers, empty unless it is the current draft), endorsed, waiting (required approvers without a stance) and objections. Read first: when messages of others came after you last read the meeting, an endorse or object is refused (ok false, refused true, unread has those messages, which now count as read); take the stance again once you have weighed them. A withdraw goes through and carries them in unread. With the user's seat (start_meeting or join_meeting with seat \"user\"), the seat decides: its endorse of the current draft makes the host post a DECISION with the draft (listing objections still open) and clears the draft; its object voids the draft; the meeting stays open for the next point. Consensus of the others then decides nothing; the host only posts when it is reached or lost. Only the seat ends such a meeting. An object, and a stance that changes your last one on the proposal, need grounds in the note: #n of a message of this meeting, a file path, a URL, or a sentence starting with 实测：/文档：/数据： (Measured:/Docs:/Data:); only the form is checked. You may change your stance on a proposal at most twice; withdraw always works. The seat is held to neither, and its object is not refused for unread messages. decisionId is the DECISION the seat's endorsement posted.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -2913,13 +2985,49 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "seat": {
+                "description": "The user's seat and its stance on the proposal, null in a meeting without a seat. The seat is in none of the other lists.",
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "stance": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "endorse",
+                      "object",
+                      null
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "stance",
+                  "note"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
               "required",
               "endorsed",
               "waiting",
-              "objections"
+              "objections",
+              "seat"
             ],
             "additionalProperties": false
           },
@@ -3000,6 +3108,11 @@
               ],
               "additionalProperties": false
             }
+          },
+          "decisionId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [

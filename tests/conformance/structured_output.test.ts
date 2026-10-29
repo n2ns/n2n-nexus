@@ -73,11 +73,21 @@ describe("tool results", () => {
         await call("send_message", { meetingId: meeting.meetingId, message: "goes through" }, "peer");
         await call("read_messages", { meetingId: meeting.meetingId });
         await call("send_message", { meetingId: meeting.meetingId, message: "more" });
-        await refused("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet" }, "peer");
-        await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet" }, "peer");
+        await refused("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet, see #1" }, "peer");
+        await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "object", note: "not yet, see #1" }, "peer");
         await call("read_messages", { meetingId: meeting.meetingId });
         await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "endorse" });
         await call("list_meetings", {});
+        // The user's seat: its veto, a proposed end by another, its end.
+        const seated = await call("start_meeting", { topic: "Seated", seat: "user" });
+        await call("join_meeting", { meetingId: seated.meetingId, since: "beginning" }, "peer");
+        await call("read_messages", { meetingId: seated.meetingId }, "peer");
+        const seatDraft = await call("send_message", { meetingId: seated.meetingId, message: "point", draft: true }, "peer");
+        await call("read_messages", { meetingId: seated.meetingId });
+        await call("stance", { meetingId: seated.meetingId, messageId: seatDraft.currentProposalId, stance: "endorse" });
+        await call("list_meetings", {});
+        await refused("end_meeting", { meetingId: seated.meetingId, summary: "done" }, "peer");
+        await call("end_meeting", { meetingId: seated.meetingId, summary: "done" });
         await call("leave_meeting", { meetingId: meeting.meetingId }, "peer");
         await call("end_meeting", { meetingId: meeting.meetingId, summary: "done" });
         await call("archive_meeting", { meetingId: meeting.meetingId });

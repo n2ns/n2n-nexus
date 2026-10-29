@@ -14,6 +14,7 @@ type meetingListing struct {
 	ID        string  `json:"id"`
 	Status    string  `json:"status"`
 	EndReason *string `json:"endReason"`
+	Seat      *string `json:"seat"`
 	Proposal  *struct {
 		MessageID        int64       `json:"messageId"`
 		Author           string      `json:"author"`
@@ -163,15 +164,15 @@ func TestStances(t *testing.T) {
 
 	// An objection replaces the endorsement and is posted to the meeting.
 	n.calls = nil
-	res = h.stanceAs("b", id, 1, "object", "too early")
+	res = h.stanceAs("b", id, 1, "object", "too early, see #1")
 	appr = res["approvals"].(map[string]any)
-	if fmt.Sprint(appr["endorsed"], appr["waiting"], appr["objections"]) != "[] [codex:a] [map[id:codex:b note:too early]]" {
+	if fmt.Sprint(appr["endorsed"], appr["waiting"], appr["objections"]) != "[] [codex:a] [map[id:codex:b note:too early, see #1]]" {
 		t.Fatalf("approvals %v", appr)
 	}
-	if from, category, text := h.lastMessage(id); from != "codex:b" || category != "CHAT" || text != "Objection to draft #1: too early" {
+	if from, category, text := h.lastMessage(id); from != "codex:b" || category != "CHAT" || text != "Objection to draft #1: too early, see #1" {
 		t.Fatalf("objection message %s %s %q", from, category, text)
 	}
-	if want := []string{notice("objected to", ": too early"), fmt.Sprintf("updated %s 3", id)}; !slices.Equal(n.calls, want) {
+	if want := []string{notice("objected to", ": too early, see #1"), fmt.Sprintf("updated %s 3", id)}; !slices.Equal(n.calls, want) {
 		t.Fatalf("notifier %v, want %v", n.calls, want)
 	}
 	if c := h.count(`SELECT COUNT(*) FROM meeting_stances`); c != 1 {
@@ -198,7 +199,7 @@ func TestStances(t *testing.T) {
 	// The last required endorsement decides.
 	n.calls = nil
 	h.clock.Set(start.Add(time.Minute))
-	res = h.stanceAs("b", id, 1, "endorse", "fine")
+	res = h.stanceAs("b", id, 1, "endorse", "fine after #3")
 	if res["decided"] != true {
 		t.Fatalf("not decided %v", res)
 	}
@@ -206,7 +207,7 @@ func TestStances(t *testing.T) {
 	if want := fmt.Sprintf(texts.ConsensusDecision, 1, "codex:a, codex:b", "ship friday"); from != "n2n-nexus" || category != "DECISION" || text != want {
 		t.Fatalf("decision %s %s %q", from, category, text)
 	}
-	if want := []string{notice("endorsed", ": fine"), fmt.Sprintf("updated %s 4", id), fmt.Sprintf("closed %s 4", id)}; !slices.Equal(n.calls, want) {
+	if want := []string{notice("endorsed", ": fine after #3"), fmt.Sprintf("updated %s 4", id), fmt.Sprintf("closed %s 4", id)}; !slices.Equal(n.calls, want) {
 		t.Fatalf("notifier %v, want %v", n.calls, want)
 	}
 	m := h.listing(id)
@@ -258,7 +259,7 @@ func TestInstanceStancesAreNotCounted(t *testing.T) {
 	h.ok("join_meeting", map[string]any{"meetingId": id}, "mcp-plain")
 	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "p", "draft": true})
 	h.catchUp(id, "mcp-plain")
-	res := h.ok("stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "object", "note": "no"}, "mcp-plain")
+	res := h.ok("stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "object", "note": "no, see #1"}, "mcp-plain")
 	if res["counted"] != false || res["decided"] != false {
 		t.Fatalf("instance stance %v", res)
 	}

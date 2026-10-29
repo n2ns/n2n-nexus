@@ -6,8 +6,21 @@
 
 ## [Unreleased]
 
+每台机器上的 host 和客户端要一起升级（契约版本 4）。数据库原地升级：保留 `nexus.db`。
+
+### 新增
+
+- 有用户席位的会议：用户所在终端的对话用 `start_meeting` 或 `join_meeting` 带 `seat: "user"` 坐上席位；后坐的会话接管席位。席位 `endorse` 当前稿时 host 发出 `DECISION`（附仍未解决的反对），会议接着进行下一个点；席位 `object` 即否决草案。其他人的共识此时不做决定，只在成立或失去时通报。只有席位能结束这类会议，且要写总结；其他人的 `end_meeting` 变成一条提议结束的消息。`list_meetings` 返回 `seat`，`approvals` 带席位的表态。
+- 按时间清理，启动时一次、之后每小时一次，`settings.json` 两个字段：`meetingRetentionDays`（默认 30）和 `retentionDays`（默认 7）。已读或已过期的直接消息、已发出的通知、事件、结束的任务、没有活动的会话（仍被直接消息引用的除外）和没再出现的适配器实例在 `retentionDays` 后删除；连续 `meetingRetentionDays` 没有发言的进行中会议以 `endReason: expired` 关闭，关闭或归档满 `meetingRetentionDays` 的会议删除。有改动的清理记一条 `maintenance.cleanup` 事件。
+- `host_maintenance` 新增 `cleanup`（加 `dryRun` 先看会删什么）和 `export`（把会议导出为 markdown）。
+
 ### 变更
 
+- 先读后发：还有别人的未读消息时，会议里的 `send_message` 以及 `endorse` / `object` 被拒，结果附上这些消息（正文按 `notifyTextChars` 截断），它们随即算已读。被拒后的下一次发言放行，并附注当时未读的范围；草案和 `DECISION` 必须读完才能发。`withdraw` 照常执行并附上未读消息。
+- 会议通知像私信一样显示每条消息的正文；叫醒、Stop 或提示词完整显示的算已读。
+- 反对，以及改变上一次立场的表态，说明里要有依据（`#n`、文件路径、URL，或以 实测：/文档：/数据： 或 Measured:/Docs:/Data: 开头的一句）；同一份提案上最多改变立场两次。
+- 会议消息、全局聊天和会议成员保存写入时发送方的名字和机器；旧数据库里的行在升级时补填，`read_messages` 返回 `senderBackfilled`，成员带 `machine` 和 `backfilled`。
+- 会话报告所在环境（WSL 发行版，显示在平台后面：`Vector · WSL Ubuntu_26`）；macOS 上的主机名取系统设置里的电脑名。会话名为 `<客户端>@<目录>#<会话 id 最后 4 个字母和数字>`，和库里其他会话重名时多取几位，名字不会被复用。
 - 托盘菜单第一行只写 host 是否在运行（"运行中"、"运行中 · 后台服务"或"未运行"）；地址单独一行，没有 host 应答时这一行显示原因。去掉了"（局域网）"后缀：**允许局域网访问**的勾选已经表示同一件事。
 
 ## [0.11.0] - 2026-10-29

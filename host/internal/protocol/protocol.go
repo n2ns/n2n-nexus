@@ -163,6 +163,15 @@ type Hook struct {
 		StanceNotice         string `json:"stanceNotice"`
 		ApproversChanged     string `json:"approversChanged"`
 		ConsensusDecision    string `json:"consensusDecision"`
+		SeatSender           string `json:"seatSender"`
+		SeatTaken            string `json:"seatTaken"`
+		SeatMoved            string `json:"seatMoved"`
+		SeatDecision         string `json:"seatDecision"`
+		SeatOpenObjections   string `json:"seatOpenObjections"`
+		SeatVeto             string `json:"seatVeto"`
+		AiConsensus          string `json:"aiConsensus"`
+		AiConsensusLost      string `json:"aiConsensusLost"`
+		ProposedEnd          string `json:"proposedEnd"`
 		StanceReminder       string `json:"stanceReminder"`
 		StanceWaiting        string `json:"stanceWaiting"`
 		NoAgentSessionError  string `json:"noAgentSessionError"`

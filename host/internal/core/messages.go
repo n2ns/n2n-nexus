@@ -133,10 +133,12 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 
 // addMeetingMessage appends to an active meeting, adds the sender to its
 // participants and records a DECISION message as a decision; it returns the
-// message's number in the meeting.
+// message's number in the meeting. A message of the user's seat names its
+// sender as the seat, held by the session.
 func (c *Core) addMeetingMessage(tx *sql.Tx, meetingID, from, text, category string) (int64, error) {
 	var status, participantsJSON string
-	err := tx.QueryRow(`SELECT status, participants FROM meetings WHERE id = ?`, meetingID).Scan(&status, &participantsJSON)
+	var seat sql.NullString
+	err := tx.QueryRow(`SELECT status, participants, seat_member_id FROM meetings WHERE id = ?`, meetingID).Scan(&status, &participantsJSON, &seat)
 	if err == sql.ErrNoRows {
 		return 0, notFoundMeeting(meetingID)
 	}
@@ -152,8 +154,8 @@ func (c *Core) addMeetingMessage(tx *sql.Tx, meetingID, from, text, category str
 		return 0, err
 	}
 	if _, err := tx.Exec(`INSERT INTO meeting_messages (meeting_id, seq, sender, text, category, timestamp, sender_name, sender_machine)
-		VALUES (?, ?, ?, ?, ?, ?, `+snapshotName+`, `+snapshotMachine+`)`,
-		meetingID, seq, from, text, nullString(category), now, from, from); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? THEN printf(?, `+snapshotName+`) ELSE `+snapshotName+` END, `+snapshotMachine+`)`,
+		meetingID, seq, from, text, nullString(category), now, seat.String == from, c.d.Contract.Hook.Texts.SeatSender, from, from, from); err != nil {
 		return 0, err
 	}
 	var participants []string

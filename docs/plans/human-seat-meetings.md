@@ -23,7 +23,7 @@
 - 席位会话不在 AI 审批人名单里："AI 已达成共识"只统计席位以外的必需审批人。
 - 用户有一票否决权：席位对当前草案的 `object` 使草案作废，不论 AI 怎么表态；没有席位批准，任何草案都不会成为决议。
 
-数据：`meetings` 表加 `seat_member_id TEXT`（当前席位会话 id，NULL 为无席位）和 `had_seat INTEGER NOT NULL DEFAULT 0`（有过席位，席位会话被清理后仍保留，#68）。
+数据：`meetings` 表加 `seat_member_id TEXT`（当前席位会话 id，NULL 为无席位）。它只会转给另一个会话、从不清空，席位会话被清理后仍保留（#68），所以不另设 `had_seat`（实施时定）。另加 `consensus_draft INTEGER`：当前已通报 AI 共识的草案，用来只在状态变化时发提示。
 
 ## 3. 决策点 2：结束与共识（#26）
 
@@ -43,7 +43,7 @@
 - 被拒的 `stance` 和发言不计任何次数。
 - 席位会话的 `object`（转达用户否决）不受依据检查和次数上限约束。
 
-数据：`meeting_stances` 加 `changes INTEGER NOT NULL DEFAULT 0`（该会话在该草案上改变立场的次数）。
+数据：`meeting_stances` 加 `changes INTEGER NOT NULL DEFAULT 0`（该会话在该草案上改变立场的次数）和 `withdrawn`：撤回只做标记、不删行，这样撤回后再表态仍按撤回前的立场计改口，次数也不清零（实施时定）。
 
 ## 5. 决策点 4：发言前的未读检查与通知正文（#60、#64）
 
@@ -99,10 +99,10 @@
 
 | 处 | 改动 |
 |---|---|
-| `contract/tools.json` | `start_meeting` / `join_meeting` 加 `seat`；`send_message`、`stance` 的描述写明未读检查和拒绝返回（返回加 `unread` 数组、`refused: true`）；`list_meetings` 的 meeting 加 `seat`、`hadSeat`；`stance` 的 approvals 加 `seat` |
+| `contract/tools.json` | `start_meeting` / `join_meeting` 加 `seat`；`send_message`、`stance` 的描述写明未读检查和拒绝返回（返回加 `unread` 数组、`refused: true`）；`list_meetings` 的 meeting 加 `seat`；`stance` 的 approvals 加 `seat` |
 | `contract/hook.json` | 会议通知文本改为带正文的格式（`meetingNews` 改为每条一段，加截断提示） |
 | `host/internal/store/migrations/0005_unread_check.sql` | `read_cursors.send_refused`（已实现） |
-| `host/internal/store/migrations/0006_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.had_seat`；`meeting_stances.changes` |
+| `host/internal/store/migrations/0006_meeting_seat.sql` | `meetings.seat_member_id`、`meetings.consensus_draft`；`meeting_stances.changes`、`meeting_stances.withdrawn` |
 | `host/internal/core/meetings.go` | `seat` 参数、接管、席位消息、`end_meeting` 的席位校验与"提议结束" |
 | `host/internal/core/stances.go` | 依据格式检查、改口计数、席位 endorse → DECISION、席位 object → 清草案、共识提示的状态变化 |
 | `host/internal/core/messages.go` | 发送前未读检查、拒绝附回、放行附注、游标推进规则 |
@@ -113,7 +113,7 @@
 
 ## 9. 测试
 
-Go（`host/internal/core`、`host/internal/agents`）与 conformance 各覆盖：席位接管与旧席位降为成员；非席位 `end_meeting` 被拒并转提议；席位 endorse 生成 DECISION 且重复批准不重复；席位 object 清草案；共识提示只在状态变化时发；object 无依据拒绝、改口第 3 次拒绝、withdraw 不计数、席位 object 不受限；发送有未读被拒并附回、游标推进到最后一条完整消息、下一次放行并附注、`stance` 要求草案已读；通知带正文与截断、PostToolUse 不移游标；无席位会议行为不变；席位会话被清理后 `had_seat` 仍为 1。
+Go（`host/internal/core`、`host/internal/agents`）与 conformance 各覆盖：席位接管与旧席位降为成员；非席位 `end_meeting` 被拒并转提议；席位 endorse 生成 DECISION 且重复批准不重复；席位 object 清草案；共识提示只在状态变化时发；object 无依据拒绝、改口第 3 次拒绝、withdraw 不计数、席位 object 不受限；发送有未读被拒并附回、游标推进到最后一条完整消息、下一次放行并附注、`stance` 要求草案已读；通知带正文与截断、PostToolUse 不移游标；无席位会议行为不变；席位会话被清理后会议仍按席位规则进行。
 
 ## 10. 实施顺序与待定
 
