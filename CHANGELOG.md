@@ -4,6 +4,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.3] - 2026-10-29
+
+### Fixed
+
+- A session whose Stop event was lost (the host was down or restarting when its turn ended) goes stale after 30 minutes like any other: the background wait no longer counts as its activity while it is working, so it stops being reported as working and messages sent to it stop waiting for a wake that never comes.
+- A host bound to a name (`--host mybox`) accepts requests addressed by that name: its own health probes, the tray and `service install` no longer get 403 and report that nothing answers.
+- Profile texts (`set_profile` title, note and label), the title a client reports, the host name, the WSL distribution and the working directory are stored on one line: line breaks and Unicode line separators in them can no longer forge a message's framing lines in another session's notification.
+- A member that joins a meeting again after `leave_meeting` starts from the newest message, as documented, instead of being refused its first post for the messages it missed.
+- A database written by an older host whose migrations fail now says to delete `nexus.db` when the CHANGELOG of the release says to reset the data directory, instead of a bare SQL error.
+- The client survives an endpoint that is not an n2n-nexus host: an error status with a non-object body no longer crashes the hook or the MCP adapter, a tool list that is not a list leaves the adapter unconnected (it retries) instead of half-connected, and a tool call answered with a non-object body fails as a transport error. The discovery cache is written through a temporary file and renamed into place, so a concurrent hook never reads a partial URL.
+- On Windows, upgrading through `install` restarts the background service with its data directory intact when that directory ends in a backslash and contains a space.
+
+### Changed
+
+- The Windows firewall rules added by **Allow LAN access** apply to private and domain networks only, not to public ones. Rules added by an earlier version are not changed until LAN access is turned off and on again.
+- On WSL, the MCP adapter's instance ID includes the distribution, since distributions on one Windows machine share its host name; two distributions on the same workspace no longer share chat and meeting read cursors. The ID changes once for WSL users, which resets those cursors (not the hooks' per-conversation ones).
+
 ## [0.12.2] - 2026-10-29
 
 ### Changed
