@@ -33,3 +33,11 @@ func CutUnits(s string, limit int) string {
 	}
 	return s
 }
+
+// CutBudget cuts s to what is left of budget (in UTF-16 code units, like
+// CutUnits) and takes what it keeps from budget; cut: s did not fit whole.
+func CutBudget(s string, budget *int) (text string, cut bool) {
+	text = CutUnits(s, *budget)
+	*budget -= UnitLen(text)
+	return text, len(text) < len(s)
+}

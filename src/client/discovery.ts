@@ -6,7 +6,7 @@
  * none answers it falls back to the local default endpoint (a host running on
  * this machine); it never starts a host or makes one reachable from the LAN.
  *
- * Node built-ins only: the hook command imports this on every client event.
+ * Node built-ins only (and contract.ts): the hook command imports this on every client event.
  */
 import dgram from "node:dgram";
 import fs from "node:fs";
@@ -14,11 +14,12 @@ import os from "node:os";
 import path from "node:path";
 import { isIPv6 } from "node:net";
 
+import { DISCOVERY_QUERY } from "../contract.js";
+
 /** Endpoint value that turns discovery on (NEXUS_ENDPOINT or --endpoint). */
 export const DISCOVER_ENDPOINT = "discover";
 export const LOCAL_ENDPOINT = "http://127.0.0.1:5688";
-export const DISCOVERY_QUERY = "n2n-nexus/discover";
-const DEFAULT_DISCOVERY_PORT = 5688;
+export const DEFAULT_DISCOVERY_PORT = 5688;
 const DISCOVERY_WAIT_MS = 1000;
 /** How long "no daemon answered" stays cached before the next lookup. */
 const NOT_FOUND_TTL_MS = 60_000;
@@ -28,9 +29,14 @@ type DiscoveryReply = { service: "n2n-nexus"; version: string; host: string; por
 const ALL_INTERFACES = new Set(["0.0.0.0", "::", ""]);
 
 /** UDP port of discovery queries (NEXUS_DISCOVERY_PORT, default 5688). */
-export function discoveryPort(): number {
+function discoveryPort(): number {
     const parsed = parseInt(process.env.NEXUS_DISCOVERY_PORT || "", 10);
     return parsed > 0 ? parsed : DEFAULT_DISCOVERY_PORT;
+}
+
+/** The endpoint to use: `value` (e.g. `--endpoint`) when set, else NEXUS_ENDPOINT, else LOCAL_ENDPOINT. */
+export function configuredEndpoint(value?: string): string {
+    return value || process.env.NEXUS_ENDPOINT || LOCAL_ENDPOINT;
 }
 
 /** IPv4 LAN interfaces of this machine. */

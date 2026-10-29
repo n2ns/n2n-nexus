@@ -1,8 +1,6 @@
 package host
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -37,7 +35,7 @@ func WatchRestart(dataDir string, since time.Time, interval time.Duration, done 
 			case <-done:
 				return
 			case <-t.C:
-				if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) || err != nil {
+				if _, err := os.Stat(path); err != nil {
 					continue
 				}
 				_ = os.Remove(path)

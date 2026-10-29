@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -67,11 +68,52 @@ func (s *Store) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
+// ErrDryRun, returned by a Tx function, rolls the transaction back: a dry run.
+var ErrDryRun = errors.New("dry run")
+
+// Affected is how many rows the statement that returned r and err changed.
+func Affected(r sql.Result, err error) (int64, error) {
+	if err != nil {
+		return 0, err
+	}
+	return r.RowsAffected()
+}
+
+// Exists reports whether row, of a SELECT 1 query, found a row.
+func Exists(row *sql.Row) (bool, error) {
+	var one int
+	err := row.Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// Append appends every row of rows, scanned with scan, to out and closes
+// rows; err is the error of the query that returned rows.
+func Append[T any](out []T, rows *sql.Rows, err error, scan func(*sql.Rows) (T, error)) ([]T, error) {
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// ScanString scans a row of one text column.
+func ScanString(rows *sql.Rows) (string, error) {
+	var s string
+	return s, rows.Scan(&s)
+}
+
 // ISO formats t like JavaScript's toISOString (UTC, milliseconds), the format stored in every timestamp column.
 func ISO(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
-
-// ParseISO parses a timestamp written by ISO.
-func ParseISO(s string) (time.Time, error) { return time.Parse("2006-01-02T15:04:05.000Z", s) }
 
 type migration struct {
 	version int

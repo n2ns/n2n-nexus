@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 type relation struct {
@@ -68,28 +69,33 @@ type manifestPatch struct {
 	FeatureTier          *string            `json:"feature_tier"`
 }
 
-// fields lists the patched fields in the order of the manifest schema.
-func (p manifestPatch) fields() []string {
-	fields := []string{}
-	add := func(set bool, name string) {
-		if set {
-			fields = append(fields, name)
-		}
+// patchField is one field of a manifest patch: its name in the manifest, its
+// column ("" for relations, kept in their own table), whether the column holds
+// JSON, its value (a pointer) and whether the patch sets it.
+type patchField struct {
+	name, column string
+	json         bool
+	value        any
+	set          bool
+}
+
+// table lists the patch's fields in the order of the manifest schema.
+func (p manifestPatch) table() []patchField {
+	return []patchField{
+		{"name", "name", false, p.Name, p.Name != nil},
+		{"description", "description", false, p.Description, p.Description != nil},
+		{"techStack", "tech_stack", true, p.TechStack, p.TechStack != nil},
+		{"relations", "", false, p.Relations, p.Relations != nil},
+		{"repositoryUrl", "repository_url", false, p.RepositoryURL, p.RepositoryURL != nil},
+		{"localPath", "local_path", false, p.LocalPath, p.LocalPath != nil},
+		{"endpoints", "endpoints", true, p.Endpoints, p.Endpoints != nil},
+		{"apiSpec", "api_spec", true, p.APISpec, p.APISpec != nil},
+		{"billing", "billing", true, p.Billing, p.Billing != nil},
+		{"apiDependencies", "api_dependencies", true, p.APIDependencies, p.APIDependencies != nil},
+		{"gatewayCompatibility", "gateway_compatibility", false, p.GatewayCompatibility, p.GatewayCompatibility != nil},
+		{"api_versions", "api_versions", true, p.APIVersions, p.APIVersions != nil},
+		{"feature_tier", "feature_tier", false, p.FeatureTier, p.FeatureTier != nil},
 	}
-	add(p.Name != nil, "name")
-	add(p.Description != nil, "description")
-	add(p.TechStack != nil, "techStack")
-	add(p.Relations != nil, "relations")
-	add(p.RepositoryURL != nil, "repositoryUrl")
-	add(p.LocalPath != nil, "localPath")
-	add(p.Endpoints != nil, "endpoints")
-	add(p.APISpec != nil, "apiSpec")
-	add(p.Billing != nil, "billing")
-	add(p.APIDependencies != nil, "apiDependencies")
-	add(p.GatewayCompatibility != nil, "gatewayCompatibility")
-	add(p.APIVersions != nil, "api_versions")
-	add(p.FeatureTier != nil, "feature_tier")
-	return fields
 }
 
 // manifestOut is a stored manifest as get_project returns it.
@@ -126,12 +132,7 @@ func jsonValue(v any, isNil bool) (any, error) {
 func notFoundProject(id string) error { return api.Errorf("Project '%s' not found.", id) }
 
 func projectExists(tx *sql.Tx, id string) (bool, error) {
-	var one int
-	err := tx.QueryRow(`SELECT 1 FROM projects WHERE id = ?`, id).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
+	return store.Exists(tx.QueryRow(`SELECT 1 FROM projects WHERE id = ?`, id))
 }
 
 func writeRelations(tx *sql.Tx, projectID string, relations []relation) error {
@@ -149,19 +150,10 @@ func writeRelations(tx *sql.Tx, projectID string, relations []relation) error {
 
 func readRelations(tx *sql.Tx, projectID string) ([]relation, error) {
 	rows, err := tx.Query(`SELECT target_id, type FROM project_relations WHERE project_id = ? ORDER BY position`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	relations := []relation{}
-	for rows.Next() {
+	return store.Append([]relation{}, rows, err, func(rows *sql.Rows) (relation, error) {
 		var r relation
-		if err := rows.Scan(&r.TargetID, &r.Type); err != nil {
-			return nil, err
-		}
-		relations = append(relations, r)
-	}
-	return relations, rows.Err()
+		return r, rows.Scan(&r.TargetID, &r.Type)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -330,53 +322,25 @@ func (c *Core) updateProject(call api.Call, a updateProjectArgs) (any, error) {
 	now := c.now()
 	sets := []string{"last_updated = ?", "last_active = ?"}
 	values := []any{now, now}
-	set := func(column string, v any) {
-		sets = append(sets, column+" = ?")
-		values = append(values, v)
-	}
-	setJSON := func(column string, v any) error {
-		j, err := jsonValue(v, false)
-		if err != nil {
-			return err
+	fields := []string{}
+	for _, f := range p.table() {
+		if !f.set {
+			continue
 		}
-		set(column, j)
-		return nil
-	}
-	if p.Name != nil {
-		set("name", *p.Name)
-	}
-	if p.Description != nil {
-		set("description", *p.Description)
-	}
-	if p.RepositoryURL != nil {
-		set("repository_url", *p.RepositoryURL)
-	}
-	if p.LocalPath != nil {
-		set("local_path", *p.LocalPath)
-	}
-	if p.GatewayCompatibility != nil {
-		set("gateway_compatibility", *p.GatewayCompatibility)
-	}
-	if p.FeatureTier != nil {
-		set("feature_tier", *p.FeatureTier)
-	}
-	for _, j := range []struct {
-		column string
-		v      any
-		ok     bool
-	}{
-		{"tech_stack", p.TechStack, p.TechStack != nil},
-		{"endpoints", p.Endpoints, p.Endpoints != nil},
-		{"api_spec", p.APISpec, p.APISpec != nil},
-		{"billing", p.Billing, p.Billing != nil},
-		{"api_dependencies", p.APIDependencies, p.APIDependencies != nil},
-		{"api_versions", p.APIVersions, p.APIVersions != nil},
-	} {
-		if j.ok {
-			if err := setJSON(j.column, j.v); err != nil {
+		fields = append(fields, f.name)
+		if f.column == "" {
+			continue
+		}
+		v := f.value
+		if f.json {
+			j, err := jsonValue(v, false)
+			if err != nil {
 				return nil, err
 			}
+			v = j
 		}
+		sets = append(sets, f.column+" = ?")
+		values = append(values, v)
 	}
 	values = append(values, a.ProjectID)
 	err := c.tx(call, func(tx *sql.Tx) error {
@@ -392,7 +356,7 @@ func (c *Core) updateProject(call api.Call, a updateProjectArgs) (any, error) {
 				return err
 			}
 		}
-		return c.recordEvent(tx, call.Actor(), "project.update", a.ProjectID, map[string]any{"fields": p.fields()})
+		return c.recordEvent(tx, call.Actor(), "project.update", a.ProjectID, map[string]any{"fields": fields})
 	})
 	if err != nil {
 		return nil, err
@@ -538,22 +502,15 @@ func (c *Core) getGlobalTopology(call api.Call, a topologyArgs) (any, error) {
 	var edges []topologyEdge
 	err := c.tx(call, func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT id, name, description, last_active FROM projects ORDER BY position`)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
+		nodes, err = store.Append(nodes, rows, err, func(rows *sql.Rows) (topologyNode, error) {
 			var n topologyNode
-			if err := rows.Scan(&n.ID, &n.Name, &n.Summary, &n.LastActive); err != nil {
-				rows.Close()
-				return err
-			}
+			err := rows.Scan(&n.ID, &n.Name, &n.Summary, &n.LastActive)
 			if n.Name == "" {
 				n.Name = n.ID
 			}
-			nodes = append(nodes, n)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+			return n, err
+		})
+		if err != nil {
 			return err
 		}
 		// Edges to projects that do not exist are left out.
@@ -562,18 +519,11 @@ func (c *Core) getGlobalTopology(call api.Call, a topologyArgs) (any, error) {
 			JOIN projects p ON p.id = r.project_id
 			WHERE EXISTS (SELECT 1 FROM projects t WHERE t.id = r.target_id)
 			ORDER BY p.position, r.position`)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
+		edges, err = store.Append(edges, rows, err, func(rows *sql.Rows) (topologyEdge, error) {
 			var e topologyEdge
-			if err := rows.Scan(&e.From, &e.To, &e.Type); err != nil {
-				return err
-			}
-			edges = append(edges, e)
-		}
-		return rows.Err()
+			return e, rows.Scan(&e.From, &e.To, &e.Type)
+		})
+		return err
 	})
 	if err != nil {
 		return nil, err

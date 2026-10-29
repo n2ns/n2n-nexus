@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - The tray icon and the README logo are larger and plainer: the network nearly fills the tile, which is a lighter grey and has no grey edge.
+- Internal cleanup of the host and the client with no change in behavior: the read cursors and meeting notification marks have one implementation shared by meetings and conversations (`host/internal/cursors`), the LAN discovery query comes from the contract (`discoveryQuery` in `contract/hook.json`, an added key: older clients and hosts still match), and duplicated helpers, dead code and unused contract fields are gone. The client's tests build it once per run.
 
 ## [0.12.1] - 2026-10-29
 

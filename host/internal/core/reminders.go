@@ -36,25 +36,16 @@ func (c *Core) RemindStances(ctx context.Context, after time.Duration) (string, 
 			WHERE m.status = 'active'
 			  AND (SELECT MAX(timestamp) FROM meeting_messages WHERE meeting_id = m.id) < ?
 			ORDER BY m.active_order`, cutoff)
-		if err != nil {
-			return err
-		}
 		type draft struct {
 			stanceReminder
 			sender     string
 			tellAuthor bool
 		}
-		var drafts []draft
-		for rows.Next() {
+		drafts, err := store.Append(nil, rows, err, func(rows *sql.Rows) (draft, error) {
 			var d draft
-			if err := rows.Scan(&d.meetingID, &d.topic, &d.seq, &d.sender, &d.tellAuthor); err != nil {
-				rows.Close()
-				return err
-			}
-			drafts = append(drafts, d)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+			return d, rows.Scan(&d.meetingID, &d.topic, &d.seq, &d.sender, &d.tellAuthor)
+		})
+		if err != nil {
 			return err
 		}
 		for _, d := range drafts {

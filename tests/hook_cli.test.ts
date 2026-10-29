@@ -1,8 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { execSync, spawn } from "node:child_process";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import http from "node:http";
-import net, { AddressInfo } from "node:net";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,31 +9,15 @@ import { MAX_TITLE_CHARS } from "../src/contract.js";
 import { waitForWake } from "../src/cli/hook.js";
 import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
+import { ENTRY, REPO, runCli, type CliResult } from "./helpers/cli.js";
+import { closedPort, listen } from "./helpers/http.js";
 
-// Tests the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
-const REPO = path.resolve(__dirname, "..");
-const ENTRY = path.join(REPO, "build", "index.js");
+// Tests the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "hook-cli");
 
-type RunResult = { code: number | null; stdout: string; stderr: string; ms: number };
-
-function runHook(args: string[], stdin: string, env: NodeJS.ProcessEnv = {}, cwd?: string, entry = ENTRY): Promise<RunResult> {
-    const started = Date.now();
-    return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [entry, "hook", ...args], {
-            cwd,
-            // CODEX_HOME points at an empty folder unless a test sets it: never read the user's own Codex state.
-            env: { ...process.env, NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home"), ...env },
-            stdio: ["pipe", "pipe", "pipe"]
-        });
-        let stdout = "";
-        let stderr = "";
-        child.stdout.on("data", (chunk) => { stdout += chunk; });
-        child.stderr.on("data", (chunk) => { stderr += chunk; });
-        child.on("error", reject);
-        child.on("close", (code) => resolve({ code, stdout, stderr, ms: Date.now() - started }));
-        child.stdin.end(stdin);
-    });
+function runHook(args: string[], stdin: string, env: NodeJS.ProcessEnv = {}, cwd?: string, entry = ENTRY): Promise<CliResult> {
+    // CODEX_HOME points at an empty folder unless a test sets it: never read the user's own Codex state.
+    return runCli(["hook", ...args], { env: { ...process.env, NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home"), ...env }, stdin, cwd, entry });
 }
 
 type FakeDaemon = {
@@ -48,7 +31,7 @@ type FakeDaemon = {
 async function startFakeDaemon(): Promise<FakeDaemon> {
     const fake: Partial<FakeDaemon> = { requests: [], respond: () => ({ raw: JSON.stringify({ output: null }) }) };
     const sockets = new Set<net.Socket>();
-    const server = http.createServer((req, res) => {
+    const { server, endpoint } = await listen((req, res) => {
         let raw = "";
         req.on("data", (chunk) => { raw += chunk; });
         req.on("end", () => {
@@ -64,21 +47,12 @@ async function startFakeDaemon(): Promise<FakeDaemon> {
     });
     server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
     fake.activeConnections = () => sockets.size;
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    fake.endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    fake.endpoint = endpoint;
     fake.close = () => new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy();
         server.close(() => resolve());
     });
     return fake as FakeDaemon;
-}
-
-async function freePort(): Promise<number> {
-    const server = net.createServer();
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address() as AddressInfo;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    return port;
 }
 
 async function toolsAnswer(port: number): Promise<boolean> {
@@ -100,10 +74,6 @@ async function waitFor(check: () => boolean, timeoutMs: number): Promise<boolean
     }
     return check();
 }
-
-beforeAll(() => {
-    execSync("npm run build", { cwd: REPO, stdio: "ignore" });
-}, 120_000);
 
 afterAll(async () => {
     fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -177,7 +147,7 @@ describe("n2n-nexus hook, forwarding", () => {
 
     it("stays silent on bad input, a bad client argument and a malformed response", async () => {
         const event = JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "s" });
-        const cases: RunResult[] = [];
+        const cases: CliResult[] = [];
         cases.push(await runHook(["claude", "--endpoint", fake.endpoint], "not json"));
         cases.push(await runHook(["claude", "--endpoint", fake.endpoint], "[1,2]"));
         cases.push(await runHook(["cursor", "--endpoint", fake.endpoint], event));
@@ -446,14 +416,14 @@ describe("n2n-nexus hook --wait, package changed during the wait", () => {
 
 describe("n2n-nexus hook, no daemon", () => {
     it("exits 0 without output when the daemon is unreachable", async () => {
-        const port = await freePort();
+        const port = await closedPort();
         const result = await runHook(["claude", "--endpoint", `http://127.0.0.1:${port}`], JSON.stringify({ hook_event_name: "PostToolUse", session_id: "x" }));
         expect(result).toMatchObject({ code: 0, stdout: "" });
         expect(result.ms).toBeLessThan(1_500);
     });
 
     it("never starts a local daemon: it says on stderr how to start one", async () => {
-        const port = await freePort();
+        const port = await closedPort();
         const result = await runHook(["claude", "--endpoint", `http://127.0.0.1:${port}`], JSON.stringify({ hook_event_name: "SessionStart", session_id: "x" }));
         expect(result).toMatchObject({ code: 0, stdout: "" });
         expect(result.stderr).toContain(`No n2n-nexus-host at http://127.0.0.1:${port}`);
@@ -466,7 +436,7 @@ describe("n2n-nexus hook, no daemon", () => {
     // A LAN address of this machine refuses like a remote host would; the hint must not say to start a daemon here.
     const lanAddress = Object.values(os.networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)?.address;
     it.runIf(lanAddress)("says to start the daemon on that machine when a non-loopback endpoint refuses", async () => {
-        const port = await freePort();
+        const port = await closedPort();
         const endpoint = `http://${lanAddress}:${port}`;
         const result = await runHook(["claude", "--endpoint", endpoint], JSON.stringify({ hook_event_name: "SessionStart", session_id: "x" }));
         expect(result).toMatchObject({ code: 0, stdout: "" });

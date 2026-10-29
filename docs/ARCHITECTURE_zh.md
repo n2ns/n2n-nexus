@@ -31,7 +31,7 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 
 - **`n2n-nexus-host`**（Go，`host/`）：保存全部数据、工具定义和业务逻辑。从 GitHub Releases、Homebrew 或 Scoop 安装。
 - **`n2n-nexus`**（TypeScript，npm，`src/`）：只有客户端——MCP 适配器（`mcp`）、hook 命令（`hook`）、为 Claude Code 和 Codex 执行的 `install` / `uninstall`，以及 `doctor`。不含存储，也不含服务器。
-- **`contract/`** 是两边协议的唯一来源：`tools.json`（每个工具的名称、标题、说明、annotations、输入和输出 JSON Schema）、`hook.json`（hook 字段、`_meta` 键名、时限、上限、通知文本）、`errors.json`（接口、错误格式、状态码）。host 嵌入这些文件，客户端运行时读取 `hook.json`，`tests/conformance/` 里的一致性测试用它们检验 host。`GET /health` 返回 host 的 `contractVersion`，`n2n-nexus doctor` 拿它和客户端的版本比较。
+- **`contract/`** 是两边协议的唯一来源：`tools.json`（每个工具的名称、标题、说明、annotations、输入和输出 JSON Schema）、`hook.json`（hook 字段、`_meta` 键名、局域网发现查询串、时限、上限、通知文本）、`errors.json`（接口、错误格式、状态码）。host 嵌入这些文件，客户端运行时读取 `hook.json`，`tests/conformance/` 里的一致性测试用它们检验 host。`GET /health` 返回 host 的 `contractVersion`，`n2n-nexus doctor` 拿它和客户端的版本比较。
 
 ### 核心原则
 

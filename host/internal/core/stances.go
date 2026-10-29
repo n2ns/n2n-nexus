@@ -6,15 +6,11 @@ import (
 	"strings"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 // consensusSender is the sender of the DECISION a consensus writes.
 const consensusSender = "n2n-nexus"
-
-// isSessionID: a conversation session key (claude:<id> / codex:<id>), not an adapter instance id.
-func isSessionID(id string) bool {
-	return strings.HasPrefix(id, "claude:") || strings.HasPrefix(id, "codex:")
-}
 
 // draftRow is a meeting's current draft and its approver-list version.
 type draftRow struct {
@@ -39,19 +35,7 @@ func currentDraft(tx *sql.Tx, meetingID string) (d draftRow, ok bool, err error)
 // approverIDs lists the required approvers of the meeting's current draft, in the order they were added.
 func approverIDs(tx *sql.Tx, meetingID string) ([]string, error) {
 	rows, err := tx.Query(`SELECT member_id FROM meeting_approvers WHERE meeting_id = ? ORDER BY rowid`, meetingID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return store.Append([]string{}, rows, err, store.ScanString)
 }
 
 // publishDraft makes message row the meeting's current draft: a new approver
@@ -502,7 +486,7 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 	if refused != nil {
 		return refused, nil
 	}
-	if c.d.Meetings != nil && isSessionID(author) && author != who.ID {
+	if c.d.Meetings != nil && c.isSession(author) && author != who.ID {
 		name := who.Name
 		if name == "" {
 			name = who.ID

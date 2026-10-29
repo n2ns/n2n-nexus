@@ -4,9 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/cursors"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 // ---------------------------------------------------------------------------
@@ -191,14 +195,26 @@ type readMessagesArgs struct {
 }
 
 // machineSQL is a session's machine as shown, "<label or hostname> ·
-// <platform>[ <environment>]", for the agent_sessions row aliased s.
-const machineSQL = `CASE WHEN s.label != '' THEN s.label ELSE s.hostname END || ' · ' ||
-	CASE s.platform WHEN 'darwin' THEN 'macOS' WHEN 'linux' THEN 'Linux' WHEN 'wsl' THEN 'WSL' WHEN 'win32' THEN 'Windows' END ||
+// <platform>[ <environment>]", for the agent_sessions row aliased s; the
+// platform is shown as api.Platforms names it.
+var machineSQL = `CASE WHEN s.label != '' THEN s.label ELSE s.hostname END || ' · ' ||
+	` + platformSQL() + ` ||
 	CASE WHEN s.environment != '' THEN ' ' || s.environment ELSE '' END`
+
+// platformSQL is CASE s.platform WHEN '<platform>' THEN '<shown>' ... END.
+func platformSQL() string {
+	var b strings.Builder
+	b.WriteString("CASE s.platform")
+	for _, p := range slices.Sorted(maps.Keys(api.Platforms)) {
+		fmt.Fprintf(&b, " WHEN '%s' THEN '%s'", p, api.Platforms[p])
+	}
+	b.WriteString(" END")
+	return b.String()
+}
 
 // Snapshots of a session (its id the argument), NULL for an adapter instance:
 // what a row shows of who wrote it, kept after the session is deleted.
-const (
+var (
 	snapshotName    = `(SELECT s.name FROM agent_sessions s WHERE s.id = ?)`
 	snapshotTitle   = `(SELECT s.title FROM agent_sessions s WHERE s.id = ?)`
 	snapshotMachine = `(SELECT ` + machineSQL + ` FROM agent_sessions s WHERE s.id = ?)`
@@ -250,21 +266,13 @@ func (s messageSource) query(tx *sql.Tx, cond, tail string, args ...any) ([]chat
 	rows, err := tx.Query(`SELECT m.id, `+s.number+`, m.sender, m.text, m.category, m.timestamp, m.sender_name, m.sender_machine, m.snapshot_backfilled
 		FROM `+s.table+` m
 		WHERE `+s.where+cond+` `+tail, append(append([]any{}, s.args...), args...)...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []chatMessage
-	for rows.Next() {
+	return store.Append(nil, rows, err, func(rows *sql.Rows) (chatMessage, error) {
 		var m chatMessage
 		var category, name, machine sql.NullString
-		if err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name, &machine, &m.SenderBackfilled); err != nil {
-			return nil, err
-		}
+		err := rows.Scan(&m.row, &m.ID, &m.From, &m.Text, &category, &m.Timestamp, &name, &machine, &m.SenderBackfilled)
 		m.Category, m.SenderName, m.SenderMachine = nullable(category), nullable(name), nullable(machine)
-		out = append(out, m)
-	}
-	return out, rows.Err()
+		return m, err
+	})
 }
 
 // maxID is the table id of the context's newest message, or 0.
@@ -343,19 +351,11 @@ func (c *Core) readMessages(call api.Call, a readMessagesArgs) (any, error) {
 				return nil
 			}
 		}
-		if _, err = tx.Exec(`
-			INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = excluded.last_read_id, updated_at = excluded.updated_at`,
-			id.ID, src.contextType, src.contextID, cursor, c.now()); err != nil {
+		if err := cursors.Read(tx, id.ID, src.contextType, src.contextID, cursor, c.now()); err != nil || src.contextType != "meeting" {
 			return err
 		}
-		if src.contextType != "meeting" {
-			return nil
-		}
 		// What a member read is announced: its next notification does not repeat it.
-		_, err = tx.Exec(`UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?`,
-			cursor, src.contextID, id.ID, cursor)
-		return err
+		return cursors.Announced(tx, src.contextID, id.ID, cursor)
 	})
 	if err != nil {
 		return nil, err
@@ -409,23 +409,17 @@ func (c *Core) listEvents(call api.Call, a listEventsArgs) (any, error) {
 		} else {
 			rows, err = tx.Query(`SELECT id, timestamp, actor, action, target, detail FROM events ORDER BY id DESC LIMIT ?`, a.Limit)
 		}
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
+		events, err = store.Append(events, rows, err, func(rows *sql.Rows) (event, error) {
 			var e event
 			var target, detail sql.NullString
-			if err := rows.Scan(&e.ID, &e.Timestamp, &e.Actor, &e.Action, &target, &detail); err != nil {
-				return err
-			}
+			err := rows.Scan(&e.ID, &e.Timestamp, &e.Actor, &e.Action, &target, &detail)
 			e.Target = target.String
 			if detail.Valid && detail.String != "" {
 				e.Detail = json.RawMessage(detail.String)
 			}
-			events = append(events, e)
-		}
-		return rows.Err()
+			return e, err
+		})
+		return err
 	})
 	if err != nil {
 		return nil, err

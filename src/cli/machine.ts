@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 
-export type Machine = { hostname: string; platform: string; environment: string; utcOffset: number };
+type Machine = { hostname: string; platform: string; environment: string; utcOffset: number };
 
 /** darwin, linux, win32 as Node reports them; wsl for a Linux that runs under Windows. */
 export function platformOf(platform: string = process.platform, readProcVersion: () => string = () => fs.readFileSync("/proc/version", "utf8")): string {

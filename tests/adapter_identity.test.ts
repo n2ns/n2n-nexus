@@ -1,10 +1,10 @@
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 import { NexusServer } from "../src/server/nexus.js";
+import { closedPort, listen } from "./helpers/http.js";
 
 type Recorded = { url: string; body: Record<string, unknown> };
 const proxies: NexusServer[] = [];
@@ -24,7 +24,7 @@ afterEach(async () => {
 /** Daemon stand-in that records every request and echoes tool calls back. */
 async function fakeDaemon(port = 0) {
     const requests: Recorded[] = [];
-    const server = http.createServer((req, res) => {
+    const { server, endpoint } = await listen((req, res) => {
         let data = "";
         req.on("data", (chunk) => { data += chunk; });
         req.on("end", () => {
@@ -36,10 +36,9 @@ async function fakeDaemon(port = 0) {
                 res.end(JSON.stringify({ ok: true, result: body }));
             }
         });
-    });
+    }, port);
     servers.push(server);
-    await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
-    process.env.NEXUS_ENDPOINT = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    process.env.NEXUS_ENDPOINT = endpoint;
     return requests;
 }
 
@@ -100,14 +99,6 @@ for (const stateless of [false, true]) {
 }
 
 describe("No daemon", () => {
-    async function closedPort(): Promise<number> {
-        const probe = http.createServer();
-        await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-        const port = (probe.address() as AddressInfo).port;
-        await new Promise<void>((resolve) => probe.close(() => resolve()));
-        return port;
-    }
-
     const answers = (port: number) => new Promise<boolean>((resolve) => {
         const req = http.get(`http://127.0.0.1:${port}/api/tools`, { timeout: 500 }, (res) => { res.resume(); resolve(true); });
         req.on("error", () => resolve(false));
@@ -162,7 +153,7 @@ describe("No daemon", () => {
 
     it("a call the daemon does not answer in time fails alone: the tool list stays and nothing is resent", async () => {
         let calls = 0;
-        const server = http.createServer((req, res) => {
+        const { server, endpoint } = await listen((req, res) => {
             req.resume();
             req.on("end", () => {
                 if (req.url === "/api/tools") {
@@ -174,8 +165,7 @@ describe("No daemon", () => {
             });
         });
         servers.push(server);
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-        process.env.NEXUS_ENDPOINT = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        process.env.NEXUS_ENDPOINT = endpoint;
         const proxy = new NexusServer({ retryIntervalMs: 50, requestTimeoutMs: 150 });
         proxies.push(proxy);
         const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

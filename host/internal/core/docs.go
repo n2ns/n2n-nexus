@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 func (c *Core) getGlobalStrategy(call api.Call, _ struct{}) (any, error) {
@@ -50,18 +51,11 @@ func (c *Core) listGlobalDocs(call api.Call, _ struct{}) (any, error) {
 	err := c.tx(call, func(tx *sql.Tx) error {
 		// Newest first; documents updated at the same instant in the order they were created.
 		rows, err := tx.Query(`SELECT id, title, updated_at, updated_by FROM global_docs ORDER BY updated_at DESC, rowid`)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
+		docs, err = store.Append(docs, rows, err, func(rows *sql.Rows) (docEntry, error) {
 			var d docEntry
-			if err := rows.Scan(&d.DocID, &d.Title, &d.LastUpdated, &d.UpdatedBy); err != nil {
-				return err
-			}
-			docs = append(docs, d)
-		}
-		return rows.Err()
+			return d, rows.Scan(&d.DocID, &d.Title, &d.LastUpdated, &d.UpdatedBy)
+		})
+		return err
 	})
 	if err != nil {
 		return nil, err

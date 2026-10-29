@@ -13,7 +13,7 @@ import {
     isHookClient, type HookClient, type HookResponse
 } from "../contract.js";
 import { NexusClient, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../client/nexus-client.js";
-import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, resolveEndpoint } from "../client/discovery.js";
+import { DISCOVER_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { machineInfo } from "./machine.js";
 import { readTitle } from "./title.js";
 
@@ -37,11 +37,16 @@ function argValue(argv: string[], name: string): string | undefined {
     return i !== -1 ? argv[i + 1] : undefined;
 }
 
-/** Returns the text to print on stdout ("" for nothing); throws on any failure. */
-async function forward(argv: string[]): Promise<string> {
+/** The client named by `<client> [--endpoint <url>]` and the configured endpoint; throws on an unknown client. */
+function clientAndEndpoint(argv: string[]): { client: HookClient; configured: string } {
     const client = argv[0];
     if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude or codex)`);
-    const configured = argValue(argv, "--endpoint") || process.env.NEXUS_ENDPOINT || LOCAL_ENDPOINT;
+    return { client, configured: configuredEndpoint(argValue(argv, "--endpoint")) };
+}
+
+/** Returns the text to print on stdout ("" for nothing); throws on any failure. */
+async function forward(argv: string[]): Promise<string> {
+    const { client, configured } = clientAndEndpoint(argv);
 
     const stdin: unknown = JSON.parse(await readStdin());
     if (!isPlainObject(stdin)) throw new Error("hook input is not a JSON object");
@@ -145,11 +150,9 @@ export async function waitForWake(client: HookClient, sessionId: string, configu
  * try without retrying a broken `codex` in a loop.
  */
 async function runWait(argv: string[]): Promise<number> {
-    const client = argv[0];
-    if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude or codex)`);
+    const { client, configured } = clientAndEndpoint(argv);
     // claude -p (unattended) waits for this hook before it exits, and nobody would see a woken turn.
     if (client === "claude" && process.env.CLAUDE_CODE_SESSION_ATTENDED === "0") return 0;
-    const configured = argValue(argv, "--endpoint") || process.env.NEXUS_ENDPOINT || LOCAL_ENDPOINT;
     let sessionId = argValue(argv, "--session");
     if (!sessionId) {
         const stdin: unknown = JSON.parse(await readStdin());

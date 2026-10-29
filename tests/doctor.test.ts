@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
-import http from "node:http";
-import { AddressInfo } from "node:net";
 import path from "node:path";
 
+import { ENTRY, REPO, runCli } from "./helpers/cli.js";
 import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/executable.js";
+import { closedPort, listen } from "./helpers/http.js";
 import { HOOK, Host } from "./conformance/harness.js";
 
 import { npxFor } from "../src/cli/install.js";
@@ -14,9 +13,7 @@ import { runDoctor } from "../src/cli/doctor.js";
 import { NexusClient, NexusTransportError } from "../src/client/nexus-client.js";
 import { LOCAL_ENDPOINT } from "../src/client/discovery.js";
 
-// Runs the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
-const REPO = path.resolve(__dirname, "..");
-const ENTRY = path.join(REPO, "build", "index.js");
+// Runs the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "doctor");
 const NODE = process.execPath;
 const NPX = npxFor(NODE).npx;
@@ -33,36 +30,23 @@ let hostVersion: string;
 /** The Codex doctor asks about hook trust: none by default (it cannot be run), so the checks never ask a real Codex. */
 let codexCommand: string;
 
-function run(args: string[], endpoint = hostEndpoint): Promise<{ code: number | null; stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(NODE, [ENTRY, "doctor", ...args], {
-            env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand },
-            stdio: ["ignore", "pipe", "pipe"]
-        });
-        let stdout = "";
-        let stderr = "";
-        child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-        child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
-        child.on("error", reject);
-        child.on("close", (code) => resolve({ code, stdout, stderr }));
+async function run(args: string[], endpoint = hostEndpoint): Promise<{ code: number | null; stdout: string; stderr: string }> {
+    const { code, stdout, stderr } = await runCli(["doctor", ...args], {
+        env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand }
     });
+    return { code, stdout, stderr };
 }
 
 /** The report line doctor prints for a host that passes. */
 const hostOk = (endpoint = hostEndpoint) => `host ${endpoint}\n  ok   n2n-nexus-host ${hostVersion}, contract version ${HOOK.contractVersion}\n`;
 
 /** An HTTP server that answers GET /health with `health`. */
-async function fakeHealth(health: Record<string, unknown>): Promise<{ endpoint: string; close: () => Promise<void> }> {
-    const server = http.createServer((req, res) => {
+function fakeHealth(health: Record<string, unknown>): Promise<{ endpoint: string; close: () => Promise<void> }> {
+    return listen((req, res) => {
         req.resume();
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(req.url === "/health" ? health : { ok: false, error: "not found" }));
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    return {
-        endpoint: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-        close: () => new Promise<void>((resolve) => server.close(() => resolve()))
-    };
 }
 
 const hookCommand = (client: string, node = NODE, entry = ENTRY) => `"${node}" "${entry}" hook ${client}`;
@@ -103,7 +87,6 @@ function writeCodex(command: string, mcp?: { command: string; args: string[]; en
 }
 
 beforeAll(async () => {
-    execSync("npm run build", { cwd: REPO, stdio: "ignore" });
     await host.start();
     hostEndpoint = `http://127.0.0.1:${host.port}`;
     hostVersion = (await host.request<{ version: string }>("GET", "/health")).payload.version;
@@ -299,10 +282,7 @@ describe("doctor", () => {
     });
 
     it("fails when no host answers, and says how to start one", async () => {
-        const probe = http.createServer();
-        await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-        const closed = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
-        await new Promise<void>((resolve) => probe.close(() => resolve()));
+        const closed = `http://127.0.0.1:${await closedPort()}`;
 
         const result = await run([], closed);
         expect(result.code).toBe(1);
@@ -312,10 +292,7 @@ describe("doctor", () => {
     });
 
     it.each(["claude", "codex"] as const)("checks %s's MCP endpoint independently of healthy hooks", async (client) => {
-        const probe = http.createServer();
-        await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-        const closed = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
-        await new Promise<void>((resolve) => probe.close(() => resolve()));
+        const closed = `http://127.0.0.1:${await closedPort()}`;
         const write = client === "claude" ? writeClaude : writeCodex;
         write(`${hookCommand(client)} --endpoint ${hostEndpoint}`, {
             command: NODE, args: MCP_ARGS, env: { NEXUS_ENDPOINT: closed }
@@ -385,19 +362,18 @@ describe("doctor", () => {
 describe("checkHost", () => {
     it("reports a host that answers with an HTTP error as answering, without the start-it hint", async () => {
         const { checkHost } = await import("../src/cli/doctor.js");
-        const server = http.createServer((req, res) => {
+        const server = await listen((req, res) => {
             req.resume();
             res.writeHead(403, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Host 'mybox.lan' is not allowed" }));
         });
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         try {
-            const check = await checkHost(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+            const check = await checkHost(server.endpoint);
             expect(check.ok).toBe(false);
             expect(check.text).toContain("answers with HTTP 403: Host 'mybox.lan' is not allowed");
             expect(check.text).not.toContain("n2n-nexus-host serve");
         } finally {
-            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await server.close();
         }
     });
 });

@@ -58,18 +58,16 @@ func (s *session) machineName() string {
 	if name == "" {
 		name = s.Hostname
 	}
-	shown := name + " · " + platformNames[s.Platform]
+	shown := name + " · " + api.Platforms[s.Platform]
 	if s.Environment != "" {
 		shown += " " + s.Environment
 	}
 	return shown
 }
 
-var platformNames = map[string]string{"darwin": "macOS", "linux": "Linux", "wsl": "WSL", "win32": "Windows"}
-
 // knownPlatform: a platform value the hooks may report.
 func knownPlatform(platform string) bool {
-	_, ok := platformNames[platform]
+	_, ok := api.Platforms[platform]
 	return ok
 }
 
@@ -83,9 +81,8 @@ type message struct {
 }
 
 type notice struct {
-	ID        int64
-	SessionID string
-	Text      string
+	ID   int64
+	Text string
 	// MeetingID is the meeting the notice comes from, "" for none.
 	MeetingID string
 	// Wakes: the notice may wake the session (not from a meeting it left or takes part in asynchronously).
@@ -106,19 +103,7 @@ func scanSession(row interface{ Scan(...any) error }) (*session, error) {
 
 func querySessions(q querier, query string, args ...any) ([]*session, error) {
 	rows, err := q.QueryContext(bg, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*session
-	for rows.Next() {
-		s, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return store.Append(nil, rows, err, func(rows *sql.Rows) (*session, error) { return scanSession(rows) })
 }
 
 // getSession returns the session, or nil when there is none.
@@ -140,12 +125,7 @@ func ms(n int64) time.Duration { return time.Duration(n) * time.Millisecond }
 
 // nameTaken: whether a session other than exceptID that is not offline uses name.
 func nameTaken(q querier, name, exceptID string) (bool, error) {
-	var one int
-	err := q.QueryRowContext(bg, "SELECT 1 FROM agent_sessions WHERE name = ? AND id != ? AND status != 'offline' LIMIT 1", name, exceptID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
+	return store.Exists(q.QueryRowContext(bg, "SELECT 1 FROM agent_sessions WHERE name = ? AND id != ? AND status != 'offline' LIMIT 1", name, exceptID))
 }
 
 // autoName is a session's own name, <client>@<cwd basename>#<the end of its
@@ -174,12 +154,7 @@ func autoName(q querier, id, client, cwd string) (string, error) {
 
 // nameUsed: another session in the database, of any status, has the name.
 func nameUsed(q querier, name, exceptID string) (bool, error) {
-	var one int
-	err := q.QueryRowContext(bg, "SELECT 1 FROM agent_sessions WHERE name = ? AND id != ? LIMIT 1", name, exceptID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
+	return store.Exists(q.QueryRowContext(bg, "SELECT 1 FROM agent_sessions WHERE name = ? AND id != ? LIMIT 1", name, exceptID))
 }
 
 // baseName is the last element of a client's working directory (either
@@ -347,19 +322,7 @@ func (a *Agents) expireStale(before time.Time) ([]string, error) {
 	var ids []string
 	err := a.tx(func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(bg, "SELECT id FROM agent_sessions WHERE status IN ('idle', 'working') AND last_active_at < ?", a.iso(before))
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		if ids, err = store.Append(ids, rows, err, store.ScanString); err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET status = 'offline' WHERE status IN ('idle', 'working') AND last_active_at < ?", a.iso(before))
@@ -389,21 +352,13 @@ const messageSelect = `
 
 func queryMessages(q querier, query string, args ...any) ([]*message, error) {
 	rows, err := q.QueryContext(bg, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*message
-	for rows.Next() {
+	return store.Append(nil, rows, err, func(rows *sql.Rows) (*message, error) {
 		var m message
 		var from session
-		if err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Environment, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake); err != nil {
-			return nil, err
-		}
+		err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Environment, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake)
 		m.FromMachine = from.machineName()
-		out = append(out, &m)
-	}
-	return out, rows.Err()
+		return &m, err
+	})
 }
 
 func (a *Agents) getMessage(id string) (*message, error) {
@@ -414,33 +369,20 @@ func (a *Agents) getMessage(id string) (*message, error) {
 	return list[0], nil
 }
 
-// unread: unread messages for a session, oldest first; freshOnly keeps those not notified yet.
-func unread(q querier, toID string, freshOnly bool) ([]*message, error) {
-	query := messageSelect + " WHERE m.to_id = ? AND m.status = 'unread'"
-	if freshOnly {
-		query += " AND m.notified_at IS NULL"
-	}
-	return queryMessages(q, query+" ORDER BY m.created_at, m.rowid", toID)
+// unread: unread messages for a session, oldest first.
+func unread(q querier, toID string) ([]*message, error) {
+	return queryMessages(q, messageSelect+" WHERE m.to_id = ? AND m.status = 'unread' ORDER BY m.created_at, m.rowid", toID)
 }
 
 // pendingNotices: notices not delivered by a hook yet, oldest first.
 func (a *Agents) pendingNotices(sessionID string) ([]notice, error) {
-	rows, err := a.db().QueryContext(bg, `SELECT n.id, n.session_id, n.text, COALESCE(n.meeting_id, ''), COALESCE(mm.mode, 'active') = 'active' AND mm.left_at IS NULL
+	rows, err := a.db().QueryContext(bg, `SELECT n.id, n.text, COALESCE(n.meeting_id, ''), COALESCE(mm.mode, 'active') = 'active' AND mm.left_at IS NULL
 		FROM agent_notices n LEFT JOIN meeting_members mm ON mm.meeting_id = n.meeting_id AND mm.member_id = n.session_id
 		WHERE n.session_id = ? AND n.notified_at IS NULL ORDER BY n.id`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []notice
-	for rows.Next() {
+	return store.Append(nil, rows, err, func(rows *sql.Rows) (notice, error) {
 		var n notice
-		if err := rows.Scan(&n.ID, &n.SessionID, &n.Text, &n.MeetingID, &n.Wakes); err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, rows.Err()
+		return n, rows.Scan(&n.ID, &n.Text, &n.MeetingID, &n.Wakes)
+	})
 }
 
 // addNotice adds a notice for a session; meetingID is the meeting it comes from, "" for none.
@@ -473,7 +415,7 @@ func (a *Agents) readUnread(toID string, count int, now time.Time) ([]*message, 
 	var messages []*message
 	var remaining int
 	err := a.tx(func(tx *sql.Tx) error {
-		all, err := unread(tx, toID, false)
+		all, err := unread(tx, toID)
 		if err != nil {
 			return err
 		}
@@ -510,19 +452,7 @@ func (a *Agents) fireIdle(targetID, event string, now time.Time) ([]string, erro
 		}
 		since := now.Add(-ms(a.o.Contract.Hook.Timing.IdleSubscriptionTtlMs))
 		rows, err := tx.QueryContext(bg, "SELECT subscriber_id FROM agent_idle_subscriptions WHERE target_id = ? AND created_at > ?", targetID, a.iso(since))
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			subscribers = append(subscribers, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		if subscribers, err = store.Append(subscribers, rows, err, store.ScanString); err != nil {
 			return err
 		}
 		text := fmt.Sprintf("%s (%s) finished its turn.", target.Name, target.ID)
@@ -550,21 +480,12 @@ func (a *Agents) expireMessages(now time.Time) ([]string, int, error) {
             SELECT m.id, m.from_id, m.to_id, m.text, s.name
             FROM agent_messages m JOIN agent_sessions s ON s.id = m.to_id
             WHERE m.status = 'unread' AND m.expires_at <= ?`, a.iso(now))
-		if err != nil {
-			return err
-		}
 		type row struct{ id, from, to, text, toName string }
-		var list []row
-		for rows.Next() {
+		list, err := store.Append(nil, rows, err, func(rows *sql.Rows) (row, error) {
 			var r row
-			if err := rows.Scan(&r.id, &r.from, &r.to, &r.text, &r.toName); err != nil {
-				rows.Close()
-				return err
-			}
-			list = append(list, r)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+			return r, rows.Scan(&r.id, &r.from, &r.to, &r.text, &r.toName)
+		})
+		if err != nil {
 			return err
 		}
 		seen := map[string]bool{}
@@ -590,21 +511,6 @@ func (a *Agents) expireMessages(now time.Time) ([]string, int, error) {
 func (a *Agents) bindToolUse(toolUseID, sessionID string, now time.Time) error {
 	_, err := a.db().ExecContext(bg, "INSERT OR REPLACE INTO tool_use_bindings (tool_use_id, session_id, created_at) VALUES (?, ?, ?)", toolUseID, sessionID, a.iso(now))
 	return err
-}
-
-// resolveToolUse returns the session bound to a toolUseId within the binding
-// TTL, or ""; expired bindings are removed.
-func (a *Agents) resolveToolUse(toolUseID string, now time.Time) (string, error) {
-	cutoff := a.iso(now.Add(-ms(a.o.Contract.Hook.Timing.ToolUseBindingTtlMs)))
-	if _, err := a.db().ExecContext(bg, "DELETE FROM tool_use_bindings WHERE created_at <= ?", cutoff); err != nil {
-		return "", err
-	}
-	var id string
-	err := a.db().QueryRowContext(bg, "SELECT session_id FROM tool_use_bindings WHERE tool_use_id = ? AND created_at > ?", toolUseID, cutoff).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return id, err
 }
 
 // preview is the first line of a message, cut to the contract's preview length

@@ -110,7 +110,7 @@ func TestWakeResultUnknownDispatchIgnored(t *testing.T) {
 	out := wokenCodex(t, h)
 	// A background wait held meanwhile (it does not deliver while the session is working).
 	waiting := h.openHook("codex", texts0BackgroundWait(), "r")
-	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits["codex:r"]) == 1 })
+	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("codex:r")) == 1 })
 
 	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult("not-this-one", false))
 	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult("", false))

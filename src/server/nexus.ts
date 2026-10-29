@@ -8,7 +8,7 @@ import type { Tool, Transport } from "@modelcontextprotocol/server";
 import { serveStdio, StdioServerTransport, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../client/nexus-client.js";
-import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, cachedEndpoint, resolveEndpoint } from "../client/discovery.js";
+import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, cachedEndpoint, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
 import { CLAUDE_TOOL_USE_META_KEY, CLIENT_INFO_NAMES, CODEX_SESSION_META_KEY, noDaemonHint, type Caller } from "../contract.js";
 import { resolveInstanceId } from "./instance-id.js";
@@ -36,7 +36,7 @@ const INSTRUCTIONS =
     "(send_message draft) is decided with stance, and the meeting closes once its required approvers endorse it. " +
     "Projects, global docs, the strategy document and tasks are shared through the other tools.";
 
-export type RunOptions = {
+type RunOptions = {
     /** MCP transport; defaults to stdio. */
     transport?: Transport;
     /** Stream whose end means the client is gone; defaults to process.stdin when using stdio. */
@@ -47,7 +47,7 @@ export type RunOptions = {
 
 type ClientInfo = { name?: string };
 
-export type NexusServerOptions = {
+type NexusServerOptions = {
     /** Pause between reconnect attempts, measured from the end of the previous attempt. */
     retryIntervalMs?: number;
     /** Per-request timeout towards the daemon. */
@@ -94,7 +94,7 @@ export class NexusServer {
     private initialFetch: Promise<boolean> | null = null;
 
     constructor(options: NexusServerOptions = {}) {
-        const configured = process.env.NEXUS_ENDPOINT || LOCAL_ENDPOINT;
+        const configured = configuredEndpoint();
         this.discover = configured === DISCOVER_ENDPOINT;
         this.endpoint = this.discover ? LOCAL_ENDPOINT : configured;
         this.retryIntervalMs = options.retryIntervalMs ?? RETRY_INTERVAL_MS;

@@ -3,8 +3,9 @@ import https from "node:https";
 import { URL } from "node:url";
 
 import type { Caller, HookRequest, HookResponse } from "../contract.js";
+import { configuredEndpoint } from "./discovery.js";
 
-export type ToolDefinition = {
+type ToolDefinition = {
     name: string;
     description: string;
     inputSchema: {
@@ -15,7 +16,7 @@ export type ToolDefinition = {
     annotations?: Record<string, unknown>;
 };
 
-export type NexusClientOptions = {
+type NexusClientOptions = {
     endpoint?: string;
     timeoutMs?: number;
 };
@@ -41,7 +42,7 @@ export class NexusToolError extends Error {
 }
 
 function normalizeEndpoint(endpoint?: string): string {
-    const raw = endpoint || process.env.NEXUS_ENDPOINT || "http://127.0.0.1:5688";
+    const raw = configuredEndpoint(endpoint);
     if (/^https?:\/\//i.test(raw)) return raw;
     return `http://${raw}`;
 }

@@ -45,8 +45,23 @@ type Call struct {
 	InstanceID string
 	// Caller is set only when the request carried a well-formed caller.
 	Caller *Caller
+	// Session is the conversation Options.SessionOf found for Caller, "" when
+	// none was found (or SessionOf is not set).
+	Session string
 	// Args passed the tool's input schema; handlers decode them into their own struct.
 	Args json.RawMessage
+}
+
+// Tool decodes the (already schema-validated) arguments over defaults, which
+// carries the defaults the JSON Schema declares but does not apply.
+func Tool[A any](defaults A, fn func(c Call, args A) (any, error)) ToolFunc {
+	return func(c Call) (any, error) {
+		args := defaults
+		if err := json.Unmarshal(c.Args, &args); err != nil {
+			return nil, Errorf("Invalid arguments: %v", err)
+		}
+		return fn(c, args)
+	}
 }
 
 // Actor is the instance to record in events: InstanceID, or "unknown".
@@ -56,6 +71,9 @@ func (c Call) Actor() string {
 	}
 	return c.InstanceID
 }
+
+// Platforms maps each platform a session's hooks may report to how it is shown.
+var Platforms = map[string]string{"darwin": "macOS", "linux": "Linux", "wsl": "WSL", "win32": "Windows"}
 
 // Identity is who a chat or meeting tool call acts as: the conversation when
 // its hooks made it known, else the adapter instance.
@@ -357,7 +375,7 @@ func (s *Server) serveToolCall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, &httpError{status: 400, message: fmt.Sprintf("Invalid arguments for %s: %s", req.Tool, err)})
 		return
 	}
-	call := Call{Ctx: r.Context(), InstanceID: instance, Caller: caller, Args: args}
+	call := Call{Ctx: r.Context(), InstanceID: instance, Caller: caller, Session: session, Args: args}
 	result, err := fn(call)
 	if err != nil {
 		var te *ToolError

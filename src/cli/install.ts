@@ -20,7 +20,6 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -29,19 +28,21 @@ import {
 } from "../contract.js";
 import { pkg } from "../config/index.js";
 import { spawnClientSync } from "./client-command.js";
+import { claudeConfigDir, codexHome } from "./client-dirs.js";
 import { entryScript } from "./entry.js";
+import { hookCommand, isOurs, windowsHookCommand } from "./hook-command.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
 
 type HookEntry = { type: "command"; command: string; commandWindows?: string; asyncRewake?: boolean; timeout: number };
-export type HookGroup = { matcher?: string; hooks?: unknown[] } & Record<string, unknown>;
-export type HooksFile = { hooks?: Record<string, unknown> } & Record<string, unknown>;
+type HookGroup = { matcher?: string; hooks?: unknown[] } & Record<string, unknown>;
+type HooksFile = { hooks?: Record<string, unknown> } & Record<string, unknown>;
 
 const EVENTS: Record<HookClient, string[]> = {
     claude: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
     codex: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse", "Stop"]
 };
 
-export type InstallOptions = {
+type InstallOptions = {
     action: "install" | "uninstall";
     client: HookClient;
     endpoint?: string;
@@ -51,7 +52,7 @@ export type InstallOptions = {
     node?: string;
 };
 
-export class InstallError extends Error {}
+class InstallError extends Error {}
 
 /** Path segments of Node installs that are replaced on upgrade. */
 export const VERSIONED_NODE_DIR = /[/\\]Cellar[/\\]|[/\\]\.nvm[/\\]versions[/\\]|[/\\]node-v\d|[/\\]fnm[/\\]|[/\\]fnm_multishells[/\\]|[/\\]\.volta[/\\]|[/\\]\.asdf[/\\]installs[/\\]/;
@@ -73,7 +74,7 @@ function sameFile(a: string, b: string): boolean {
  * process.execPath. Relative PATH entries and fnm's per-shell directory are
  * skipped: the commands must work from any directory and after the shell ends.
  */
-export function stableNodePath(env: NodeJS.ProcessEnv = process.env): string {
+function stableNodePath(env: NodeJS.ProcessEnv = process.env): string {
     for (const dir of (env.PATH ?? "").split(path.delimiter)) {
         if (!path.isAbsolute(dir) || PER_SHELL_NODE_DIR.test(dir)) continue;
         const candidate = path.join(dir, process.platform === "win32" ? "node.exe" : "node");
@@ -123,7 +124,7 @@ export function npxFor(node: string): { npx: string; bin: string } {
 
 type Version = [number, number, number];
 
-export function parseVersion(text: string): Version | undefined {
+function parseVersion(text: string): Version | undefined {
     const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(text.trim());
     return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : undefined;
 }
@@ -143,35 +144,36 @@ export function satisfiesEngines(version: string, range: string = pkg.engines.no
     });
 }
 
-/** Check a `--node` path: it must exist, run, and satisfy engines.node. Returns the absolute path. */
-export function checkNodePath(given: string): string {
-    const node = path.resolve(given);
+/** probeNode's result: the version a usable Node printed, or why it is not usable (`unsupported` with the version). */
+type NodeProbe = { version: string; error?: undefined } | { version?: string; error: "not executable" | "directory" | "no version" | "unsupported" };
+
+/** Run `<node> --version`: the version it printed when it is executable and satisfies engines.node, else why not. */
+export function probeNode(node: string): NodeProbe {
     try {
         fs.accessSync(node, fs.constants.X_OK);
     } catch {
-        throw new InstallError(`--node ${given}: not an executable file.`);
+        return { error: "not executable" };
     }
-    if (fs.statSync(node).isDirectory()) throw new InstallError(`--node ${given}: is a directory, not the node executable.`);
+    if (fs.statSync(node).isDirectory()) return { error: "directory" };
     const probe = spawnSync(node, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    const version = probe.status === 0 ? parseVersion(probe.stdout) : undefined;
-    if (!version) throw new InstallError(`--node ${given}: "${node} --version" did not print a Node version.`);
-    if (!satisfiesEngines(probe.stdout)) {
-        throw new InstallError(`--node ${given}: Node ${probe.stdout.trim()} does not satisfy ${pkg.engines.node}.`);
-    }
+    if (probe.status !== 0 || !parseVersion(probe.stdout)) return { error: "no version" };
+    const version = probe.stdout.trim();
+    return satisfiesEngines(version) ? { version } : { version, error: "unsupported" };
+}
+
+/** Check a `--node` path: it must exist, run, and satisfy engines.node. Returns the absolute path. */
+function checkNodePath(given: string): string {
+    const node = path.resolve(given);
+    const probe = probeNode(node);
+    if (probe.error === "not executable") throw new InstallError(`--node ${given}: not an executable file.`);
+    if (probe.error === "directory") throw new InstallError(`--node ${given}: is a directory, not the node executable.`);
+    if (probe.error === "no version") throw new InstallError(`--node ${given}: "${node} --version" did not print a Node version.`);
+    if (probe.error === "unsupported") throw new InstallError(`--node ${given}: Node ${probe.version} does not satisfy ${pkg.engines.node}.`);
     return node;
 }
 
 export function configFile(client: HookClient): string {
-    if (client === "claude") {
-        return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "settings.json");
-    }
-    return path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "hooks.json");
-}
-
-export function isOurs(entry: unknown, client: HookClient): boolean {
-    if (typeof entry !== "object" || entry === null) return false;
-    const command = (entry as { command?: unknown }).command;
-    return typeof command === "string" && command.includes("n2n-nexus") && command.includes(` hook ${client}`);
+    return client === "claude" ? path.join(claudeConfigDir(), "settings.json") : path.join(codexHome(), "hooks.json");
 }
 
 export function readConfig(file: string): HooksFile {
@@ -275,8 +277,8 @@ function writeConfig(file: string, config: HooksFile): void {
 }
 
 /** The marks around our block in the user's CLAUDE.md. */
-export const INSTRUCTIONS_BEGIN = "<!-- n2n-nexus:begin (written by \"n2n-nexus install claude\", removed by \"n2n-nexus uninstall claude\") -->";
-export const INSTRUCTIONS_END = "<!-- n2n-nexus:end -->";
+const INSTRUCTIONS_BEGIN = "<!-- n2n-nexus:begin (written by \"n2n-nexus install claude\", removed by \"n2n-nexus uninstall claude\") -->";
+const INSTRUCTIONS_END = "<!-- n2n-nexus:end -->";
 export const INSTRUCTIONS = [
     INSTRUCTIONS_BEGIN,
     "## n2n-nexus direct messages",
@@ -285,8 +287,8 @@ export const INSTRUCTIONS = [
     INSTRUCTIONS_END
 ].join("\n");
 
-export function instructionsFile(): string {
-    return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "CLAUDE.md");
+function instructionsFile(): string {
+    return path.join(claudeConfigDir(), "CLAUDE.md");
 }
 
 /**
@@ -419,10 +421,8 @@ export function runInstall(options: InstallOptions): number {
         const config = readConfig(file);
         const removed = removeOurEntries(config, client, file);
         if (action === "install") {
-            const command = `"${node}" "${entry}" hook ${client}${endpoint ? ` --endpoint ${endpoint}` : ""}`;
-            const commandWindows = client === "codex"
-                ? `& ${[node!, entry, "hook", client, ...(endpoint ? ["--endpoint", endpoint] : [])].map((arg) => `'${arg.replace(/['\u2018\u2019]/g, "$&$&")}'`).join(" ")}`
-                : undefined;
+            const command = hookCommand(node!, entry, client, endpoint);
+            const commandWindows = client === "codex" ? windowsHookCommand(node!, entry, client, endpoint) : undefined;
             addOurEntries(config, client, command, commandWindows);
         }
         if (action === "install" || removed) {

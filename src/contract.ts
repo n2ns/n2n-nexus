@@ -98,13 +98,16 @@ export const MAX_TITLE_CHARS: number = contract.limits.maxTitleChars;
 export const MCP_SERVER_NAME: string = contract.mcpServerName;
 export const CLAUDE_PRE_TOOL_MATCHER = `mcp__${MCP_SERVER_NAME}__.*`;
 
+/** Payload of a LAN discovery query datagram; the host answers only this. */
+export const DISCOVERY_QUERY: string = contract.discoveryQuery;
+
 /** Where to get the host. */
 export const HOST_RELEASES_URL = "https://github.com/n2ns/n2n-nexus/releases";
 /** What to do when no host answers at a loopback endpoint: clients never start one themselves. */
-export const NO_HOST_HINT =
+const NO_HOST_HINT =
     `Install n2n-nexus-host (${HOST_RELEASES_URL}) and start it: run the tray app, or "n2n-nexus-host serve".`;
 /** The same for another machine's endpoint: a host started here would not be the one asked for. */
-export const NO_REMOTE_HOST_HINT =
+const NO_REMOTE_HOST_HINT =
     "The host at that address is not reachable; it must be started on that machine (n2n-nexus-host there with LAN access on, or \"n2n-nexus-host serve --host <address>\").";
 
 /** NO_HOST_HINT for a loopback endpoint (127.x, localhost, ::1), else NO_REMOTE_HOST_HINT. */

@@ -15,15 +15,16 @@ import path from "node:path";
 
 import { pkg } from "../config/index.js";
 import { clientCommand } from "./client-command.js";
+import { isOurCodexHook } from "./hook-command.js";
 
 /** One hook as `hooks/list` reports it (the fields used here). */
 type ListedHook = { key: string; command?: string; sourcePath?: string; currentHash: string; trustStatus: string };
 
 /** A Codex program to ask, and where it came from (for messages). */
-export type CodexProgram = { command: string; args: string[]; label: string };
+type CodexProgram = { command: string; args: string[]; label: string };
 
 /** Our hooks' trust as one Codex sees it: how many there are, and the keys of those it does not trust. */
-export type TrustState = { codex: string; ours: number; untrusted: string[] };
+type TrustState = { ours: number; untrusted: string[] };
 
 const TIMEOUT_MS = 30_000;
 
@@ -109,21 +110,13 @@ export async function codexHookTrust(program: CodexProgram, hooksFile: string, t
             await call("config/value/write", { keyPath: "hooks.state", mergeStrategy: "upsert", value: state });
             hooks = await list();
         }
-        return { codex: program.label, ours: hooks.length, untrusted: hooks.filter((hook) => hook.trustStatus !== "trusted").map((hook) => hook.key) };
+        return { ours: hooks.length, untrusted: hooks.filter((hook) => hook.trustStatus !== "trusted").map((hook) => hook.key) };
     } finally {
         clearTimeout(timer);
         child.removeAllListeners("exit");
         child.stdin.end();
         child.kill();
     }
-}
-
-/**
- * Whether a command Codex lists is one of our hooks. Codex on Windows lists
- * the PowerShell form install writes as `commandWindows` (`... 'hook' 'codex'`).
- */
-export function isOurCodexHook(command: string): boolean {
-    return command.includes("n2n-nexus") && (command.includes(" hook codex") || command.includes("'hook' 'codex'"));
 }
 
 /** Why Codex may list none of our hooks, for messages. */

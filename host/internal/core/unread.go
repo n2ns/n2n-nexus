@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/n2ns/n2n-nexus/host/internal/cursors"
 	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 )
 
@@ -64,9 +65,7 @@ func (c *Core) attach(tx *sql.Tx, u unread) ([]unreadMessage, string, error) {
 		if budget <= 0 {
 			break
 		}
-		text := protocol.CutUnits(m.Text, budget)
-		budget -= protocol.UnitLen(text)
-		cut := len(text) < len(m.Text)
+		text, cut := protocol.CutBudget(m.Text, &budget)
 		m.Text = text
 		out = append(out, unreadMessage{m, cut})
 		if cut {
@@ -82,15 +81,7 @@ func (c *Core) attach(tx *sql.Tx, u unread) ([]unreadMessage, string, error) {
 	if whole == 0 {
 		return out, note, nil
 	}
-	if _, err := tx.Exec(`
-		INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, 'meeting', ?, ?, ?)
-		ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), updated_at = excluded.updated_at`,
-		u.reader, u.meetingID, whole, c.now()); err != nil {
-		return nil, "", err
-	}
-	_, err := tx.Exec(`UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?`,
-		whole, u.meetingID, u.reader, whole)
-	return out, note, err
+	return out, note, c.markRead(tx, u.meetingID, u.reader, whole)
 }
 
 // setSendRefused records whether the reader's last send_message to the meeting was refused.
@@ -115,25 +106,17 @@ func (c *Core) readForCaller(tx *sql.Tx, meetingID, who string, seq int64) error
 	if err := tx.QueryRow(`SELECT id FROM meeting_messages WHERE meeting_id = ? AND seq = ?`, meetingID, seq).Scan(&row); err != nil {
 		return err
 	}
-	var cursor int64
-	err := tx.QueryRow(`SELECT last_read_id FROM read_cursors WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?`, who, meetingID).Scan(&cursor)
-	if err != nil && err != sql.ErrNoRows {
+	unread, err := cursors.UnreadBefore(tx, meetingID, who, row)
+	if err != nil || unread > 0 {
 		return err
 	}
-	var unread int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = ? AND id > ? AND id < ? AND sender != ?`,
-		meetingID, cursor, row, who).Scan(&unread); err != nil {
+	return c.markRead(tx, meetingID, who, row)
+}
+
+// markRead moves reader's read cursor of a meeting and its notified_id to row.
+func (c *Core) markRead(tx *sql.Tx, meetingID, reader string, row int64) error {
+	if err := cursors.Read(tx, reader, "meeting", meetingID, row, c.now()); err != nil {
 		return err
 	}
-	if unread > 0 {
-		return nil
-	}
-	if _, err := tx.Exec(`
-		INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, 'meeting', ?, ?, ?)
-		ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), updated_at = excluded.updated_at`,
-		who, meetingID, row, c.now()); err != nil {
-		return err
-	}
-	_, err = tx.Exec(`UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?`, row, meetingID, who, row)
-	return err
+	return cursors.Announced(tx, meetingID, reader, row)
 }

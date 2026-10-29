@@ -32,6 +32,17 @@ type Settings struct {
 	RetentionDays int `json:"retentionDays"`
 }
 
+// Override applies the --host and --port flags: host when not empty, port
+// when not negative.
+func (s *Settings) Override(host string, port int) {
+	if host != "" {
+		s.Host = host
+	}
+	if port >= 0 {
+		s.Port = port
+	}
+}
+
 // Defaults are the settings of a fresh install.
 func Defaults() Settings {
 	return Settings{

@@ -6,7 +6,18 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 )
+
+// Query is the contract's discovery datagram.
+var Query = func() string {
+	c, err := protocol.Load()
+	if err != nil {
+		panic(err)
+	}
+	return c.Hook.DiscoveryQuery
+}()
 
 // freeUDPPort returns a UDP port nothing is bound to right now.
 func freeUDPPort(t *testing.T) int {
@@ -41,7 +52,7 @@ func query(t *testing.T, port int, payload string) []byte {
 
 func TestAnswersQuery(t *testing.T) {
 	port := freeUDPPort(t)
-	stop, err := Start(context.Background(), Options{Host: "0.0.0.0", HTTPPort: 5799, DiscoveryPort: port, Version: "1.2.3"})
+	stop, err := Start(context.Background(), Options{Query: Query, Host: "0.0.0.0", HTTPPort: 5799, DiscoveryPort: port, Version: "1.2.3"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +78,7 @@ func TestAnswersQuery(t *testing.T) {
 func TestStopReleasesPort(t *testing.T) {
 	port := freeUDPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	stop, err := Start(ctx, Options{Host: "192.168.1.5", HTTPPort: 1, DiscoveryPort: port, Version: "v"})
+	stop, err := Start(ctx, Options{Query: Query, Host: "192.168.1.5", HTTPPort: 1, DiscoveryPort: port, Version: "v"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +91,7 @@ func TestStopReleasesPort(t *testing.T) {
 		t.Fatalf("still answering after stop: %s", got)
 	}
 	// A restarted host binds the port again.
-	stop2, err := Start(context.Background(), Options{Host: "0.0.0.0", HTTPPort: 2, DiscoveryPort: port})
+	stop2, err := Start(context.Background(), Options{Query: Query, Host: "0.0.0.0", HTTPPort: 2, DiscoveryPort: port})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +101,7 @@ func TestStopReleasesPort(t *testing.T) {
 func TestLoopbackDoesNotAnswer(t *testing.T) {
 	for _, h := range []string{"127.0.0.1", "localhost", "::1", "127.0.0.2"} {
 		port := freeUDPPort(t)
-		stop, err := Start(context.Background(), Options{Host: h, HTTPPort: 1, DiscoveryPort: port})
+		stop, err := Start(context.Background(), Options{Query: Query, Host: h, HTTPPort: 1, DiscoveryPort: port})
 		if err != nil {
 			t.Fatal(err)
 		}

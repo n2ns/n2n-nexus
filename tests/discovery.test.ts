@@ -1,5 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { execSync, spawn } from "node:child_process";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import dgram from "node:dgram";
 import fs from "node:fs";
 import http from "node:http";
@@ -7,15 +6,16 @@ import { AddressInfo } from "node:net";
 import path from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
-import { DISCOVER_ENDPOINT, DISCOVERY_QUERY, LOCAL_ENDPOINT, discoverEndpoint, resolveEndpoint } from "../src/client/discovery.js";
+import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, discoverEndpoint, resolveEndpoint } from "../src/client/discovery.js";
+import { DISCOVERY_QUERY } from "../src/contract.js";
 import { NexusServer } from "../src/server/nexus.js";
 import { Host } from "./conformance/harness.js";
 import { NexusClient } from "../src/client/nexus-client.js";
 import { waitForWake } from "../src/cli/hook.js";
+import { REPO, runCli } from "./helpers/cli.js";
+import { listen } from "./helpers/http.js";
 
-// The hook cases run the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
-const REPO = path.resolve(__dirname, "..");
-const ENTRY = path.join(REPO, "build", "index.js");
+// The hook cases run the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "discovery");
 const HOME = path.join(TMP, "home");
 const CACHE = path.join(HOME, ".n2n-nexus", "discovered-endpoint");
@@ -50,10 +50,6 @@ async function responder(httpPort: number, host = "0.0.0.0"): Promise<dgram.Sock
 }
 
 const portOf = (endpoint: string | null) => Number(ENDPOINT.exec(endpoint ?? "")?.[1]);
-
-beforeAll(() => {
-    execSync("npm run build", { cwd: REPO, stdio: "ignore" });
-}, 120_000);
 
 beforeEach(async () => {
     fs.rmSync(TMP, { recursive: true, force: true });
@@ -149,13 +145,12 @@ describe("discoverEndpoint", () => {
 
 describe("resolveEndpoint", () => {
     it("rediscovers the endpoint when a background wait loses its cached host", async () => {
-        const server = http.createServer((req, res) => {
+        const server = await listen((req, res) => {
             req.resume();
             req.on("end", () => res.end(JSON.stringify({ output: { wake: "after restart", dispatchId: "new-host" } })));
         });
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         try {
-            const port = (server.address() as AddressInfo).port;
+            const port = server.port;
             await responder(port);
             fs.mkdirSync(path.dirname(CACHE), { recursive: true });
             fs.writeFileSync(CACHE, "http://127.0.0.1:1\n");
@@ -164,7 +159,7 @@ describe("resolveEndpoint", () => {
             });
             expect(fs.readFileSync(CACHE, "utf8").trim()).toBe(`http://127.0.0.1:${port}`);
         } finally {
-            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await server.close();
         }
     });
 
@@ -199,7 +194,7 @@ describe("hook with --endpoint discover", () => {
     type Fake = { port: number; hits: number; close: () => Promise<void> };
     async function fakeDaemon(): Promise<Fake> {
         const fake = { hits: 0 } as Fake;
-        const server = http.createServer((req, res) => {
+        const server = await listen((req, res) => {
             req.resume();
             req.on("end", () => {
                 fake.hits++;
@@ -207,24 +202,17 @@ describe("hook with --endpoint discover", () => {
                 res.end(JSON.stringify({ output: { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: "hi" } } }));
             });
         });
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-        fake.port = (server.address() as AddressInfo).port;
-        fake.close = () => new Promise<void>((resolve) => server.close(() => resolve()));
+        fake.port = server.port;
+        fake.close = server.close;
         return fake;
     }
 
-    function runHook(event = "PostToolUse"): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, [ENTRY, "hook", "claude", "--endpoint", DISCOVER_ENDPOINT], {
-                env: { ...process.env, NEXUS_ENDPOINT: "" },
-                stdio: ["pipe", "pipe", "ignore"]
-            });
-            let stdout = "";
-            child.stdout.on("data", (chunk) => { stdout += chunk; });
-            child.on("error", reject);
-            child.on("close", () => resolve(stdout));
-            child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: "s" }));
+    async function runHook(event = "PostToolUse"): Promise<string> {
+        const result = await runCli(["hook", "claude", "--endpoint", DISCOVER_ENDPOINT], {
+            env: { ...process.env, NEXUS_ENDPOINT: "" },
+            stdin: JSON.stringify({ hook_event_name: event, session_id: "s" })
         });
+        return result.stdout;
     }
 
     it("sends to the discovered daemon, and looks again when the cached one is gone", async () => {
@@ -247,12 +235,11 @@ describe("hook with --endpoint discover", () => {
     it("does not look again after a SessionEnd times out, so it ends within Codex's 3 s limit", async () => {
         const fake = await fakeDaemon();
         // A cached daemon that accepts the request and never answers.
-        const hung = http.createServer(() => { /* never answers */ });
-        await new Promise<void>((resolve) => hung.listen(0, "127.0.0.1", () => resolve()));
+        const hung = await listen(() => { /* never answers */ });
         try {
             await responder(fake.port);
             fs.mkdirSync(path.dirname(CACHE), { recursive: true });
-            const cached = `http://127.0.0.1:${(hung.address() as AddressInfo).port}\n`;
+            const cached = `${hung.endpoint}\n`;
 
             fs.writeFileSync(CACHE, cached);
             const started = Date.now();
@@ -264,8 +251,8 @@ describe("hook with --endpoint discover", () => {
             expect(await runHook()).toContain("hi");
             expect(fake.hits).toBe(1);
         } finally {
-            hung.closeAllConnections();
-            await new Promise<void>((resolve) => hung.close(() => resolve()));
+            hung.server.closeAllConnections();
+            await hung.close();
             await fake.close();
         }
     }, 20_000);
@@ -288,7 +275,7 @@ describe("MCP adapter with NEXUS_ENDPOINT=discover", () => {
             // A hook found another daemon (the cache changed): the next tool call follows it,
             // so the conversation's hooks and tool calls reach the same daemon.
             let calls = 0;
-            const other = http.createServer((req, res) => {
+            const other = await listen((req, res) => {
                 req.resume();
                 req.on("end", () => {
                     if (req.url === "/api/tools/call") calls++;
@@ -296,14 +283,13 @@ describe("MCP adapter with NEXUS_ENDPOINT=discover", () => {
                     res.end(JSON.stringify(req.url === "/api/tools" ? { tools: [] } : { ok: true, result: { ok: true } }));
                 });
             });
-            await new Promise<void>((resolve) => other.listen(0, "127.0.0.1", () => resolve()));
             try {
-                fs.writeFileSync(CACHE, `http://127.0.0.1:${(other.address() as AddressInfo).port}
+                fs.writeFileSync(CACHE, `${other.endpoint}
 `);
                 await client.callTool({ name: "send_message", arguments: { message: "hi" } });
                 expect(calls).toBe(1);
             } finally {
-                await new Promise<void>((resolve) => other.close(() => resolve()));
+                await other.close();
             }
             await client.close();
             await adapter.shutdown();

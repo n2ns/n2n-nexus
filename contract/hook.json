@@ -13,6 +13,7 @@
     "codexSessionKey": "sessionId"
   },
   "mcpServerName": "n2n-nexus",
+  "discoveryQuery": "n2n-nexus/discover",
   "hookInputFields": [
     "hook_event_name",
     "session_id",

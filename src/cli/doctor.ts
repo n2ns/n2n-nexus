@@ -9,14 +9,14 @@
  * nothing installed is only reported when it was named. Exit code 1 when a
  * check failed.
  */
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 import { CONTRACT_VERSION, HOOK_CLIENTS, MCP_SERVER_NAME, isHookClient, noDaemonHint, type HookClient } from "../contract.js";
 import { NexusClient, NexusToolError } from "../client/nexus-client.js";
-import { LOCAL_ENDPOINT, resolveEndpoint } from "../client/discovery.js";
+import { LOCAL_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
-import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, isOurs, parseVersion, readConfig, satisfiesEngines, type HookGroup } from "./install.js";
+import { hookEndpoint, ourCommands, parseHookCommand } from "./hook-command.js";
+import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, probeNode, readConfig } from "./install.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
 
 type Check = { ok: boolean; text: string };
@@ -25,31 +25,16 @@ const ok = (text: string): Check => ({ ok: true, text });
 const bad = (text: string): Check => ({ ok: false, text });
 const VERSIONED_NOTE = "in a version directory that an upgrade may remove";
 
-/** The Node path and the entry script of one of our hook commands, `"<node>" "<entry>" hook <client> ...`. */
-export function parseHookCommand(command: string): { node: string; entry: string } | undefined {
-    const m = /^"([^"]+)" "([^"]+)" hook /.exec(command);
-    return m ? { node: m[1], entry: m[2] } : undefined;
-}
-
-export function checkNode(node: string): Check {
+function checkNode(node: string): Check {
     if (!fs.existsSync(node)) return bad("missing");
-    try {
-        fs.accessSync(node, fs.constants.X_OK);
-    } catch {
-        return bad("not executable");
-    }
-    const probe = spawnSync(node, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    const version = probe.status === 0 ? parseVersion(probe.stdout) : undefined;
-    if (!version) return bad("does not run");
-    const text = probe.stdout.trim();
-    if (!satisfiesEngines(text)) return bad(`${text} does not satisfy ${pkg.engines.node}`);
-    return ok(`${text}${VERSIONED_NODE_DIR.test(node) ? `, ${VERSIONED_NOTE}` : ""}`);
+    const probe = probeNode(node);
+    if (probe.error === "not executable") return bad("not executable");
+    if (probe.error === "directory" || probe.error === "no version") return bad("does not run");
+    if (probe.error === "unsupported") return bad(`${probe.version} does not satisfy ${pkg.engines.node}`);
+    return ok(`${probe.version}${VERSIONED_NODE_DIR.test(node) ? `, ${VERSIONED_NOTE}` : ""}`);
 }
 
 const checkEntry = (entry: string): Check => fs.existsSync(entry) ? ok("ok") : bad("missing");
-
-/** The `--endpoint` a hook command was installed with, if any. */
-const hookEndpoint = (command: string): string | undefined => / --endpoint (\S+)/.exec(command)?.[1];
 
 /** Ask the host at `endpoint` for GET /health: it must be n2n-nexus-host speaking this client's contract version. */
 export async function checkHost(endpoint: string): Promise<Check> {
@@ -99,18 +84,7 @@ function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoin
         if (check.text.includes(VERSIONED_NOTE)) versioned = true;
     };
 
-    const hooks = readConfig(hooksFile).hooks ?? {};
-    const commands = new Set<string>();
-    for (const groups of Object.values(hooks)) {
-        if (!Array.isArray(groups)) continue;
-        for (const group of groups as Array<HookGroup | null>) {
-            const entries = group?.hooks;
-            if (!Array.isArray(entries)) continue;
-            for (const entry of entries) {
-                if (isOurs(entry, client)) commands.add((entry as { command: string }).command);
-            }
-        }
-    }
+    const commands = ourCommands(readConfig(hooksFile), client);
     const mcp = readMcpCommand(client, mcpFile);
     if (commands.size === 0 && !mcp) return undefined;
 
@@ -184,7 +158,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
     }
     try {
         let failed = false;
-        const defaultEndpoint = process.env.NEXUS_ENDPOINT || LOCAL_ENDPOINT;
+        const defaultEndpoint = configuredEndpoint();
         const endpoints = new Set<string>();
         for (const c of client ? [client] : HOOK_CLIENTS) {
             const result = doctorClient(c, endpoints, defaultEndpoint);

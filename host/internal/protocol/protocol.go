@@ -6,6 +6,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,7 +61,7 @@ func validate(schema *jsonschema.Schema, raw json.RawMessage) error {
 	}
 	if err := schema.Validate(value); err != nil {
 		var verr *jsonschema.ValidationError
-		if ok := asValidationError(err, &verr); ok {
+		if errors.As(err, &verr) {
 			// Drop the "jsonschema validation failed with '<schema url>'" header; keep the "- at '/x': ..." lines.
 			lines := strings.Split(strings.TrimSpace(verr.Error()), "\n")
 			if len(lines) > 1 {
@@ -76,14 +77,6 @@ func validate(schema *jsonschema.Schema, raw json.RawMessage) error {
 	return nil
 }
 
-func asValidationError(err error, target **jsonschema.ValidationError) bool {
-	v, ok := err.(*jsonschema.ValidationError)
-	if ok {
-		*target = v
-	}
-	return ok
-}
-
 // Contract is the loaded contract.
 type Contract struct {
 	Version int
@@ -97,42 +90,30 @@ func (c *Contract) Tool(name string) *Tool { return c.byName[name] }
 
 // Hook mirrors contract/hook.json.
 type Hook struct {
-	ContractVersion     int               `json:"contractVersion"`
-	Clients             []string          `json:"clients"`
-	ClientInfoNames     map[string]string `json:"clientInfoNames"`
-	MCPServerName       string            `json:"mcpServerName"`
-	HookInputFields     []string          `json:"hookInputFields"`
-	BackgroundWaitEvent string            `json:"backgroundWaitEvent"`
-	WakeResultEvent     string            `json:"wakeResultEvent"`
-	AgentStatuses       []string          `json:"agentStatuses"`
+	ContractVersion     int      `json:"contractVersion"`
+	Clients             []string `json:"clients"`
+	MCPServerName       string   `json:"mcpServerName"`
+	DiscoveryQuery      string   `json:"discoveryQuery"`
+	BackgroundWaitEvent string   `json:"backgroundWaitEvent"`
+	WakeResultEvent     string   `json:"wakeResultEvent"`
 	Timing              struct {
-		ListenWaitMs               int64 `json:"listenWaitMs"`
-		HookStopRequestTimeoutMs   int64 `json:"hookStopRequestTimeoutMs"`
-		HookRequestTimeoutMs       int64 `json:"hookRequestTimeoutMs"`
-		HookStopTimeoutSec         int64 `json:"hookStopTimeoutSec"`
-		WaitHookTimeoutSec         int64 `json:"waitHookTimeoutSec"`
-		HookTimeoutSec             int64 `json:"hookTimeoutSec"`
-		CodexSessionEndTimeoutSec  int64 `json:"codexSessionEndTimeoutSec"`
-		SessionEndRequestTimeoutMs int64 `json:"sessionEndRequestTimeoutMs"`
-		WakeRetryFirstDelayMs      int64 `json:"wakeRetryFirstDelayMs"`
-		WakeRetryMaxDelayMs        int64 `json:"wakeRetryMaxDelayMs"`
-		WakePromptWindowMs         int64 `json:"wakePromptWindowMs"`
-		ToolUseBindingTtlMs        int64 `json:"toolUseBindingTtlMs"`
-		MessageTtlMs               int64 `json:"messageTtlMs"`
-		IdleSubscriptionTtlMs      int64 `json:"idleSubscriptionTtlMs"`
-		PeerWindowMs               int64 `json:"peerWindowMs"`
-		StaleSessionMs             int64 `json:"staleSessionMs"`
+		ListenWaitMs          int64 `json:"listenWaitMs"`
+		WakePromptWindowMs    int64 `json:"wakePromptWindowMs"`
+		ToolUseBindingTtlMs   int64 `json:"toolUseBindingTtlMs"`
+		MessageTtlMs          int64 `json:"messageTtlMs"`
+		IdleSubscriptionTtlMs int64 `json:"idleSubscriptionTtlMs"`
+		PeerWindowMs          int64 `json:"peerWindowMs"`
+		StaleSessionMs        int64 `json:"staleSessionMs"`
 	} `json:"timing"`
 	Limits struct {
-		DefaultMaxAutoTurns int    `json:"defaultMaxAutoTurns"`
-		MaxMessageChars     int    `json:"maxMessageChars"`
-		MaxNoteChars        int    `json:"maxNoteChars"`
-		MaxTitleChars       int    `json:"maxTitleChars"`
-		SessionNamePattern  string `json:"sessionNamePattern"`
-		PreviewChars        int    `json:"previewChars"`
-		NotifyListLimit     int    `json:"notifyListLimit"`
-		NotifyTextChars     int    `json:"notifyTextChars"`
-		MaxHostnameChars    int    `json:"maxHostnameChars"`
+		DefaultMaxAutoTurns int `json:"defaultMaxAutoTurns"`
+		MaxMessageChars     int `json:"maxMessageChars"`
+		MaxNoteChars        int `json:"maxNoteChars"`
+		MaxTitleChars       int `json:"maxTitleChars"`
+		PreviewChars        int `json:"previewChars"`
+		NotifyListLimit     int `json:"notifyListLimit"`
+		NotifyTextChars     int `json:"notifyTextChars"`
+		MaxHostnameChars    int `json:"maxHostnameChars"`
 	} `json:"limits"`
 	Texts struct {
 		NoticePrefix         string `json:"noticePrefix"`

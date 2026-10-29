@@ -94,7 +94,7 @@ func runTray() int {
 func serve(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	hostFlag := fs.String("host", "", "address to listen on (default: settings.json, then 127.0.0.1)")
-	port := fs.Int("port", -1, "port to listen on, 0 for any free port (default: settings.json, then 5688)")
+	port := fs.Int("port", -1, fmt.Sprintf("port to listen on, 0 for any free port (default: settings.json, then %d)", config.Defaults().Port))
 	root := fs.String("root", "", "data directory (default: NEXUS_ROOT, then the platform data directory)")
 	supervise := fs.Bool("supervise", false, "run serve as a child process and restart it 5 s after it exits")
 	logDir := fs.String("log-dir", "", "directory of host.log for --supervise (default: the platform log directory)")
@@ -129,12 +129,7 @@ func serve(args []string) int {
 		logger.Print(err)
 		return 1
 	}
-	if *hostFlag != "" {
-		settings.Host = *hostFlag
-	}
-	if *port >= 0 {
-		settings.Port = *port
-	}
+	settings.Override(*hostFlag, *port)
 	supervisor, _ := strconv.Atoi(os.Getenv(host.SupervisorEnv))
 	h, err := host.Start(host.Options{Version: version, DataDir: dataDir, Settings: settings, Logger: logger, Test: test, SupervisorPID: supervisor})
 	if err != nil {

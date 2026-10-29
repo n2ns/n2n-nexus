@@ -392,7 +392,7 @@ func TestBackgroundWaitWhileTurnEnds(t *testing.T) {
 	h.hook("codex", "UserPromptSubmit", "r")
 	h.send("s", "codex:r", "before the turn ended", false)
 	waiting := h.openHook("codex", texts0BackgroundWait(), "r") // started alongside Stop
-	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits["codex:r"]) == 1 })
+	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("codex:r")) == 1 })
 	eq(t, h.status("codex:r"), "working")
 
 	// Stop announces the unread message itself; the wait must not repeat it.
@@ -438,10 +438,10 @@ func TestListeningStopDeliversBeforeBackgroundWait(t *testing.T) {
 	h.hook("codex", "UserPromptSubmit", "r")
 	h.codex("r", "listen", map[string]any{"on": true})
 	background := h.openHook("codex", texts0BackgroundWait(), "r") // registered first
-	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits["codex:r"]) == 1 })
+	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("codex:r")) == 1 })
 	listening := h.openHook("codex", "Stop", "r", stopInactive)
 	h.untilStatus("codex:r", "listening")
-	h.until("listening stop held", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return h.ag.listeningStops["codex:r"] })
+	h.until("listening stop held", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return h.ag.listeningStop("codex:r") })
 	h.send("s", "codex:r", "for the listening stop", false)
 	stop := listening.wait(t)
 	eq(t, stop.str("decision"), "block")

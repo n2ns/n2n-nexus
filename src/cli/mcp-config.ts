@@ -6,20 +6,17 @@
  * it starts the server for a health check.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { MCP_SERVER_NAME, type HookClient } from "../contract.js";
+import { claudeJsonDir, codexHome } from "./client-dirs.js";
 
 /** Where the client keeps the MCP server command. */
 export function mcpConfigFile(client: HookClient): string {
-    if (client === "claude") {
-        return path.join(process.env.CLAUDE_CONFIG_DIR || os.homedir(), ".claude.json");
-    }
-    return path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "config.toml");
+    return client === "claude" ? path.join(claudeJsonDir(), ".claude.json") : path.join(codexHome(), "config.toml");
 }
 
-export type McpCommand = { command: string; args: string[]; endpoint?: string };
+type McpCommand = { command: string; args: string[]; endpoint?: string };
 
 /** The MCP server command the client has for n2n-nexus, or undefined when not registered. */
 export function readMcpCommand(client: HookClient, file: string): McpCommand | undefined {

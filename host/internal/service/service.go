@@ -64,12 +64,7 @@ func settingsFor(t target, o Options) (config.Settings, error) {
 	if err != nil {
 		return s, err
 	}
-	if o.Host != "" {
-		s.Host = o.Host
-	}
-	if o.Port >= 0 {
-		s.Port = o.Port
-	}
+	s.Override(o.Host, o.Port)
 	if s.Port == 0 {
 		return s, errors.New("a service needs a fixed port: --port 1-65535")
 	}
@@ -287,12 +282,7 @@ func Status(o Options) error {
 	if err != nil {
 		return err
 	}
-	if o.Host != "" {
-		s.Host = o.Host
-	}
-	if o.Port >= 0 {
-		s.Port = o.Port
-	}
+	s.Override(o.Host, o.Port)
 	fmt.Fprintf(o.Out, "Service: %s\n", serviceState(t))
 	describeRunning(o.Out, t, s)
 	return nil

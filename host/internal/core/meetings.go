@@ -10,17 +10,13 @@ import (
 	"time"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 func notFoundMeeting(id string) error { return api.Errorf("Meeting '%s' not found.", id) }
 
 func meetingExists(tx *sql.Tx, id string) (bool, error) {
-	var one int
-	err := tx.QueryRow(`SELECT 1 FROM meetings WHERE id = ?`, id).Scan(&one)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-	return err == nil, err
+	return store.Exists(tx.QueryRow(`SELECT 1 FROM meetings WHERE id = ?`, id))
 }
 
 // defaultMeetingID is the active default meeting, or "".
@@ -339,28 +335,13 @@ func loadMembers(tx *sql.Tx, meetingID string) ([]meetingMember, error) {
 		FROM meeting_members mm LEFT JOIN agent_sessions s ON s.id = mm.member_id
 		WHERE mm.meeting_id = ? AND mm.left_at IS NULL
 		ORDER BY mm.joined_at, mm.rowid`, meetingID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	members := []meetingMember{}
-	for rows.Next() {
+	return store.Append([]meetingMember{}, rows, err, func(rows *sql.Rows) (meetingMember, error) {
 		var m meetingMember
 		var name, title, machine, status, woken sql.NullString
-		if err := rows.Scan(&m.ID, &name, &title, &machine, &m.Backfilled, &m.Mode, &m.Approver, &status, &m.JoinedAt, &m.Wakes, &woken); err != nil {
-			return nil, err
-		}
+		err := rows.Scan(&m.ID, &name, &title, &machine, &m.Backfilled, &m.Mode, &m.Approver, &status, &m.JoinedAt, &m.Wakes, &woken)
 		m.Name, m.Title, m.Machine, m.Status, m.LastWokenAt = nullable(name), nullable(title), nullable(machine), nullable(status), nullable(woken)
-		members = append(members, m)
-	}
-	return members, rows.Err()
-}
-
-func nullable(s sql.NullString) *string {
-	if !s.Valid {
-		return nil
-	}
-	return &s.String
+		return m, err
+	})
 }
 
 func (c *Core) listMeetings(call api.Call, a listMeetingsArgs) (any, error) {
@@ -376,24 +357,17 @@ func (c *Core) listMeetings(call api.Call, a listMeetingsArgs) (any, error) {
 			WHERE ? = '' OR m.status = ?
 			ORDER BY m.created_at DESC, m.rowid DESC
 			LIMIT ?`, a.Status, a.Status, a.Limit)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
+		meetings, err = store.Append(meetings, rows, err, func(rows *sql.Rows) (meetingSummary, error) {
 			var m meetingSummary
 			var participants string
 			var closed, summary, reason, seat sql.NullString
-			if err := rows.Scan(&m.ID, &m.Topic, &m.Status, &m.Initiator, &participants, &m.StartTime, &closed, &summary, &reason, &seat,
-				&m.MessageCount, &m.DecisionCount, &m.Wakes); err != nil {
-				rows.Close()
-				return err
-			}
+			err := rows.Scan(&m.ID, &m.Topic, &m.Status, &m.Initiator, &participants, &m.StartTime, &closed, &summary, &reason, &seat,
+				&m.MessageCount, &m.DecisionCount, &m.Wakes)
 			m.Participants = json.RawMessage(participants)
 			m.EndTime, m.Summary, m.EndReason, m.Seat = closed.String, summary.String, nullable(reason), nullable(seat)
-			meetings = append(meetings, m)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+			return m, err
+		})
+		if err != nil {
 			return err
 		}
 		for i := range meetings {
@@ -616,10 +590,5 @@ func (c *Core) leaveMeeting(call api.Call, a meetingIDArgs) (any, error) {
 }
 
 func isApprover(tx *sql.Tx, meetingID, memberID string) (bool, error) {
-	var one int
-	err := tx.QueryRow(`SELECT 1 FROM meeting_approvers WHERE meeting_id = ? AND member_id = ?`, meetingID, memberID).Scan(&one)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
-	return err == nil, err
+	return store.Exists(tx.QueryRow(`SELECT 1 FROM meeting_approvers WHERE meeting_id = ? AND member_id = ?`, meetingID, memberID))
 }

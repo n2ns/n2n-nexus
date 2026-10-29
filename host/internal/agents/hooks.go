@@ -65,9 +65,7 @@ func (a *Agents) machineOf(input map[string]any) (*machine, error) {
 // Hook handles one client hook event (POST /api/hook); it returns what the hook prints, or nil.
 func (a *Agents) Hook(ctx context.Context, client string, input map[string]any) (map[string]any, error) {
 	a.mu.Lock()
-	a.request = ctx
-	out, w, err := a.hook(client, input)
-	a.request = nil
+	out, w, err := a.hook(ctx, client, input)
 	a.mu.Unlock()
 	if err != nil || w == nil {
 		return out, err
@@ -76,7 +74,7 @@ func (a *Agents) Hook(ctx context.Context, client string, input map[string]any) 
 }
 
 // hook runs an event with mu held; a returned waiter is a hook to hold open.
-func (a *Agents) hook(client string, input map[string]any) (map[string]any, *waiter, error) {
+func (a *Agents) hook(ctx context.Context, client string, input map[string]any) (map[string]any, *waiter, error) {
 	clientSession, _ := input["session_id"].(string)
 	if clientSession == "" {
 		return nil, nil, nil
@@ -97,7 +95,7 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 		if err := a.expireAll(now); err != nil {
 			return nil, nil, err
 		}
-		return nil, a.backgroundWait(id), nil
+		return nil, a.backgroundWait(ctx, id), nil
 	}
 	if event == a.o.Contract.Hook.WakeResultEvent {
 		// A report from the background wait's client, not activity of the conversation.
@@ -166,7 +164,7 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 		text, err := a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing, markNone)
 		return contextOutput("PostToolUse", text), nil, err
 	case "Stop":
-		return a.stop(id, input)
+		return a.stop(ctx, id, input)
 	case "SessionEnd":
 		if err := a.setStatus(id, "offline"); err != nil {
 			return nil, nil, err
@@ -181,7 +179,7 @@ func (a *Agents) hook(client string, input map[string]any) (map[string]any, *wai
 	return nil, nil, nil
 }
 
-func (a *Agents) stop(id string, input map[string]any) (map[string]any, *waiter, error) {
+func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map[string]any, *waiter, error) {
 	now := a.o.Clock.Now()
 	if active, _ := input["stop_hook_active"].(bool); !active {
 		// Past the automatic-turn limit, direct messages wait for the user; meeting news still holds the Stop.
@@ -213,11 +211,11 @@ func (a *Agents) stop(id string, input map[string]any) (map[string]any, *waiter,
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, a.waitForMessages(id), nil
+		return nil, a.waitForMessages(ctx, id), nil
 	}
 	// A background wait keeps the session reachable: it counts as listening, and the wake lets it check now.
 	status := "idle"
-	if len(a.backgroundWaits[id]) > 0 {
+	if len(a.backgroundWaits(id)) > 0 {
 		status = "listening"
 	}
 	if err := a.setStatus(id, status); err != nil {

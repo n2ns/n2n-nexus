@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/n2ns/n2n-nexus/host/internal/cursors"
 	"github.com/n2ns/n2n-nexus/host/internal/protocol"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 // Meetings reach their members through the same notifications as direct
@@ -40,24 +42,15 @@ func (a *Agents) news(sessionID string) ([]meetingNews, error) {
 	rows, err := a.db().QueryContext(bg, `
 		SELECT mm.meeting_id, m.topic, mm.mode, mm.notified_id FROM meeting_members mm JOIN meetings m ON m.id = mm.meeting_id
 		WHERE mm.member_id = ? AND mm.left_at IS NULL AND m.status = 'active' ORDER BY mm.joined_at, mm.rowid`, sessionID)
-	if err != nil {
-		return nil, err
-	}
 	type membership struct {
 		id, topic, mode string
 		notified        int64
 	}
-	var list []membership
-	for rows.Next() {
+	list, err := store.Append(nil, rows, err, func(rows *sql.Rows) (membership, error) {
 		var m membership
-		if err := rows.Scan(&m.id, &m.topic, &m.mode, &m.notified); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		list = append(list, m)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+		return m, rows.Scan(&m.id, &m.topic, &m.mode, &m.notified)
+	})
+	if err != nil {
 		return nil, err
 	}
 	var out []meetingNews
@@ -65,19 +58,10 @@ func (a *Agents) news(sessionID string) ([]meetingNews, error) {
 		n := meetingNews{meetingID: m.id, topic: m.topic, active: m.mode == "active"}
 		rows, err := a.db().QueryContext(bg, `SELECT id, seq, COALESCE(sender_name, sender), COALESCE(sender_machine, ''), COALESCE(category, ''), text, timestamp
 			FROM meeting_messages WHERE meeting_id = ? AND id > ? AND sender != ? ORDER BY id`, m.id, m.notified, sessionID)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
+		if n.messages, err = store.Append(n.messages, rows, err, func(rows *sql.Rows) (newsMessage, error) {
 			var msg newsMessage
-			if err := rows.Scan(&msg.row, &msg.seq, &msg.name, &msg.machine, &msg.category, &msg.text, &msg.at); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			n.messages = append(n.messages, msg)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+			return msg, rows.Scan(&msg.row, &msg.seq, &msg.name, &msg.machine, &msg.category, &msg.text, &msg.at)
+		}); err != nil {
 			return nil, err
 		}
 		if len(n.messages) > 0 {
@@ -113,10 +97,9 @@ func (a *Agents) newsLines(news []meetingNews) ([]string, bool, map[string]int64
 				category = " (" + m.category + ")"
 			}
 			lines = append(lines, fmt.Sprintf(h.Texts.MeetingMessageHeader, m.seq, displayName(m.name, m.machine, ""), m.at, category))
-			text := protocol.CutUnits(m.text, budget)
-			budget -= protocol.UnitLen(text)
+			text, textCut := protocol.CutBudget(m.text, &budget)
 			lines = append(lines, text)
-			if len(text) < len(m.text) {
+			if textCut {
 				cut, rest = true, true
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, protocol.UnitLen(text), protocol.UnitLen(m.text)))
 			} else {
@@ -168,27 +151,21 @@ func (a *Agents) countMeetingWakes(sessionID string, news []meetingNews) ([]memb
 func (a *Agents) markMeetingsNotified(tx *sql.Tx, sessionID string, news []meetingNews, read map[string]int64) error {
 	now := a.iso(a.o.Clock.Now())
 	for _, n := range news {
-		if _, err := tx.ExecContext(bg, "UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?",
-			n.upTo(), n.meetingID, sessionID, n.upTo()); err != nil {
+		if err := cursors.Announced(tx, n.meetingID, sessionID, n.upTo()); err != nil {
 			return err
 		}
 		to, ok := read[n.meetingID]
 		if !ok || to == 0 {
 			continue
 		}
-		var gap int
-		if err := tx.QueryRowContext(bg, `SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = ? AND sender != ? AND id < ?
-			AND id > COALESCE((SELECT last_read_id FROM read_cursors WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?), 0)`,
-			n.meetingID, sessionID, n.messages[0].row, sessionID, n.meetingID).Scan(&gap); err != nil {
+		gap, err := cursors.UnreadBefore(tx, n.meetingID, sessionID, n.messages[0].row)
+		if err != nil {
 			return err
 		}
 		if gap > 0 {
 			continue
 		}
-		if _, err := tx.ExecContext(bg, `
-			INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, 'meeting', ?, ?, ?)
-			ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), updated_at = excluded.updated_at`,
-			sessionID, n.meetingID, to, now); err != nil {
+		if err := cursors.Read(tx, sessionID, "meeting", n.meetingID, to, now); err != nil {
 			return err
 		}
 	}
@@ -220,19 +197,7 @@ func (a *Agents) members(meetingID string, activeOnly bool) ([]string, error) {
 		query += " AND mm.mode = 'active'"
 	}
 	rows, err := a.db().QueryContext(bg, query+" ORDER BY mm.joined_at, mm.rowid", meetingID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return store.Append(nil, rows, err, store.ScanString)
 }
 
 // MeetingUpdated (api.MeetingNotifier): the meeting has new messages; the waits

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build            # tsc → build/
 npm run dev              # tsc -w (watch mode)
 npm run lint             # eslint src tests
-npm test                 # vitest run: client tests (globalSetup builds the Go test host first)
+npm test                 # vitest run: client tests (globalSetup builds the client and the Go test host first)
 npm run host:build-test  # go build -tags testclock → host/bin/test/n2n-nexus-host
 npm run test:conformance # black-box tests in tests/conformance/ against NEXUS_HOST_BIN (default: the test build)
 npm run check            # lint, test, build, audit, pack dry run (prepublishOnly)
@@ -35,7 +35,7 @@ CI (`.github/workflows/host.yml`) runs `go vet`, `go test ./host/...`, lint, bui
 Two programs share one protocol. See `docs/ARCHITECTURE.md` for the full design.
 
 ### Contract (`contract/`)
-The single source of the protocol: `tools.json` (every tool's name, title, description, annotations, input and output JSON Schema), `hook.json` (hook clients, request fields, `_meta` keys, timings, limits, notification texts), `errors.json` (endpoints, error body, status codes). The Go host embeds them (`contract/contract.go`), the TypeScript client reads `hook.json` at run time (`src/contract.ts`), and the conformance tests read all three. Bump `contractVersion` in all three files when a change breaks an older client or host. See `contract/README.md`.
+The single source of the protocol: `tools.json` (every tool's name, title, description, annotations, input and output JSON Schema), `hook.json` (hook clients, request fields, `_meta` keys, the LAN discovery query, timings, limits, notification texts), `errors.json` (endpoints, error body, status codes). The Go host embeds them (`contract/contract.go`), the TypeScript client reads `hook.json` at run time (`src/contract.ts`), and the conformance tests read all three. Bump `contractVersion` in all three files when a change breaks an older client or host. See `contract/README.md`.
 
 ### Host (`host/`, Go module `github.com/n2ns/n2n-nexus` at the repository root)
 `n2n-nexus-host`: tray by default, `serve` in the foreground, `service install|uninstall|status`, `autostart on|off`, `install` (Windows: install or upgrade from a release folder), `version` (`host/cmd/n2n-nexus-host/main.go`).
@@ -44,6 +44,7 @@ The single source of the protocol: `tools.json` (every tool's name, title, descr
 - `internal/protocol` — loads the embedded contract, compiles the schemas, strips undeclared argument keys, validates arguments and results.
 - `internal/store` — opens `<data dir>/nexus.db` (WAL, foreign keys, one connection), runs `migrations/NNNN_*.sql` in order (version in `PRAGMA user_version`), `Tx` for one transaction per write.
 - `internal/core` — project, doc, meeting, chat, event and task tools and their tables (`0001_core.sql`), the hourly cleanup (`cleanup.go`, which also runs the agents' through `api.Cleaner`).
+- `internal/cursors` — read cursors and meeting notification watermarks (`read_cursors`, `meeting_members.notified_id`), shared by core and agents.
 - `internal/agents` — conversations: the hook handler, the direct-message tools, their tables (`0002_agents.sql`). `agents.Agents` is the in-process coordinator holding all wait state behind one mutex.
 - `internal/api` — HTTP server: `GET /health`, `GET /api/tools`, `POST /api/tools/call`, `POST /api/hook`; Host / Origin guard, 16 MB body limit, rate limits per conversation (per instance when none is identified), per address and per hook session.
 - `internal/discovery` — UDP LAN discovery responder. `internal/host` — assembles one host (single-instance `host.lock`, database, tools, server, discovery, hourly cleanup, `host.log` / `tray.log` rotation). `internal/tray` — tray menu and texts. `internal/service` — boot service and autostart files per OS, `serve --supervise`, Windows firewall script. `internal/clock`, `internal/testhooks` — the settable clock and `POST /test/clock` / `--test-listen-wait-ms`, compiled only with `-tags testclock`.

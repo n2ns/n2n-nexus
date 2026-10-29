@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 // The user's seat: one session of a meeting acts for the user. Its stance on
@@ -102,12 +103,8 @@ func checkEvidence(tx *sql.Tx, meetingID, note string) error {
 	var missing []string
 	for _, m := range evidenceRef.FindAllStringSubmatch(note, -1) {
 		seq, _ := strconv.ParseInt(m[1], 10, 64)
-		var one int
-		err := tx.QueryRow(`SELECT 1 FROM meeting_messages WHERE meeting_id = ? AND seq = ?`, meetingID, seq).Scan(&one)
-		if err == nil {
-			return nil
-		}
-		if err != sql.ErrNoRows {
+		found, err := store.Exists(tx.QueryRow(`SELECT 1 FROM meeting_messages WHERE meeting_id = ? AND seq = ?`, meetingID, seq))
+		if err != nil || found {
 			return err
 		}
 		missing = append(missing, m[0])

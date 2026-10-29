@@ -20,9 +20,12 @@ const identityRetryError = "The conversation session of this call cannot be reso
 func (a *Agents) Identity(c api.Call) (api.Identity, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	id, err := a.callerSession(c)
-	if err != nil {
-		return api.Identity{}, err
+	id := c.Session
+	if id == "" {
+		var err error
+		if id, err = a.callerSession(c, false); err != nil {
+			return api.Identity{}, err
+		}
 	}
 	if id != "" {
 		s, err := getSession(a.db(), id)
@@ -61,7 +64,7 @@ func (a *Agents) Identity(c api.Call) (api.Identity, error) {
 func (a *Agents) SessionOf(c *api.Caller) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	id, err := a.callerSession(api.Call{Caller: c})
+	id, err := a.callerSession(api.Call{Caller: c}, false)
 	if err != nil {
 		return ""
 	}
@@ -69,8 +72,9 @@ func (a *Agents) SessionOf(c *api.Caller) string {
 }
 
 // callerSession is the session key the caller names: a Claude toolUseId bound
-// within the binding TTL, or a Codex session id; "" when there is none.
-func (a *Agents) callerSession(c api.Call) (string, error) {
+// within the binding TTL, or a Codex session id; "" when there is none. With
+// prune, expired tool-use bindings are removed first.
+func (a *Agents) callerSession(c api.Call, prune bool) (string, error) {
 	if c.Caller == nil {
 		return "", nil
 	}
@@ -80,6 +84,11 @@ func (a *Agents) callerSession(c api.Call) (string, error) {
 			return "", nil
 		}
 		cutoff := a.iso(a.o.Clock.Now().Add(-ms(a.o.Contract.Hook.Timing.ToolUseBindingTtlMs)))
+		if prune {
+			if _, err := a.db().ExecContext(bg, "DELETE FROM tool_use_bindings WHERE created_at <= ?", cutoff); err != nil {
+				return "", err
+			}
+		}
 		var id string
 		err := a.db().QueryRowContext(bg, "SELECT session_id FROM tool_use_bindings WHERE tool_use_id = ? AND created_at > ?",
 			c.Caller.ToolUseID, cutoff).Scan(&id)

@@ -43,52 +43,40 @@ func New(d Deps) *Core { return &Core{d: d} }
 // Register adds every core tool to srv.
 func (c *Core) Register(srv *api.Server) {
 	// Projects
-	srv.Register("sync_project_assets", tool(syncArgs{}, c.syncProjectAssets))
-	srv.Register("upload_project_asset", tool(uploadArgs{}, c.uploadProjectAsset))
-	srv.Register("update_project", tool(updateProjectArgs{}, c.updateProject))
-	srv.Register("rename_project", tool(renameArgs{}, c.renameProject))
-	srv.Register("search_projects", tool(searchArgs{Limit: 10}, c.searchProjects))
-	srv.Register("get_global_topology", tool(topologyArgs{}, c.getGlobalTopology))
-	srv.Register("get_project", tool(getProjectArgs{IncludeDocs: true}, c.getProject))
-	srv.Register("host_delete_project", tool(projectIDArgs{}, c.deleteProject))
+	srv.Register("sync_project_assets", api.Tool(syncArgs{}, c.syncProjectAssets))
+	srv.Register("upload_project_asset", api.Tool(uploadArgs{}, c.uploadProjectAsset))
+	srv.Register("update_project", api.Tool(updateProjectArgs{}, c.updateProject))
+	srv.Register("rename_project", api.Tool(renameArgs{}, c.renameProject))
+	srv.Register("search_projects", api.Tool(searchArgs{Limit: 10}, c.searchProjects))
+	srv.Register("get_global_topology", api.Tool(topologyArgs{}, c.getGlobalTopology))
+	srv.Register("get_project", api.Tool(getProjectArgs{IncludeDocs: true}, c.getProject))
+	srv.Register("host_delete_project", api.Tool(projectIDArgs{}, c.deleteProject))
 	// Chat and events
-	srv.Register("send_message", tool(sendMessageArgs{}, c.sendMessage))
-	srv.Register("read_messages", tool(readMessagesArgs{Count: 10}, c.readMessages))
-	srv.Register("list_events", tool(listEventsArgs{Limit: 20}, c.listEvents))
-	srv.Register("host_maintenance", tool(maintenanceArgs{}, c.hostMaintenance))
+	srv.Register("send_message", api.Tool(sendMessageArgs{}, c.sendMessage))
+	srv.Register("read_messages", api.Tool(readMessagesArgs{Count: 10}, c.readMessages))
+	srv.Register("list_events", api.Tool(listEventsArgs{Limit: 20}, c.listEvents))
+	srv.Register("host_maintenance", api.Tool(maintenanceArgs{}, c.hostMaintenance))
 	// Strategy and shared documents
-	srv.Register("get_global_strategy", tool(struct{}{}, c.getGlobalStrategy))
-	srv.Register("update_global_strategy", tool(strategyArgs{}, c.updateGlobalStrategy))
-	srv.Register("list_global_docs", tool(struct{}{}, c.listGlobalDocs))
-	srv.Register("get_global_doc", tool(docIDArgs{}, c.getGlobalDoc))
-	srv.Register("sync_global_doc", tool(syncDocArgs{}, c.syncGlobalDoc))
+	srv.Register("get_global_strategy", api.Tool(struct{}{}, c.getGlobalStrategy))
+	srv.Register("update_global_strategy", api.Tool(strategyArgs{}, c.updateGlobalStrategy))
+	srv.Register("list_global_docs", api.Tool(struct{}{}, c.listGlobalDocs))
+	srv.Register("get_global_doc", api.Tool(docIDArgs{}, c.getGlobalDoc))
+	srv.Register("sync_global_doc", api.Tool(syncDocArgs{}, c.syncGlobalDoc))
 	// Meetings
-	srv.Register("list_meetings", tool(listMeetingsArgs{Limit: 20}, c.listMeetings))
-	srv.Register("start_meeting", tool(startMeetingArgs{}, c.startMeeting))
-	srv.Register("end_meeting", tool(endMeetingArgs{}, c.endMeeting))
-	srv.Register("archive_meeting", tool(meetingIDArgs{}, c.archiveMeeting))
-	srv.Register("reopen_meeting", tool(meetingIDArgs{}, c.reopenMeeting))
-	srv.Register("join_meeting", tool(joinMeetingArgs{Mode: "active"}, c.joinMeeting))
-	srv.Register("leave_meeting", tool(meetingIDArgs{}, c.leaveMeeting))
-	srv.Register("stance", tool(stanceArgs{}, c.stance))
+	srv.Register("list_meetings", api.Tool(listMeetingsArgs{Limit: 20}, c.listMeetings))
+	srv.Register("start_meeting", api.Tool(startMeetingArgs{}, c.startMeeting))
+	srv.Register("end_meeting", api.Tool(endMeetingArgs{}, c.endMeeting))
+	srv.Register("archive_meeting", api.Tool(meetingIDArgs{}, c.archiveMeeting))
+	srv.Register("reopen_meeting", api.Tool(meetingIDArgs{}, c.reopenMeeting))
+	srv.Register("join_meeting", api.Tool(joinMeetingArgs{Mode: "active"}, c.joinMeeting))
+	srv.Register("leave_meeting", api.Tool(meetingIDArgs{}, c.leaveMeeting))
+	srv.Register("stance", api.Tool(stanceArgs{}, c.stance))
 	// Tasks
-	srv.Register("create_task", tool(createTaskArgs{}, c.createTask))
-	srv.Register("get_task", tool(taskIDArgs{}, c.getTask))
-	srv.Register("list_tasks", tool(listTasksArgs{Limit: 50}, c.listTasks))
-	srv.Register("update_task", tool(updateTaskArgs{}, c.updateTask))
-	srv.Register("cancel_task", tool(taskIDArgs{}, c.cancelTask))
-}
-
-// tool decodes the (already schema-validated) arguments over defaults, which
-// carries the defaults the JSON Schema declares but does not apply.
-func tool[A any](defaults A, fn func(c api.Call, args A) (any, error)) api.ToolFunc {
-	return func(c api.Call) (any, error) {
-		args := defaults
-		if err := json.Unmarshal(c.Args, &args); err != nil {
-			return nil, api.Errorf("Invalid arguments: %v", err)
-		}
-		return fn(c, args)
-	}
+	srv.Register("create_task", api.Tool(createTaskArgs{}, c.createTask))
+	srv.Register("get_task", api.Tool(taskIDArgs{}, c.getTask))
+	srv.Register("list_tasks", api.Tool(listTasksArgs{Limit: 50}, c.listTasks))
+	srv.Register("update_task", api.Tool(updateTaskArgs{}, c.updateTask))
+	srv.Register("cancel_task", api.Tool(taskIDArgs{}, c.cancelTask))
 }
 
 // tx runs fn in one transaction of the call.
@@ -99,11 +87,7 @@ func (c *Core) tx(call api.Call, fn func(tx *sql.Tx) error) error {
 func (c *Core) now() string { return store.ISO(c.d.Clock.Now()) }
 
 func exec(tx *sql.Tx, query string, args ...any) (int64, error) {
-	res, err := tx.Exec(query, args...)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+	return store.Affected(tx.Exec(query, args...))
 }
 
 // recordEvent appends to the activity log; target "" and detail nil are stored as NULL.
@@ -144,4 +128,18 @@ func nullString(s string) any {
 		return nil
 	}
 	return s
+}
+
+func nullable(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
+}
+
+func toNull(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
 }

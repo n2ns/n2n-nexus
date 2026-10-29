@@ -1,8 +1,6 @@
 package agents
 
 import (
-	"encoding/json"
-
 	"github.com/n2ns/n2n-nexus/host/internal/api"
 )
 
@@ -37,29 +35,13 @@ type sent struct {
 	To        recipient `json:"to"`
 }
 
-// decode reads arguments that already passed the tool's input schema.
-func decode(c api.Call, v any) error {
-	if err := json.Unmarshal(c.Args, v); err != nil {
-		return api.Errorf("Invalid arguments: %v", err)
-	}
-	return nil
-}
-
 // resolve returns the agent session behind a direct-message tool call: Claude
 // through the toolUseId its PreToolUse hook bound, Codex through its session id.
 func (a *Agents) resolve(c api.Call) (*session, error) {
 	now := a.o.Clock.Now()
-	var id string
-	if c.Caller != nil {
-		switch c.Caller.Client {
-		case "claude":
-			var err error
-			if id, err = a.resolveToolUse(c.Caller.ToolUseID, now); err != nil {
-				return nil, err
-			}
-		case "codex":
-			id = sessionKey("codex", c.Caller.SessionID)
-		}
+	id, err := a.callerSession(c, true)
+	if err != nil {
+		return nil, err
 	}
 	noSession := api.Errorf("%s", a.o.Contract.Hook.Texts.NoAgentSessionError)
 	if id == "" {
@@ -110,13 +92,11 @@ func (a *Agents) deliver(from, to *session, text string, replyTo *string, notify
 	return sent{MessageID: id, To: recipient{ID: to.ID, Name: to.Name, Status: to.Status}}, nil
 }
 
-func (a *Agents) toolPeers(c api.Call) (any, error) {
-	var args struct {
-		IncludeOffline bool `json:"includeOffline"`
-	}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type peersArgs struct {
+	IncludeOffline bool `json:"includeOffline"`
+}
+
+func (a *Agents) toolPeers(c api.Call, args peersArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
@@ -134,16 +114,14 @@ func (a *Agents) toolPeers(c api.Call) (any, error) {
 	return map[string]any{"self": profileOf(self), "peers": peers}, nil
 }
 
-func (a *Agents) toolSend(c api.Call) (any, error) {
-	args := struct {
-		To             string `json:"to"`
-		Text           string `json:"text"`
-		NotifyWhenIdle bool   `json:"notifyWhenIdle"`
-		kind
-	}{kind: kind{ExpectsReply: true, Wake: true}}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type sendArgs struct {
+	To             string `json:"to"`
+	Text           string `json:"text"`
+	NotifyWhenIdle bool   `json:"notifyWhenIdle"`
+	kind
+}
+
+func (a *Agents) toolSend(c api.Call, args sendArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
@@ -158,15 +136,13 @@ func (a *Agents) toolSend(c api.Call) (any, error) {
 	return a.deliver(self, to, args.Text, nil, args.NotifyWhenIdle, args.kind)
 }
 
-func (a *Agents) toolReply(c api.Call) (any, error) {
-	args := struct {
-		MessageID string `json:"messageId"`
-		Text      string `json:"text"`
-		kind
-	}{kind: kind{ExpectsReply: true, Wake: true}}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type replyArgs struct {
+	MessageID string `json:"messageId"`
+	Text      string `json:"text"`
+	kind
+}
+
+func (a *Agents) toolReply(c api.Call, args replyArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
@@ -194,13 +170,11 @@ func (a *Agents) toolReply(c api.Call) (any, error) {
 	return out, nil
 }
 
-func (a *Agents) toolRead(c api.Call) (any, error) {
-	args := struct {
-		Count int `json:"count"`
-	}{Count: 10}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type readArgs struct {
+	Count int `json:"count"`
+}
+
+func (a *Agents) toolRead(c api.Call, args readArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
@@ -228,13 +202,11 @@ func (a *Agents) toolRead(c api.Call) (any, error) {
 	return map[string]any{"messages": items, "remaining": remaining}, nil
 }
 
-func (a *Agents) toolListen(c api.Call) (any, error) {
-	var args struct {
-		On bool `json:"on"`
-	}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type listenArgs struct {
+	On bool `json:"on"`
+}
+
+func (a *Agents) toolListen(c api.Call, args listenArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
@@ -246,16 +218,14 @@ func (a *Agents) toolListen(c api.Call) (any, error) {
 	return map[string]any{"listening": args.On}, nil
 }
 
-func (a *Agents) toolSetProfile(c api.Call) (any, error) {
-	var args struct {
-		Name  *string `json:"name"`
-		Note  *string `json:"note"`
-		Title *string `json:"title"`
-		Label *string `json:"label"`
-	}
-	if err := decode(c, &args); err != nil {
-		return nil, err
-	}
+type profileArgs struct {
+	Name  *string `json:"name"`
+	Note  *string `json:"note"`
+	Title *string `json:"title"`
+	Label *string `json:"label"`
+}
+
+func (a *Agents) toolSetProfile(c api.Call, args profileArgs) (any, error) {
 	if args.Name == nil && args.Note == nil && args.Title == nil && args.Label == nil {
 		return nil, api.Errorf("Invalid arguments for set_profile: Pass at least one of name, note, title and label")
 	}

@@ -1,16 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { execSync, spawnSync } from "node:child_process";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
+import { ENTRY, REPO, runCliSync } from "./helpers/cli.js";
 import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/executable.js";
 
 import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
-import { isOurCodexHook } from "../src/cli/codex-trust.js";
+import { isOurCodexHook } from "../src/cli/hook-command.js";
 
-// Runs the built CLI: beforeAll runs `npm run build` so build/ matches the sources.
-const REPO = path.resolve(__dirname, "..");
-const ENTRY = path.join(REPO, "build", "index.js");
+// Runs the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "install");
 const NODE = process.execPath;
 const command = (client: string, endpoint?: string, node = NODE) => `"${node}" "${ENTRY}" hook ${client}${endpoint ? ` --endpoint ${endpoint}` : ""}`;
@@ -81,11 +79,9 @@ if (args[0] === "app-server") {
 }
 
 function run(args: string[], env: NodeJS.ProcessEnv = {}) {
-    const result = spawnSync(NODE, [ENTRY, ...args], {
-        encoding: "utf8",
+    return runCliSync(args, {
         env: { SystemRoot: process.env.SystemRoot, PATH: [bin, path.join(bin, "node")].join(path.delimiter), HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, CALLS_LOG: callsLog, ...env }
     });
-    return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 function calls(): string[][] {
@@ -131,10 +127,6 @@ const userSettings = {
         Notification: [{ hooks: [{ type: "command", command: "beep" }] }]
     }
 };
-
-beforeAll(() => {
-    execSync("npm run build", { cwd: REPO, stdio: "ignore" });
-}, 120_000);
 
 beforeEach(() => {
     fs.rmSync(TMP, { recursive: true, force: true });
@@ -506,12 +498,11 @@ describe("node path", () => {
     it("skips relative PATH entries and fnm's per-shell directory", () => {
         const relative = linkNode("cwd/node");
         const multishell = linkNode("fnm_multishells/123_456/bin/node");
-        const result = spawnSync(NODE, [ENTRY, "install", "claude"], {
+        const result = runCliSync(["install", "claude"], {
             cwd: path.join(dir, "cwd"),
-            encoding: "utf8",
             env: { SystemRoot: process.env.SystemRoot, PATH: [path.relative(path.join(dir, "cwd"), path.dirname(relative)) || ".", path.join("..", "cwd", process.platform === "win32" ? "node" : ""), bin, path.dirname(multishell)].join(path.delimiter), HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CALLS_LOG: callsLog }
         });
-        expect(result.status).toBe(0);
+        expect(result.code).toBe(0);
         expect(ourCommands(claudeSettings(), "claude")).toEqual(Array(7).fill(command("claude")));
         expect(calls().at(-1)).toEqual(mcpAdd("claude", NODE));
         expect(run(["install", "codex", "--node", multishell]).stdout).toContain("--node <path>");

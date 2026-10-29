@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { DEFAULT_DISCOVERY_PORT, LOCAL_ENDPOINT } from "./client/discovery.js";
 import { pkg } from "./config/index.js";
+import { HOST_RELEASES_URL } from "./contract.js";
 
 const command = process.argv[2] || "mcp";
 
@@ -27,11 +29,11 @@ USAGE:
                      Forward a client hook event to the host (run by the hooks)
 
 The host is a separate program, n2n-nexus-host:
-  https://github.com/n2ns/n2n-nexus/releases
+  ${HOST_RELEASES_URL}
 
 OPTIONS:
   --id <id>          Instance ID for MCP proxy (default: mcp-<hostname>-<cwd hash>-<IDE name>)
-  --endpoint <url>   Host URL for hook (default: NEXUS_ENDPOINT, then http://127.0.0.1:5688),
+  --endpoint <url>   Host URL for hook (default: NEXUS_ENDPOINT, then ${LOCAL_ENDPOINT}),
                      or "discover" to find a host on the LAN;
                      install writes it into the hook and MCP commands
   --node <path>      Node executable written into the hook and MCP commands by install
@@ -40,8 +42,8 @@ OPTIONS:
   --help, -h         Show this help
 
 ENVIRONMENT:
-  NEXUS_ENDPOINT     Host URL for MCP proxy, hook and doctor (default: http://127.0.0.1:5688), or "discover"
-  NEXUS_DISCOVERY_PORT  UDP port of LAN discovery (default: 5688)
+  NEXUS_ENDPOINT     Host URL for MCP proxy, hook and doctor (default: ${LOCAL_ENDPOINT}), or "discover"
+  NEXUS_DISCOVERY_PORT  UDP port of LAN discovery (default: ${DEFAULT_DISCOVERY_PORT})
   NEXUS_INSTANCE_ID  Override --id for MCP proxy
 `);
     process.exit(0);

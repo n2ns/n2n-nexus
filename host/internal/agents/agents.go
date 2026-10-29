@@ -48,19 +48,12 @@ type Options struct {
 type Agents struct {
 	o Options
 
-	mu     sync.Mutex
-	closed bool
-	// request is the context of the hook being handled (set with mu held, by Hook): a
-	// wait whose client is already gone ends without its first check, so nothing is
-	// marked delivered that nobody received.
-	request context.Context
+	mu      sync.Mutex
+	closed  bool
 	closing chan struct{}
-	// waiters are the held hooks per session, in the order they started.
+	// waiters are the held hooks per session, in the order they started: a
+	// listening Stop hook (it delivers before any background wait) or background waits.
 	waiters map[string][]*waiter
-	// listeningStops: sessions whose listening Stop hook waits; it delivers before any background wait.
-	listeningStops map[string]bool
-	// backgroundWaits: sessions with background waits in progress.
-	backgroundWaits map[string]map[*waiter]bool
 	// autoTurns: automatic turns per session since its user last prompted.
 	autoTurns map[string]int
 	// wokenAt: when a background wait last woke each session, to tell the woken turn's prompt from the user's.
@@ -87,13 +80,15 @@ type dispatch struct {
 
 // waiter is one held hook request. Its functions run with Agents.mu held.
 type waiter struct {
-	session   string
-	check     func()
-	onTimeout func()
-	onAbort   func()
-	finished  bool
-	out       map[string]any
-	done      chan struct{}
+	session string
+	// background: a background wait, else a listening Stop hook.
+	background bool
+	check      func()
+	onTimeout  func()
+	onAbort    func()
+	finished   bool
+	out        map[string]any
+	done       chan struct{}
 }
 
 // New returns the agents of a host whose database was just opened. No wait is
@@ -109,25 +104,23 @@ func New(o Options) (*Agents, error) {
 		return nil, fmt.Errorf("reset listening sessions: %w", err)
 	}
 	return &Agents{
-		o:               o,
-		closing:         make(chan struct{}),
-		waiters:         map[string][]*waiter{},
-		listeningStops:  map[string]bool{},
-		backgroundWaits: map[string]map[*waiter]bool{},
-		autoTurns:       map[string]int{},
-		wokenAt:         map[string]time.Time{},
-		dispatches:      map[string]*dispatch{},
+		o:          o,
+		closing:    make(chan struct{}),
+		waiters:    map[string][]*waiter{},
+		autoTurns:  map[string]int{},
+		wokenAt:    map[string]time.Time{},
+		dispatches: map[string]*dispatch{},
 	}, nil
 }
 
 // Register adds the direct-message tools and the hook handler to srv.
 func (a *Agents) Register(srv *api.Server) {
-	srv.Register("peers", a.locked(a.toolPeers))
-	srv.Register("send", a.locked(a.toolSend))
-	srv.Register("read", a.locked(a.toolRead))
-	srv.Register("reply", a.locked(a.toolReply))
-	srv.Register("listen", a.locked(a.toolListen))
-	srv.Register("set_profile", a.locked(a.toolSetProfile))
+	srv.Register("peers", a.locked(api.Tool(peersArgs{}, a.toolPeers)))
+	srv.Register("send", a.locked(api.Tool(sendArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolSend)))
+	srv.Register("read", a.locked(api.Tool(readArgs{Count: 10}, a.toolRead)))
+	srv.Register("reply", a.locked(api.Tool(replyArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolReply)))
+	srv.Register("listen", a.locked(api.Tool(listenArgs{}, a.toolListen)))
+	srv.Register("set_profile", a.locked(api.Tool(profileArgs{}, a.toolSetProfile)))
 	srv.SetHook(a.Hook)
 }
 
@@ -169,9 +162,6 @@ func (a *Agents) Close() {
 	}
 }
 
-// errDryRun rolls back the transaction of a dry-run cleanup.
-var errDryRun = errors.New("dry run")
-
 // Cleanup (api.Cleaner) expires unread messages past their expiry (telling
 // the senders), deletes tool-use bindings past their TTL and, after
 // RetentionDays, read or expired direct messages, delivered notices, adapter
@@ -204,16 +194,16 @@ func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) 
 			return err
 		}
 		var err error
-		if out.Messages, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_messages WHERE "+old, cutoff, cutoff)); err != nil {
+		if out.Messages, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM agent_messages WHERE "+old, cutoff, cutoff)); err != nil {
 			return err
 		}
-		if out.Notices, err = affected(tx.ExecContext(ctx, "DELETE FROM agent_notices WHERE notified_at IS NOT NULL AND notified_at < ?", cutoff)); err != nil {
+		if out.Notices, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM agent_notices WHERE notified_at IS NOT NULL AND notified_at < ?", cutoff)); err != nil {
 			return err
 		}
-		if out.ToolUseBindings, err = affected(tx.ExecContext(ctx, "DELETE FROM tool_use_bindings WHERE created_at <= ?", bindingCutoff)); err != nil {
+		if out.ToolUseBindings, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM tool_use_bindings WHERE created_at <= ?", bindingCutoff)); err != nil {
 			return err
 		}
-		if out.Instances, err = affected(tx.ExecContext(ctx, "DELETE FROM hooked_instances WHERE last_seen_at < ?", cutoff)); err != nil {
+		if out.Instances, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM hooked_instances WHERE last_seen_at < ?", cutoff)); err != nil {
 			return err
 		}
 		if out.Sessions, err = a.oldSessions(ctx, tx, cutoff); err != nil {
@@ -233,11 +223,11 @@ func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) 
 			}
 		}
 		if dryRun {
-			return errDryRun
+			return store.ErrDryRun
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errDryRun) {
+	if err != nil && !errors.Is(err, store.ErrDryRun) {
 		return out, err
 	}
 	return out, nil
@@ -268,13 +258,6 @@ func (a *Agents) oldSessions(ctx context.Context, tx *sql.Tx, cutoff string) ([]
 	return list, rows.Err()
 }
 
-func affected(r sql.Result, err error) (int64, error) {
-	if err != nil {
-		return 0, err
-	}
-	return r.RowsAffected()
-}
-
 // ---------------------------------------------------------------------------
 // Waits
 // ---------------------------------------------------------------------------
@@ -290,11 +273,29 @@ func (a *Agents) wake(ids ...string) {
 	}
 }
 
-// startWait registers w and runs its first check (mu held).
-func (a *Agents) startWait(w *waiter) {
+// backgroundWaits are the session's background waits in progress (mu held).
+func (a *Agents) backgroundWaits(sessionID string) []*waiter {
+	var out []*waiter
+	for _, w := range a.waiters[sessionID] {
+		if w.background {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// listeningStop: the session's listening Stop hook waits (mu held).
+func (a *Agents) listeningStop(sessionID string) bool {
+	return len(a.waiters[sessionID]) > len(a.backgroundWaits(sessionID))
+}
+
+// startWait registers w and runs its first check (mu held). ctx is the hook's
+// request: a wait whose client is already gone ends without its first check,
+// so nothing is marked delivered that nobody received.
+func (a *Agents) startWait(ctx context.Context, w *waiter) {
 	w.done = make(chan struct{})
 	a.waiters[w.session] = append(a.waiters[w.session], w)
-	if a.request != nil && a.request.Err() != nil {
+	if ctx.Err() != nil {
 		w.onAbort()
 		return
 	}
@@ -363,14 +364,9 @@ func (a *Agents) logErr(what string, err error) {
 // waitForMessages holds a listening Stop hook: until something not notified
 // yet arrives (then the stop is blocked with it), the wait runs out, or the
 // hook's client goes away (mu held).
-func (a *Agents) waitForMessages(sessionID string) *waiter {
-	a.listeningStops[sessionID] = true
+func (a *Agents) waitForMessages(ctx context.Context, sessionID string) *waiter {
 	w := &waiter{session: sessionID}
-	finish := func(out map[string]any) {
-		if a.endWait(w, out) {
-			delete(a.listeningStops, sessionID)
-		}
-	}
+	finish := func(out map[string]any) { a.endWait(w, out) }
 	stopWaiting := func() {
 		if w.finished {
 			return
@@ -409,7 +405,7 @@ func (a *Agents) waitForMessages(sessionID string) *waiter {
 		a.logErr("listening stop", a.setStatus(sessionID, "working"))
 		finish(blockOutput(text))
 	}
-	a.startWait(w)
+	a.startWait(ctx, w)
 	return w
 }
 
@@ -422,25 +418,15 @@ func (a *Agents) waitForMessages(sessionID string) *waiter {
 // delivers while the session is working: the wait starts alongside Stop, which
 // announces what is unread at the end of the turn itself, and Stop wakes the
 // wait again once the turn has ended (mu held).
-func (a *Agents) backgroundWait(sessionID string) *waiter {
-	w := &waiter{session: sessionID}
-	waits := a.backgroundWaits[sessionID]
-	if waits == nil {
-		waits = map[*waiter]bool{}
-		a.backgroundWaits[sessionID] = waits
-	}
-	waits[w] = true
+func (a *Agents) backgroundWait(ctx context.Context, sessionID string) *waiter {
+	w := &waiter{session: sessionID, background: true}
 	finish := func(out map[string]any) {
 		if !a.endWait(w, out) {
 			return
 		}
-		delete(waits, w)
-		if len(waits) == 0 {
-			delete(a.backgroundWaits, sessionID)
-		}
 		// Nothing waits for the session any more: it stops counting as listening (even with listen on).
 		_, woke := out["wake"]
-		if !woke && len(a.backgroundWaits[sessionID]) == 0 && !a.listeningStops[sessionID] {
+		if !woke && len(a.waiters[sessionID]) == 0 {
 			a.logErr("background wait", a.setStatusIf(sessionID, "listening", "idle"))
 		}
 	}
@@ -460,7 +446,7 @@ func (a *Agents) backgroundWait(sessionID string) *waiter {
 			stopWaiting()
 			return
 		}
-		if s.Status == "working" || a.listeningStops[sessionID] {
+		if s.Status == "working" || a.listeningStop(sessionID) {
 			return
 		}
 		if s.Status == "idle" {
@@ -490,7 +476,7 @@ func (a *Agents) backgroundWait(sessionID string) *waiter {
 		a.wokenAt[sessionID] = a.o.Clock.Now()
 		finish(map[string]any{"wake": text, "dispatchId": d.id})
 	}
-	a.startWait(w)
+	a.startWait(ctx, w)
 	return w
 }
 
@@ -536,7 +522,7 @@ func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 		a.wokenAt[sessionID] = d.prevWokenAt
 	}
 	status := "idle"
-	if len(a.backgroundWaits[sessionID]) > 0 || a.listeningStops[sessionID] {
+	if len(a.waiters[sessionID]) > 0 {
 		status = "listening"
 	}
 	if err := a.setStatusIf(sessionID, "working", status); err != nil {
@@ -549,7 +535,7 @@ func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 // cancelBackgroundWaits: the session became active again; its background waits
 // end and the client handles messages itself (mu held).
 func (a *Agents) cancelBackgroundWaits(sessionID string) {
-	for w := range a.backgroundWaits[sessionID] {
+	for _, w := range a.backgroundWaits(sessionID) {
 		w.onAbort()
 	}
 }
@@ -645,7 +631,7 @@ func (b batch) counts() bool {
 // messages and their notices are left for the user's next prompt.
 func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 	var b batch
-	unreadMessages, err := unread(a.db(), sessionID, false)
+	unreadMessages, err := unread(a.db(), sessionID)
 	if err != nil {
 		return b, err
 	}
@@ -714,10 +700,9 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			if m.ReplyTo != nil {
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
-			text := protocol.CutUnits(m.Text, budget)
-			budget -= protocol.UnitLen(text)
+			text, cut := protocol.CutBudget(m.Text, &budget)
 			lines = append(lines, text)
-			if len(text) < len(m.Text) {
+			if cut {
 				rest = true
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageCut, protocol.UnitLen(text), protocol.UnitLen(m.Text)))
 			} else if mark == markShown || (mark == markNoReply && !m.ExpectsReply) {

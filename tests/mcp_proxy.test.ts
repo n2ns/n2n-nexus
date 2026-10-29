@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import { NexusServer } from "../src/server/nexus.js";
 import { NexusClient, NexusToolError, NexusTransportError } from "../src/client/nexus-client.js";
 import { Host } from "./conformance/harness.js";
+import { closedPort, listen } from "./helpers/http.js";
 
 /** A real n2n-nexus-host (the test build from tests/setup/go-host.ts) on a fresh temporary root. */
 async function startHost(): Promise<Host> {
@@ -214,17 +215,15 @@ describe("MCP proxy with a daemon that accepts connections but never answers", (
 
 describe("MCP proxy when the daemon drops a tool", () => {
     it("re-syncs its tool list and notifies the client", async () => {
-        const http = await import("node:http");
         const tool = (name: string) => ({ name, description: name, inputSchema: { type: "object", properties: {} } });
         let tools = [tool("old_tool"), tool("kept_tool")];
-        const fake = http.createServer((req, res) => {
+        const fake = await listen((req, res) => {
             const send = (status: number, body: unknown) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
             if (req.url === "/api/tools") return send(200, { tools });
             req.resume();
             req.on("end", () => send(404, { ok: false, error: "Unknown tool: 'old_tool'" }));
         });
-        await new Promise<void>((r) => fake.listen(0, "127.0.0.1", () => r()));
-        process.env.NEXUS_ENDPOINT = `http://127.0.0.1:${(fake.address() as import("node:net").AddressInfo).port}`;
+        process.env.NEXUS_ENDPOINT = fake.endpoint;
         process.env.NEXUS_INSTANCE_ID = "drop-test";
 
         const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -243,7 +242,7 @@ describe("MCP proxy when the daemon drops a tool", () => {
 
         await client.close();
         await proxy.shutdown();
-        await new Promise((r) => fake.close(r));
+        await fake.close();
     });
 });
 
@@ -292,9 +291,7 @@ describe("MCP proxy reconnect race", () => {
             req.on("end", () => res.end(JSON.stringify({ ok: true, result: { pong: true } })));
         });
         // Reserve a port, keep it closed so the daemon starts "down".
-        await new Promise<void>((r) => fake.listen(0, "127.0.0.1", () => r()));
-        const port = (fake.address() as import("node:net").AddressInfo).port;
-        await new Promise((r) => fake.close(r));
+        const port = await closedPort();
         process.env.NEXUS_ENDPOINT = `http://127.0.0.1:${port}`;
         process.env.NEXUS_INSTANCE_ID = "race";
 

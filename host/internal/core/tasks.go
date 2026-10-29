@@ -10,6 +10,8 @@ import (
 	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
+func notFoundTask(id string) error { return api.Errorf("Task '%s' not found.", id) }
+
 // task is a task as get_task returns it.
 type task struct {
 	ID              string          `json:"id"`
@@ -56,7 +58,7 @@ func scanTask(s scanner) (task, error) {
 func loadTask(tx *sql.Tx, id string) (task, error) {
 	t, err := scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id))
 	if err == sql.ErrNoRows {
-		return t, api.Errorf("Task '%s' not found.", id)
+		return t, notFoundTask(id)
 	}
 	return t, err
 }
@@ -144,18 +146,8 @@ func (c *Core) listTasks(call api.Call, a listTasksArgs) (any, error) {
 	err := c.tx(call, func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT `+taskColumns+` FROM tasks WHERE ? = '' OR status = ?
 			ORDER BY created_at DESC, rowid DESC LIMIT ?`, a.Status, a.Status, a.Limit)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			t, err := scanTask(rows)
-			if err != nil {
-				return err
-			}
-			tasks = append(tasks, t)
-		}
-		return rows.Err()
+		tasks, err = store.Append(tasks, rows, err, func(rows *sql.Rows) (task, error) { return scanTask(rows) })
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -205,7 +197,7 @@ func (c *Core) updateTask(call api.Call, a updateTaskArgs) (any, error) {
 			return err
 		}
 		if n == 0 {
-			return api.Errorf("Task '%s' not found.", a.TaskID)
+			return notFoundTask(a.TaskID)
 		}
 		t, err = loadTask(tx, a.TaskID)
 		return err
@@ -226,7 +218,7 @@ func (c *Core) cancelTask(call api.Call, a taskIDArgs) (any, error) {
 		if n == 0 {
 			var status string
 			if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, a.TaskID).Scan(&status); err == sql.ErrNoRows {
-				return api.Errorf("Task '%s' not found.", a.TaskID)
+				return notFoundTask(a.TaskID)
 			} else if err != nil {
 				return err
 			}

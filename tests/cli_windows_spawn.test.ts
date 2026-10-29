@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
-import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+
+import { listen } from "./helpers/http.js";
 
 // npm installs claude and codex on Windows as .cmd shims, which Node cannot start without a shell,
 // and cmd.exe would reinterpret the arguments. The platform is set before the modules under test
@@ -103,16 +103,14 @@ describe("Windows .cmd shims", () => {
         const scripts = installShims();
         const { runHook } = await import("../src/cli/hook.js");
         const text = `New message\n- From x" & calc & ": hi %TEMP% ^ |\nRead it with read.`;
-        const server = http.createServer((req, res) => {
+        const server = await listen((req, res) => {
             req.resume();
             req.on("end", () => res.end(JSON.stringify({ output: { wake: text, dispatchId: "d1" } })));
         });
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         try {
-            const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-            expect(await runHook(["codex", "--wait", "--session", "c1", "--endpoint", endpoint])).toBe(0);
+            expect(await runHook(["codex", "--wait", "--session", "c1", "--endpoint", server.endpoint])).toBe(0);
         } finally {
-            await new Promise<void>((resolve) => server.close(() => resolve()));
+            await server.close();
         }
         expect(launches).toEqual([{ command: process.execPath, args: [scripts.codex, "queue", "--thread", "c1", "--message", text] }]);
     });

@@ -12,10 +12,10 @@
  * user) or else `threads.title` in the newest `$CODEX_HOME/state_<N>.sqlite`.
  */
 import { open, readdir } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { MAX_TITLE_CHARS, type HookClient } from "../contract.js";
+import { codexHome } from "./client-dirs.js";
 
 /** How much of the transcript's end, and then of its start, is searched for a title. */
 const TRANSCRIPT_CHUNK_BYTES = 256 * 1024;
@@ -23,7 +23,7 @@ const TRANSCRIPT_CHUNK_BYTES = 256 * 1024;
 const TITLE_BUDGET_MS = 50;
 
 /** Trimmed first line, at most MAX_TITLE_CHARS characters; undefined when nothing is left. */
-export function cleanTitle(value: unknown): string | undefined {
+function cleanTitle(value: unknown): string | undefined {
     if (typeof value !== "string") return undefined;
     const line = value.trim().split(/\r\n|\r|\n/)[0].trim();
     const chars = Array.from(line);
@@ -88,7 +88,7 @@ async function loadSqlite(): Promise<typeof import("node:sqlite")> {
 
 async function codexTitle(sessionId: unknown): Promise<string | undefined> {
     if (typeof sessionId !== "string" || !sessionId) return undefined;
-    const home = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+    const home = codexHome();
     let newest: { n: number; name: string } | undefined;
     for (const name of await readdir(home)) {
         const match = /^state_(\d+)\.sqlite$/.exec(name);

@@ -121,53 +121,42 @@ func start(o Options, lock *Lock) (*Host, error) {
 	h := &Host{Addr: ln.Addr().(*net.TCPAddr), store: st, agents: ag, cancel: cancel, done: make(chan struct{}), logger: o.Logger, lock: lock}
 	h.server = &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 
-	maintain := func() {
-		line, err := c.Maintain(ctx)
+	// run runs a periodic job and logs its line or its error.
+	run := func(label string, job func(context.Context) (string, error)) {
+		line, err := job(ctx)
 		if err != nil {
-			o.Logger.Printf("maintenance: %v", err)
+			o.Logger.Printf("%s: %v", label, err)
 		} else if line != "" {
 			o.Logger.Print(line)
 		}
 	}
-	h.stopDiscovery = func() {}
-	if stop, err := discovery.Start(ctx, discovery.Options{Host: o.Settings.Host, HTTPPort: h.Addr.Port, DiscoveryPort: o.Settings.DiscoveryPort, Version: o.Version, Logger: o.Logger}); err != nil {
-		o.Logger.Printf("LAN discovery unavailable: %v", err)
-	} else {
-		h.stopDiscovery = stop
-	}
-	// The first cleanup completes before the host answers: nothing past its TTL is served as live.
-	maintain()
-	go func() {
-		t := time.NewTicker(MaintainInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				maintain()
-			}
-		}
-	}()
-	if o.Settings.StanceReminderMinutes > 0 {
-		after := time.Duration(o.Settings.StanceReminderMinutes) * time.Minute
+	// every runs a job every interval until the host stops.
+	every := func(interval time.Duration, label string, job func(context.Context) (string, error)) {
 		go func() {
-			t := time.NewTicker(RemindInterval)
+			t := time.NewTicker(interval)
 			defer t.Stop()
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					line, err := c.RemindStances(ctx, after)
-					if err != nil {
-						o.Logger.Printf("stance reminders: %v", err)
-					} else if line != "" {
-						o.Logger.Print(line)
-					}
+					run(label, job)
 				}
 			}
 		}()
+	}
+	h.stopDiscovery = func() {}
+	if stop, err := discovery.Start(ctx, discovery.Options{Query: contract.Hook.DiscoveryQuery, Host: o.Settings.Host, HTTPPort: h.Addr.Port, DiscoveryPort: o.Settings.DiscoveryPort, Version: o.Version, Logger: o.Logger}); err != nil {
+		o.Logger.Printf("LAN discovery unavailable: %v", err)
+	} else {
+		h.stopDiscovery = stop
+	}
+	// The first cleanup completes before the host answers: nothing past its TTL is served as live.
+	run("maintenance", c.Maintain)
+	every(MaintainInterval, "maintenance", c.Maintain)
+	if o.Settings.StanceReminderMinutes > 0 {
+		after := time.Duration(o.Settings.StanceReminderMinutes) * time.Minute
+		every(RemindInterval, "stance reminders", func(ctx context.Context) (string, error) { return c.RemindStances(ctx, after) })
 	}
 	go func() {
 		defer close(h.done)

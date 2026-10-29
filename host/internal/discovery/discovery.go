@@ -17,12 +17,10 @@ import (
 	"sync"
 )
 
-// Query is the datagram a client broadcasts.
-const Query = "n2n-nexus/discover"
-
 // Options configure the responder.
 type Options struct {
 	Host          string // the address the HTTP server listens on
+	Query         string // the datagram a client broadcasts (discoveryQuery in contract/hook.json)
 	HTTPPort      int
 	DiscoveryPort int
 	Version       string
@@ -79,7 +77,7 @@ func Start(ctx context.Context, o Options) (stop func(), err error) {
 				}
 				continue
 			}
-			if string(buf[:n]) == Query {
+			if string(buf[:n]) == o.Query {
 				_, _ = pc.WriteTo(reply, addr)
 			}
 		}
