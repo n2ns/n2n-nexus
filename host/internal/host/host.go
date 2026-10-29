@@ -135,8 +135,9 @@ func start(o Options, lock *Lock) (*Host, error) {
 	} else {
 		h.stopDiscovery = stop
 	}
+	// The first cleanup completes before the host answers: nothing past its TTL is served as live.
+	maintain()
 	go func() {
-		maintain()
 		t := time.NewTicker(MaintainInterval)
 		defer t.Stop()
 		for {
