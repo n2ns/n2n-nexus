@@ -102,6 +102,16 @@ func taskRoot(args string) string {
 	return strings.TrimSuffix(dir, ".")
 }
 
+// rootArg is a --root value as PowerShell can hand it to a program: it quotes
+// a value with spaces, and a trailing \ would escape that quote, so the
+// directory ends in \. instead, as in the task's arguments.
+func rootArg(dir string) string {
+	if strings.HasSuffix(dir, `\`) {
+		return dir + "."
+	}
+	return dir
+}
+
 // Start at login, as `install` finds it.
 const (
 	autostartUnset     = iota // not set: on for a first install, else left off

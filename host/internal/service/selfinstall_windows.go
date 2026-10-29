@@ -124,7 +124,7 @@ func restartServiceElevated(program, root string, o SelfInstallOptions) error {
 	fmt.Fprintln(o.Out, "Restarting the background service on the new version (confirm the administrator prompt).")
 	args := []string{"service", "install"}
 	if root != "" {
-		args = append(args, "--root", root)
+		args = append(args, "--root", rootArg(root))
 	}
 	code, output, err := RunPowerShell(WindowsElevatedScript(program, args, out.Name()))
 	if text, readErr := os.ReadFile(out.Name()); readErr == nil {

@@ -17,6 +17,13 @@ describe("resolveInstanceId", () => {
         expect(a.startsWith(`mcp-${os.hostname()}-`)).toBe(true);
     });
 
+    it("keeps two WSL distributions on the same workspace apart, since they share the host name", () => {
+        const ubuntu = resolveInstanceId({ WSL_DISTRO_NAME: "Ubuntu" }, ["node", "x"], "/home/u/proj", "claude-code");
+        const debian = resolveInstanceId({ WSL_DISTRO_NAME: "Debian" }, ["node", "x"], "/home/u/proj", "claude-code");
+        expect(ubuntu).not.toBe(debian);
+        expect(resolveInstanceId({ WSL_DISTRO_NAME: "Ubuntu" }, ["node", "x"], "/home/u/proj", "claude-code")).toBe(ubuntu);
+    });
+
     it("keeps two IDEs on the same workspace apart by client name", () => {
         const vscode = resolveInstanceId({}, ["node", "x"], "/w", "Visual Studio Code");
         const cli = resolveInstanceId({}, ["node", "x"], "/w", "claude-code");

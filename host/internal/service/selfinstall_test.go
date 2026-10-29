@@ -108,6 +108,20 @@ func TestTaskRoot(t *testing.T) {
 	}
 }
 
+// PowerShell 5.1 hands 'C:\x y\' to a program as C:\x y" (the \ escapes the quote it adds around a value with spaces).
+func TestRootArg(t *testing.T) {
+	for dir, want := range map[string]string{
+		`D:\nexus data\`: `D:\nexus data\.`,
+		`D:\`:            `D:\.`,
+		`D:\nexus data`:  `D:\nexus data`,
+		"":               "",
+	} {
+		if got := rootArg(dir); got != want {
+			t.Errorf("rootArg(%q) = %q, want %q", dir, got, want)
+		}
+	}
+}
+
 func TestAutostartState(t *testing.T) {
 	dir := `C:\Users\u\AppData\Local\Programs\n2n-nexus-host`
 	for current, want := range map[string]int{
