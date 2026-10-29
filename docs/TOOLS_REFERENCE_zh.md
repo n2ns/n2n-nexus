@@ -192,7 +192,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 否则写入全局聊天。
 - 会议中的 `DECISION` 消息还会记入该会议的决策（`list_meetings` 中的 `decisionCount`）。
 - 随消息保存的发送方是调用方对话的会话 ID，没装 hooks 时是适配器实例 ID。
-- 先读后发：会议里在你的读取游标之后还有别人的消息时，发言被拒。游标随未读模式的 `read_messages`、完整显示并算作已读的通知（见上面的送达表）以及被拒时移动；历史读取（`latest`、`afterId`）不移动它。被拒的消息不会发出；结果为 `{ ok: false, refused: true, sentTo: "meeting", meetingId, identity, unread, message }`，`unread` 是那些消息（`[{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp, cut }]`，从旧到新）。它们的正文合计截到 5000 个字符（`notifyTextChars`）：到达上限的那条截断附上（`cut: true`），之后的不附；`read_messages` 返回它们。完整附上的消息从此算已读，不再提醒。
+- 先读后发：会议里在你的读取游标之后还有别人的消息时，发言被拒。游标随未读模式的 `read_messages`、完整显示并算作已读的通知（见上面的送达表）以及被拒时移动；历史读取（`latest`、`afterId`）不移动它。被拒的消息不会发出；结果为 `{ ok: false, refused: true, sentTo: "meeting", meetingId, identity, unread, message }`，`unread` 是那些消息（`[{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp, cut }]`，从旧到新）。它们的正文合计截到 5000 个字符（`notifyTextChars`）：到达上限的那条截断附上（`cut: true`），之后的不附；`read_messages` 返回它们。完整附上的消息从此算已读，不再提醒。host 因你自己的调用而发的消息（席位已占据、AI 共识提示、席位的批准或否决），在你已读完它之前所有消息时对你算已读。
 - 被拒之后对该会议的下一次 `send_message` 即使又有新消息也会发出，正文末尾附上 `[n2n-nexus: sent while #a–#b were unread by the sender.]`；那些消息仍为未读。草案（`draft: true`）和 `DECISION` 不放行：它们的正文会成为决议，必须读完才能发。全局聊天没有这项检查。
 - 结果：`{ ok: true, sentTo: "meeting" | "global", meetingId?, messageId, identity, currentProposalId?, message }`（带 `draft` 时有 `currentProposalId`）；`messageId` 是消息在所属会议里的编号（每个会议从 1 开始），或它的全局聊天 ID（可用于 `afterId`）。
 

@@ -264,8 +264,11 @@ func (c *Core) checkConsensus(tx *sql.Tx, meetingID, byID string) (posted, decid
 	default:
 		return false, false, nil // the draft it was about is gone
 	}
-	_, err = c.addMeetingMessage(tx, meetingID, consensusSender, text, "UPDATE")
-	return err == nil, false, err
+	seq, err := c.addMeetingMessage(tx, meetingID, consensusSender, text, "UPDATE")
+	if err != nil {
+		return false, false, err
+	}
+	return true, false, c.readForCaller(tx, meetingID, byID, seq)
 }
 
 // decideByConsensus closes a meeting without a seat with a DECISION when
@@ -558,8 +561,17 @@ func (c *Core) seatDecides(tx *sql.Tx, meetingID string, seat api.Identity, d dr
 		if decision, err = c.addMeetingMessage(tx, meetingID, consensusSender, text, "DECISION"); err != nil {
 			return 0, err
 		}
-	} else if _, err := c.addMeetingMessage(tx, meetingID, consensusSender, fmt.Sprintf(texts.SeatVeto, d.seq, who, note), "UPDATE"); err != nil {
-		return 0, err
+		if err := c.readForCaller(tx, meetingID, seat.ID, decision); err != nil {
+			return 0, err
+		}
+	} else {
+		veto, err := c.addMeetingMessage(tx, meetingID, consensusSender, fmt.Sprintf(texts.SeatVeto, d.seq, who, note), "UPDATE")
+		if err != nil {
+			return 0, err
+		}
+		if err := c.readForCaller(tx, meetingID, seat.ID, veto); err != nil {
+			return 0, err
+		}
 	}
 	if _, err := tx.Exec(`UPDATE meetings SET current_proposal_id = NULL, consensus_draft = NULL, draft_reminded_at = NULL WHERE id = ?`, meetingID); err != nil {
 		return 0, err

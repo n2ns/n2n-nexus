@@ -59,6 +59,8 @@ describe("meetings with the user's seat", () => {
         const meetingId = await seated(s, ["b"]);
         expect((await last(meetingId)).text).toBe(fmt(HOOK.texts.seatTaken, label(s("a"))));
         expect((await listed(meetingId)).seat).toBe(`codex:${s("a")}`);
+        // The seat's own start caused that message: it drafts at once, without reading it first.
+        await ok(s("a"), "send_message", { meetingId, message: "Decision point 0/1: the split", draft: true });
 
         await ok(s("b"), "join_meeting", { meetingId, seat: "user" });
         expect(await last(meetingId)).toMatchObject({ from: "n2n-nexus", text: fmt(HOOK.texts.seatMoved, label(s("a")), label(s("b"))) });

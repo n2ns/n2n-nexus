@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- A message the host posts because of your own call (the seat taken, the AI consensus notice, the seat's decision or veto) counts as read for you: the seat drafts the next point right after taking the seat or deciding one, and the member whose stance completed the AI consensus posts right after it, without a refusal for that message.
 - Meeting news no longer repeats what `read_messages` returned in unread mode: reading a meeting also marks those messages announced, so the next hook notification shows only what came after.
 - In a meeting with the user's seat, the message about a changed approver list no longer names the seat, which is in none of the approver lists.
 

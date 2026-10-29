@@ -53,7 +53,11 @@ func (c *Core) takeSeat(tx *sql.Tx, meetingID string, who api.Identity) (bool, e
 		}
 		text = fmt.Sprintf(texts.SeatMoved, from, to)
 	}
-	if _, err := c.addMeetingMessage(tx, meetingID, consensusSender, text, "UPDATE"); err != nil {
+	seq, err := c.addMeetingMessage(tx, meetingID, consensusSender, text, "UPDATE")
+	if err != nil {
+		return false, err
+	}
+	if err := c.readForCaller(tx, meetingID, who.ID, seq); err != nil {
 		return false, err
 	}
 	if err := c.recordEvent(tx, who.ID, "meeting.seat", meetingID, map[string]any{"from": old}); err != nil {

@@ -267,3 +267,20 @@ func TestReadingAMeetingAnnouncesIt(t *testing.T) {
 		t.Fatalf("history read announced %d", got)
 	}
 }
+
+// A message the host posts because of a call (the seat taken, a decision, the
+// AI consensus) is read for the caller: its next post is not refused for it.
+func TestHostMessagesOfOwnCallAreRead(t *testing.T) {
+	h, id := seatMeeting(t)
+	// The seat posts right after taking the seat (start_meeting posted SeatTaken).
+	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "Decision point 0/2: the split", "draft": true})
+	draft := h.count(`SELECT MAX(seq) FROM meeting_messages WHERE meeting_id = ?`, id)
+	h.stanceAs("b", id, draft, "endorse", "")
+	h.stanceAs("c", id, draft, "endorse", "") // posts the AI consensus: read for c
+	h.as("c", "send_message", map[string]any{"meetingId": id, "message": "c right after the consensus"})
+	// The seat approves (posts the DECISION) and drafts the next point at once.
+	h.stanceAs("a", id, draft, "endorse", "go")
+	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "Decision point 1/2: next", "draft": true})
+	// b, who has not read any of it, is still refused.
+	h.refusedAs("b", "send_message", map[string]any{"meetingId": id, "message": "b unread"})
+}

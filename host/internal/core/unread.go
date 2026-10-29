@@ -106,3 +106,34 @@ func (c *Core) setSendRefused(tx *sql.Tx, u unread, refused bool) error {
 func unreadNote(u unread) string {
 	return fmt.Sprintf("%d message(s) of others in meeting %s came after you last read it (%s); they are attached as unread.", len(u.messages), u.meetingID, u.span())
 }
+
+// readForCaller marks the host's message seq of a meeting, posted because of
+// a call by who, read and announced for who: a caller need not read what its
+// own call caused. Nothing moves when who had not read everything before it.
+func (c *Core) readForCaller(tx *sql.Tx, meetingID, who string, seq int64) error {
+	var row int64
+	if err := tx.QueryRow(`SELECT id FROM meeting_messages WHERE meeting_id = ? AND seq = ?`, meetingID, seq).Scan(&row); err != nil {
+		return err
+	}
+	var cursor int64
+	err := tx.QueryRow(`SELECT last_read_id FROM read_cursors WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?`, who, meetingID).Scan(&cursor)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	var unread int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = ? AND id > ? AND id < ? AND sender != ?`,
+		meetingID, cursor, row, who).Scan(&unread); err != nil {
+		return err
+	}
+	if unread > 0 {
+		return nil
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, 'meeting', ?, ?, ?)
+		ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), updated_at = excluded.updated_at`,
+		who, meetingID, row, c.now()); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?`, row, meetingID, who, row)
+	return err
+}
