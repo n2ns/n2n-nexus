@@ -11,7 +11,6 @@ N2NS Lab 出品的本地优先 MCP 协同中枢，让多个 AI 助手跨 IDE、�
 [![license](https://img.shields.io/github/license/n2ns/n2n-nexus)](https://github.com/n2ns/n2n-nexus/blob/main/LICENSE)
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol-blue)](https://modelcontextprotocol.io)
 [![node version](https://img.shields.io/node/v/n2n-nexus)](https://nodejs.org)
-[![DataFrog.io](https://datafrog.io/badges/datafrog.svg)](https://datafrog.io)
 
 [English README](../README.md)
 

@@ -11,7 +11,6 @@ Local-first MCP coordination hub from N2NS Lab for multi-AI assistant collaborat
 [![license](https://img.shields.io/github/license/n2ns/n2n-nexus)](https://github.com/n2ns/n2n-nexus/blob/main/LICENSE)
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol-blue)](https://modelcontextprotocol.io)
 [![node version](https://img.shields.io/node/v/n2n-nexus)](https://nodejs.org)
-[![DataFrog.io](https://datafrog.io/badges/datafrog.svg)](https://datafrog.io)
 
 [中文版](./docs/README_zh.md)
 

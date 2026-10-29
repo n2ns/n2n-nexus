@@ -4,7 +4,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.12.0] - 2026-10-29
 
 Upgrade the host and the client on every machine together (contract version 4). The database is upgraded in place: keep `nexus.db`.
 
