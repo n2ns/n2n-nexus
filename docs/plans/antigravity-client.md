@@ -102,7 +102,7 @@ Host (`host/internal/agents`):
   - The client prints `{}` when the host's output is null.
 - **Waiter reminder.** On the forwarded `UserPromptSubmit` of an `antigravity` session that has no background wait open, the host appends `texts.waiterReminder` to the injected text.
 - **Waits are not cancelled.** For `antigravity` sessions the host does not call `cancelBackgroundWaits` on events: the waiter outlives turns. Its requests already deliver nothing while the session is `working` or a listening Stop hook waits.
-- **No SessionEnd.** Antigravity has no such event, so a session goes offline through `staleSessionMs` as now. The waiter's requests keep a live session from going stale.
+- **No SessionEnd.** Antigravity has no such event, so a session goes offline through `staleSessionMs` as now. The waiter's requests keep a session that is not `working` from going stale; a `working` session is kept alive by its own events, so one whose Stop was lost still goes stale.
 
 Registered events and timeouts:
 - `SessionStart` and `PreInvocation`: `hookTimeoutSec`.
