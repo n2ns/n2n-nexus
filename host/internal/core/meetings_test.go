@@ -393,6 +393,28 @@ func TestJoinAndLeaveMeeting(t *testing.T) {
 	}
 }
 
+// A member that comes back after leaving joins anew: it reads from the newest
+// message, unless it says where to start.
+func TestRejoinAfterLeaveStartsFromLatest(t *testing.T) {
+	h := newHarnessWith(t, fakeIdentities{})
+	id := h.as("a", "start_meeting", map[string]any{"topic": "t"})["meetingId"].(string)
+	h.as("b", "join_meeting", map[string]any{"meetingId": id})
+	h.as("b", "leave_meeting", map[string]any{"meetingId": id})
+	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "m1"})
+	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "m2"})
+	h.as("b", "join_meeting", map[string]any{"meetingId": id})
+	if got := messageTexts(h.as("b", "read_messages", map[string]any{"meetingId": id})); len(got) != 0 {
+		t.Fatalf("cursor after rejoin %v", got)
+	}
+	h.as("b", "send_message", map[string]any{"meetingId": id, "message": "m3"})
+	// An explicit since on a rejoin is still honoured (own messages are never unread).
+	h.as("b", "leave_meeting", map[string]any{"meetingId": id})
+	h.as("b", "join_meeting", map[string]any{"meetingId": id, "since": "beginning"})
+	if got := messageTexts(h.as("b", "read_messages", map[string]any{"meetingId": id})); !slices.Equal(got, []string{"m1", "m2"}) {
+		t.Fatalf("since beginning after rejoin %v", got)
+	}
+}
+
 func TestListMeetingsMembers(t *testing.T) {
 	h := newHarnessWith(t, fakeIdentities{})
 	h.exec(`INSERT INTO agent_sessions (id, client, name, title, cwd, status, created_at, last_active_at, hostname, platform, utc_offset) VALUES ('codex:a', 'codex', 'alice', 'Fix login', '/w', 'listening', 'x', 'x', 'box', 'linux', 0)`)

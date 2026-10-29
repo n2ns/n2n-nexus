@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +79,60 @@ func TestMigrationRetentionKeepsMeetingsAndBackfills(t *testing.T) {
 	}
 	if got := count(`SELECT COUNT(*) FROM meeting_messages`) + count(`SELECT COUNT(*) FROM tasks WHERE source_meeting_id IS NOT NULL`); got != 0 {
 		t.Fatalf("%d rows left", got)
+	}
+}
+
+// A database of an older host whose migration series was restarted (its
+// user_version is within range but its schema is not the one the migrations
+// expect) fails inside a migration: the error says how to reset it.
+func TestMigrationFailureOnMigratedDatabaseSaysToReset(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, FileName)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The 0.9.0 schema, as far as 0003 and 0004 touch it: agent_sessions without
+	// label, meetings without current_proposal_id, at user_version 2.
+	for _, q := range []string{
+		`CREATE TABLE agent_sessions (
+			id TEXT PRIMARY KEY,
+			client TEXT NOT NULL CHECK(client IN ('claude', 'codex')),
+			name TEXT NOT NULL,
+			note TEXT NOT NULL DEFAULT '',
+			cwd TEXT NOT NULL,
+			status TEXT NOT NULL CHECK(status IN ('working', 'idle', 'listening', 'offline')),
+			listening INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			last_active_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE meetings (
+			id TEXT PRIMARY KEY,
+			topic TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('active', 'closed', 'archived')),
+			is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+			active_order INTEGER NOT NULL,
+			initiator TEXT NOT NULL,
+			participants TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			closed_at TEXT,
+			summary TEXT,
+			CHECK (is_default = 0 OR status = 'active')
+		)`,
+		`PRAGMA user_version = 2`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	_, err = Open(dir)
+	if err == nil {
+		t.Fatal("opened")
+	}
+	for _, want := range []string{"migration 0004_retention.sql", "no such column: current_proposal_id", "delete " + FileName, "reset the data directory"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
 	}
 }

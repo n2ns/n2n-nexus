@@ -159,6 +159,12 @@ func (s *Store) migrate() error {
 		}
 		err = s.Tx(context.Background(), func(tx *sql.Tx) error {
 			if _, err := tx.Exec(string(body)); err != nil {
+				// On a database that was migrated by an older host the schema may
+				// not be what this series expects (a release may restart it):
+				// say how to reset it. On a fresh database it is a host defect.
+				if current > 0 {
+					return fmt.Errorf("migration %s: %w: the database was written by another version of n2n-nexus-host: delete %s when the CHANGELOG of this release says to reset the data directory", m.name, err, FileName)
+				}
 				return fmt.Errorf("migration %s: %w", m.name, err)
 			}
 			rows, err := tx.Query("PRAGMA foreign_key_check")

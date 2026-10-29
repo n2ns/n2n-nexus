@@ -444,7 +444,7 @@ func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
 		// Only a member that has not left can change its place in the current draft's approver list.
 		member := !first && !leftAt.Valid
 		since := a.Since
-		if since == nil && first {
+		if since == nil && (first || leftAt.Valid) {
 			since = json.RawMessage(`"latest"`)
 		}
 		if since != nil {
