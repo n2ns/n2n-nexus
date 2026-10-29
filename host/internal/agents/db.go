@@ -245,11 +245,18 @@ func (a *Agents) setListening(id string, on bool) error {
 	return err
 }
 
+// oneLine collapses each run of control characters (line breaks included) in
+// a stored display text to one space: notifications frame such texts on single lines.
+func oneLine(s string) string {
+	return strings.Join(strings.FieldsFunc(s, unicode.IsControl), " ")
+}
+
 // setClientTitle stores the title the client's hook reported, cut to
 // maxTitleChars characters (code points, as the client and set_profile's
 // schema count), unless the session set its own with set_profile; an
 // unchanged title is not written.
 func (a *Agents) setClientTitle(id, title string) error {
+	title = oneLine(title)
 	if r := []rune(title); len(r) > a.o.Contract.Hook.Limits.MaxTitleChars {
 		title = string(r[:a.o.Contract.Hook.Limits.MaxTitleChars])
 	}
@@ -278,21 +285,22 @@ func (a *Agents) updateProfile(id string, name, note, title, label *string) (*se
 			}
 		}
 		if note != nil {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET note = ? WHERE id = ?", *note, id); err != nil {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET note = ? WHERE id = ?", oneLine(*note), id); err != nil {
 				return err
 			}
 		}
 		if title != nil {
+			t := oneLine(*title)
 			source := "self"
-			if *title == "" {
+			if t == "" {
 				source = ""
 			}
-			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET title = ?, title_source = ? WHERE id = ?", *title, source, id); err != nil {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET title = ?, title_source = ? WHERE id = ?", t, source, id); err != nil {
 				return err
 			}
 		}
 		if label != nil {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET label = ? WHERE id = ?", *label, id); err != nil {
+			if _, err := tx.ExecContext(bg, "UPDATE agent_sessions SET label = ? WHERE id = ?", oneLine(*label), id); err != nil {
 				return err
 			}
 		}

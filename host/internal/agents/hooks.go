@@ -47,6 +47,7 @@ func (a *Agents) revive(id string) error {
 func (a *Agents) machineOf(input map[string]any) (*machine, error) {
 	raw, _ := input["machine"].(map[string]any)
 	hostname, _ := raw["hostname"].(string)
+	hostname = oneLine(hostname)
 	platform, _ := raw["platform"].(string)
 	environment, hasEnvironment := raw["environment"].(string)
 	offset, isNumber := raw["utcOffset"].(float64)
@@ -88,8 +89,12 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 			return nil, nil, err
 		}
 		// The client is waiting on its behalf: activity, so a long wait does not let the session go stale.
-		if err := a.touch(id, client, "", nil, now); err != nil {
-			return nil, nil, err
+		// Not for a working session: its activity is its own events, and a wait is all that
+		// touches a session whose Stop was lost, which must go stale like any other.
+		if s.Status != "working" {
+			if err := a.touch(id, client, "", nil, now); err != nil {
+				return nil, nil, err
+			}
 		}
 		// A wait asks again every few minutes: other sessions that went stale meanwhile tell their subscribers.
 		if err := a.expireAll(now); err != nil {
