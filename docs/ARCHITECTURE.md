@@ -92,7 +92,9 @@ turn ends ──▶ Stop hook (announces unread, or listens)
                                      │  session shows as "listening"
                                      ├─ new message ─▶ { wake: notification, dispatchId }
                                      │     Claude Code: asyncRewake hook exits 2, the notification starts a turn
-                                     │     Codex: detached process runs `codex queue --thread <id> --message <notification>`,
+                                     │     Codex: detached process (on Windows started by PowerShell's Start-Process, which
+                                     │       passes no handles on: a process Node spawns would inherit the hook's output pipes
+                                     │       and Codex would wait for them) runs `codex queue --thread <id> --message <notification>`,
                                      │       then reports POST /api/hook {WakeResult, dispatch_id, ok}
                                      ├─ any other event of the session ─▶ null (wait ends)
                                      └─ time runs out or host shuts down ─▶ { timeout: true } (ask again)

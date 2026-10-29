@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -363,6 +364,32 @@ describe("n2n-nexus hook --wait", () => {
         // Let the detached process receive null and exit before teardown closes its connection.
         expect(await waitFor(() => fake.activeConnections() === 0, 5000)).toBe(true);
     });
+
+    it.skipIf(process.platform !== "win32")("codex on Windows: the wait copy does not hold the pipes of the hook Codex runs through PowerShell", async () => {
+        // The copy keeps waiting (timeout: true, answered late) while the hook's pipes must already have closed.
+        fake.respond = () => ({ delayMs: 8000, raw: JSON.stringify({ output: { timeout: true } }) });
+        const command = `& ${[process.execPath, ENTRY, "hook", "codex", "--wait", "--endpoint", fake.endpoint].map((arg) => `'${arg}'`).join(" ")}`;
+        const started = Date.now();
+        const result = await new Promise<CliResult>((resolve, reject) => {
+            const child = spawn(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", command], {
+                env: { ...process.env, NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home") }, stdio: ["pipe", "pipe", "pipe"]
+            });
+            let stdout = "";
+            let stderr = "";
+            child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+            child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+            child.on("error", reject);
+            child.on("close", (code) => resolve({ code, stdout, stderr, ms: Date.now() - started }));
+            child.stdin.end(JSON.stringify({ hook_event_name: "Stop", session_id: "c1" }));
+        });
+        expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
+        expect(result.ms).toBeLessThan(6000);
+        expect(await waitFor(() => fake.requests.length === 1, 5000)).toBe(true);
+        expect(fake.requests[0]).toEqual(waitRequest("c1"));
+        // End the copy: its next request gets null.
+        fake.respond = () => ({ raw: JSON.stringify({ output: null }) });
+        expect(await waitFor(() => fake.requests.length === 2 && fake.activeConnections() === 0, 15000)).toBe(true);
+    }, 30000);
 
     const wakeResult = (ok: boolean) => ({ url: "/api/hook", body: { client: "codex", input: { hook_event_name: "WakeResult", session_id: "c1", dispatch_id: "d7", ok } } });
 
