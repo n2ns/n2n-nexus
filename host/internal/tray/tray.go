@@ -63,7 +63,7 @@ func (a *app) ready() {
 	if err := service.EnsureAutostartDefault(a.o.Exe); err != nil {
 		a.logger.Printf("start at login: %v", err)
 	}
-	systray.SetIcon(trayIcon())
+	systray.SetTemplateIcon(templatePNG(32), trayIcon())
 	systray.SetTooltip(a.t.Tooltip)
 	a.status = systray.AddMenuItem("…", "")
 	a.status.Disable()

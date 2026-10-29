@@ -10,13 +10,39 @@ import (
 	"runtime"
 )
 
+// The network of the icon, in units of its width: the middle node (the host),
+// the four others (the conversations), and the links between them.
+var (
+	iconHub   = [2]float64{0.469, 0.527}
+	iconNodes = [][2]float64{{0.258, 0.293}, {0.727, 0.242}, {0.781, 0.688}, {0.313, 0.789}}
+	iconLinks = [][2][2]float64{{iconHub, iconNodes[0]}, {iconHub, iconNodes[1]}, {iconHub, iconNodes[2]}, {iconHub, iconNodes[3]}, {iconNodes[1], iconNodes[2]}}
+)
+
+const iconHubR, iconNodeR, iconLinkW = 0.094, 0.066, 0.025
+
+// network says which part of the network (x, y) is on, scaled by zoom around the centre.
+func network(x, y, zoom float64) (hub, node, link bool) {
+	x, y = (x-0.5)/zoom+0.5, (y-0.5)/zoom+0.5
+	if math.Hypot(x-iconHub[0], y-iconHub[1]) <= iconHubR {
+		return true, false, false
+	}
+	for _, n := range iconNodes {
+		if math.Hypot(x-n[0], y-n[1]) <= iconNodeR {
+			return false, true, false
+		}
+	}
+	for _, l := range iconLinks {
+		if segmentDist(x, y, l[0][0], l[0][1], l[1][0], l[1][1]) <= iconLinkW {
+			return false, false, true
+		}
+	}
+	return false, false, false
+}
+
 // iconPNG draws the tray icon at size×size: a charcoal rounded tile with a
-// one-pixel grey edge, and on it a small network: a red node in the middle
-// (the host) joined by light blue links to four white nodes (the
-// conversations), two of which are also joined to each other. The README logo
-// (assets/n2n-nexus-logo.png) is the same drawing at 512 px.
+// one-pixel grey edge, the hub red, the other nodes white, the links light
+// blue. The README logo (assets/n2n-nexus-logo.png) is the same drawing at 512 px.
 func iconPNG(size int) []byte {
-	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	var (
 		top, bottom = color.NRGBA{R: 0x2a, G: 0x2a, B: 0x2e, A: 0xff}, color.NRGBA{R: 0x0e, G: 0x0e, B: 0x10, A: 0xff}
 		edge        = color.NRGBA{R: 0x8e, G: 0x8e, B: 0x93, A: 0xff}
@@ -24,37 +50,43 @@ func iconPNG(size int) []byte {
 		white       = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 		red         = color.NRGBA{R: 0xff, G: 0x2d, B: 0x3a, A: 0xff}
 	)
-	// In units of the icon's width: the middle node, the four others, and the links between them.
-	hub := [2]float64{0.469, 0.527}
-	nodes := [][2]float64{{0.258, 0.293}, {0.727, 0.242}, {0.781, 0.688}, {0.313, 0.789}}
-	links := [][2][2]float64{{hub, nodes[0]}, {hub, nodes[1]}, {hub, nodes[2]}, {hub, nodes[3]}, {nodes[1], nodes[2]}}
 	const half, radius = 0.48, 0.14 // the tile
 	px := 1 / float64(size)
-	shade := func(x, y float64) (color.NRGBA, bool) {
+	return draw(size, func(x, y float64) (color.NRGBA, bool) {
 		if !inRoundRect(x, y, half, radius) {
 			return color.NRGBA{}, false
 		}
 		if !inRoundRect(x, y, half-px, radius-px) {
 			return edge, true
 		}
-		if math.Hypot(x-hub[0], y-hub[1]) <= 0.094 {
+		switch h, n, l := network(x, y, 1); {
+		case h:
 			return red, true
+		case n:
+			return white, true
+		case l:
+			return link, true
 		}
-		for _, n := range nodes {
-			if math.Hypot(x-n[0], y-n[1]) <= 0.066 {
-				return white, true
-			}
-		}
-		for _, l := range links {
-			if segmentDist(x, y, l[0][0], l[0][1], l[1][0], l[1][1]) <= 0.025 {
-				return link, true
-			}
-		}
-		t := y
-		mix := func(a, b uint8) uint8 { return uint8(float64(a)*(1-t) + float64(b)*t) }
+		mix := func(a, b uint8) uint8 { return uint8(float64(a)*(1-y) + float64(b)*y) }
 		return color.NRGBA{R: mix(top.R, bottom.R), G: mix(top.G, bottom.G), B: mix(top.B, bottom.B), A: 0xff}, true
-	}
-	// 4×4 samples per pixel smooth the edges.
+	})
+}
+
+// templatePNG draws the macOS menu bar icon: the network alone in black,
+// enlarged to fill the square. macOS shows a template image black or white to
+// suit the menu bar and inverts it when the menu is open.
+func templatePNG(size int) []byte {
+	black := color.NRGBA{A: 0xff}
+	return draw(size, func(x, y float64) (color.NRGBA, bool) {
+		h, n, l := network(x, y, 1.3)
+		return black, h || n || l
+	})
+}
+
+// draw renders shade over size×size pixels, 4×4 samples per pixel to smooth the edges.
+func draw(size int, shade func(x, y float64) (color.NRGBA, bool)) []byte {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	px := 1 / float64(size)
 	const n = 4
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
@@ -115,7 +147,8 @@ func iconICO() []byte {
 	return buf.Bytes()
 }
 
-// trayIcon is the icon in the format systray takes on this platform.
+// trayIcon is the icon in the format systray takes on this platform; on macOS
+// systray shows templatePNG instead.
 func trayIcon() []byte {
 	if runtime.GOOS == "windows" {
 		return iconICO()

@@ -123,6 +123,26 @@ func TestIcons(t *testing.T) {
 			t.Fatalf("png %d: opaque corner", size)
 		}
 	}
+	// The macOS template image: black only, transparent around the network.
+	tmpl, err := png.Decode(bytes.NewReader(templatePNG(32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opaque := 0
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 32; x++ {
+			r, g, b, a := tmpl.At(x, y).RGBA()
+			if r|g|b != 0 {
+				t.Fatalf("template pixel %d,%d is not black", x, y)
+			}
+			if a == 0xffff {
+				opaque++
+			}
+		}
+	}
+	if _, _, _, a := tmpl.At(0, 0).RGBA(); a != 0 || opaque == 0 {
+		t.Fatalf("template: corner alpha %d, %d opaque pixels", a, opaque)
+	}
 	ico := iconICO()
 	var header [3]uint16
 	_ = binary.Read(bytes.NewReader(ico), binary.LittleEndian, &header)

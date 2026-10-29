@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- New tray icon, also the README logo: a small network on a charcoal tile with a grey edge, a red node in the middle joined by light blue links to four white nodes. It replaces the teal disc in the tray and the hexagon logo.
+- New tray icon, also the README logo: a small network on a charcoal tile with a grey edge, a red node in the middle joined by light blue links to four white nodes. It replaces the teal disc in the tray and the hexagon logo; the old icon and banner files are gone from `assets`. On macOS the menu bar shows the network alone as a template image, black or white to suit the menu bar.
 
 ### Fixed
 
