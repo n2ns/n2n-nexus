@@ -128,6 +128,7 @@ export class NexusClient {
             "POST", "/api/tools/call",
             { tool: name, args: args || {}, ...(instanceId ? { instanceId } : {}), ...(caller ? { caller } : {}) }
         );
+        if (!res || typeof res !== "object") throw new NexusTransportError("Invalid tool call response from n2n-nexus-host");
         if (!res.ok) throw new NexusToolError(res.error || "Tool call failed", 200);
         return res.result;
     }

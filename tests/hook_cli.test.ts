@@ -275,6 +275,19 @@ describe("NexusClient, error status with a non-object body", () => {
             await server.close();
         }
     });
+
+    it("rejects a tool call answered 200 with a non-object body as a transport error", async () => {
+        const server = await listen((req, res) => {
+            req.resume();
+            req.on("end", () => { res.writeHead(200, { "Content-Type": "application/json" }); res.end("null"); });
+        });
+        try {
+            const client = new NexusClient({ endpoint: server.endpoint, timeoutMs: 2000 });
+            await expect(client.callTool("peers", {})).rejects.toBeInstanceOf(NexusTransportError);
+        } finally {
+            await server.close();
+        }
+    });
 });
 
 describe("waitForWake recovery", () => {

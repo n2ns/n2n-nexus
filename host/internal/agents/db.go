@@ -245,10 +245,11 @@ func (a *Agents) setListening(id string, on bool) error {
 	return err
 }
 
-// oneLine collapses each run of control characters (line breaks included) in
-// a stored display text to one space: notifications frame such texts on single lines.
+// oneLine collapses each run of control characters (line breaks included) and
+// Unicode line and paragraph separators in a stored display text to one space:
+// notifications frame such texts on single lines.
 func oneLine(s string) string {
-	return strings.Join(strings.FieldsFunc(s, unicode.IsControl), " ")
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return unicode.In(r, unicode.Cc, unicode.Zl, unicode.Zp) }), " ")
 }
 
 // setClientTitle stores the title the client's hook reported, cut to

@@ -10,6 +10,11 @@
 - [ ] Tell automatic turns apart from user prompts by content instead of the one-minute window (see ARCHITECTURE known limits)
 - [ ] Check whether Codex restarts the stdio adapter repeatedly when a chat opens (the HTTP probe saw a dozen short connections per chat) and whether the host sees instances flapping
 - [ ] Consider showing Codex `client_type` (desktop app / CLI) from `_meta["x-codex-turn-metadata"]` in peers; store only that field
+- [ ] Low findings of the 2026-10-29 review, left as they are:
+  - A call without `instanceId` runs `join_meeting`, `send_message` and `stance` as the shared identity `unknown` (`host/internal/core/messages.go`, `api.Call.Actor`); only `read_messages` refuses. Two hand-written clients without it share one member row and one read cursor. Decide: refuse like `read_messages`, or keep.
+  - Meeting news announced only in a sub-agent's PostToolUse context is marked announced (`notifyFresh(markNone)` → `cursors.Announced`), so the main conversation is neither held nor woken for it later (`host/internal/agents/agents.go`, `announce`). Matches "tool-call notifications stay unread" in the docs; confirm it is intended.
+  - UDP discovery answers any 18-byte query with a ~70-byte reply to the unverified source address (`host/internal/discovery/discovery.go`): a ~4x reflection vector, LAN-scoped; the Windows firewall rules no longer apply to public networks.
+  - The adapter pins `clientName` on its first request (`identifyClient` in `src/server/nexus.ts`); a client that omits `io.modelcontextprotocol/clientInfo` there never gets a `caller`. Not reproducible with the SDK client (its 2026-07-28 codec stamps clientInfo on every request), only with a hand-written one.
 - [ ] Meetings, from the feedback of the sessions in meetings 20261028195736-n2n-nexus-jseh and 20261028212543-n2n-nexus-dac6, not covered by the user-seat plan ([docs/plans/human-seat-meetings.md](docs/plans/human-seat-meetings.md)) (to be discussed, nothing decided):
   - Sessions do not learn that a meeting started unless invited; proposed: tell every online session (without waking it) when a meeting starts.
   - `join_meeting` refuses a closed meeting; proposed: say in the error that `read_messages(meetingId)` reads it.

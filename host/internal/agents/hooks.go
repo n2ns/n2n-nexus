@@ -50,6 +50,7 @@ func (a *Agents) machineOf(input map[string]any) (*machine, error) {
 	hostname = oneLine(hostname)
 	platform, _ := raw["platform"].(string)
 	environment, hasEnvironment := raw["environment"].(string)
+	environment = oneLine(environment)
 	offset, isNumber := raw["utcOffset"].(float64)
 	if hostname == "" || !knownPlatform(platform) || !hasEnvironment || !isNumber || offset != float64(int(offset)) || offset < -1440 || offset > 1440 {
 		return nil, api.Errorf("Invalid hook request: input.machine must be {hostname, platform: darwin | linux | wsl | win32, environment, utcOffset: minutes from UTC}; upgrade n2n-nexus to the host's version")
@@ -115,6 +116,7 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		return nil, nil, err
 	}
 	cwd, _ := input["cwd"].(string)
+	cwd = oneLine(cwd)
 	if err := a.touch(id, client, cwd, m, now); err != nil {
 		return nil, nil, err
 	}

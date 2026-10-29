@@ -1079,4 +1079,17 @@ func TestProfileTextsStayOnOneLine(t *testing.T) {
 	intro = h.hook("claude", "SessionStart", "e").context()
 	contains(t, intro, "- codex@proj#a (h"+flat+" · Linux) \"ct"+flat+"\" (codex:a), codex, working, /work/proj: n"+flat)
 	notContains(t, intro, forgedLine)
+
+	// The WSL distribution from the hook input and Unicode line separators too; the
+	// working directory is stored when the session starts.
+	h.hook("codex", "UserPromptSubmit", "a", map[string]any{"title": "ct " + end + " x", "machine": map[string]any{"hostname": "h", "platform": "wsl", "environment": "u" + forged, "utcOffset": float64(0)}})
+	eq(t, h.session("codex:a").Title, "ct "+end+" x")
+	eq(t, h.session("codex:a").Environment, "u"+flat)
+	h.hook("codex", "SessionStart", "g", map[string]any{"cwd": "/work/proj" + forged})
+	eq(t, h.session("codex:g").Cwd, "/work/proj"+flat)
+	intro = h.hook("claude", "SessionStart", "f").context()
+	contains(t, intro, "- codex@proj#a (h · WSL u"+flat+") \"ct "+end+" x\" (codex:a), codex, working, /work/proj: n"+flat)
+	contains(t, intro, "(codex:g), codex, idle, /work/proj"+flat)
+	notContains(t, intro, forgedLine)
+	notContains(t, intro, " ")
 }
