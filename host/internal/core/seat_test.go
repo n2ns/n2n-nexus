@@ -178,13 +178,27 @@ func TestStanceGroundsAndChanges(t *testing.T) {
 	}
 }
 
-// A meeting keeps the seat's rules after the seat's session was cleaned up.
+// A meeting keeps the seat's rules after the seat's session was cleaned up
+// (the agents' cleanup deletes the session with its read cursors; the
+// meeting's member row stays): nobody else ends it, and another session
+// takes the seat and decides.
 func TestSeatOutlivesItsSession(t *testing.T) {
 	h, id := seatMeeting(t)
+	texts := h.core.d.Contract.Hook.Texts
+	h.post("b", id, "plan", true)
+	draft := h.count(`SELECT MAX(seq) FROM meeting_messages WHERE meeting_id = ?`, id)
+	h.exec(`DELETE FROM read_cursors WHERE instance_id = 'codex:a'`)
 	h.exec(`DELETE FROM agent_sessions WHERE id = 'codex:a'`)
 	h.refusedAs("b", "end_meeting", map[string]any{"meetingId": id, "summary": "done"})
 	if m := h.listing(id); m.Status != "active" || *m.Seat != "codex:a" {
 		t.Fatalf("after cleanup %+v", m)
+	}
+	h.as("c", "join_meeting", map[string]any{"meetingId": id, "seat": "user"})
+	if _, _, text := h.lastMessage(id); text != fmt.Sprintf(texts.SeatMoved, "name-a (codex:a)", "name-c (codex:c)") {
+		t.Fatalf("moved %q", text)
+	}
+	if res := h.stanceAs("c", id, draft, "endorse", "go"); res["decisionId"] == nil {
+		t.Fatalf("the new seat did not decide %v", res)
 	}
 }
 
@@ -217,5 +231,39 @@ func TestGroundsFormat(t *testing.T) {
 	}
 	for _, note := range []string{"见 docs/方案.md", "见 ~/notes/x", "方案.md"} {
 		h.as("b", "stance", map[string]any{"meetingId": id, "messageId": draft, "stance": "object", "note": note})
+	}
+}
+
+// A change of the approvers in a seated meeting is told without the seat,
+// which is in none of the approver lists.
+func TestApproversChangedLeavesOutTheSeat(t *testing.T) {
+	h, id := seatMeeting(t)
+	texts := h.core.d.Contract.Hook.Texts
+	h.post("b", id, "plan", true)
+	draft := h.count(`SELECT MAX(seq) FROM meeting_messages WHERE meeting_id = ?`, id)
+	h.as("c", "leave_meeting", map[string]any{"meetingId": id})
+	if _, _, text := h.lastMessage(id); text != fmt.Sprintf(texts.ApproversChanged, draft, 2, "codex:b") {
+		t.Fatalf("change %q", text)
+	}
+	if m := h.listing(id); fmt.Sprint(m.Proposal.Required) != "[codex:b]" {
+		t.Fatalf("required %v", m.Proposal.Required)
+	}
+}
+
+// Reading a meeting (unread mode) also announces what was read: the next
+// notification does not repeat it.
+func TestReadingAMeetingAnnouncesIt(t *testing.T) {
+	h, id := seatMeeting(t)
+	h.post("a", id, "one", false)
+	h.post("a", id, "two", false)
+	h.as("b", "read_messages", map[string]any{"meetingId": id})
+	if got, want := h.count(`SELECT notified_id FROM meeting_members WHERE meeting_id = ? AND member_id = 'codex:b'`, id), h.count(`SELECT MAX(id) FROM meeting_messages WHERE meeting_id = ?`, id); got != want {
+		t.Fatalf("notified_id %d, want %d", got, want)
+	}
+	// Not back: a history read moves nothing.
+	h.exec(`UPDATE meeting_members SET notified_id = 1 WHERE meeting_id = ? AND member_id = 'codex:b'`, id)
+	h.as("b", "read_messages", map[string]any{"meetingId": id, "latest": true})
+	if got := h.count(`SELECT notified_id FROM meeting_members WHERE meeting_id = ? AND member_id = 'codex:b'`, id); got != 1 {
+		t.Fatalf("history read announced %d", got)
 	}
 }

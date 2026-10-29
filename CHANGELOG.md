@@ -4,6 +4,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Meeting news no longer repeats what `read_messages` returned in unread mode: reading a meeting also marks those messages announced, so the next hook notification shows only what came after.
+- In a meeting with the user's seat, the message about a changed approver list no longer names the seat, which is in none of the approver lists.
+
 ## [0.12.0] - 2026-10-29
 
 Upgrade the host and the client on every machine together (contract version 4). The database is upgraded in place: keep `nexus.db`.

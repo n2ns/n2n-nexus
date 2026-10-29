@@ -305,7 +305,12 @@ func (c *Core) approversChanged(tx *sql.Tx, meetingID, byID string, d draftRow) 
 	if err != nil || m.status != "active" {
 		return false, false, err
 	}
-	required, err := approverIDs(tx, meetingID)
+	// Told without the seat, which is in none of the approver lists.
+	seat, err := seatOf(tx, meetingID)
+	if err != nil {
+		return false, false, err
+	}
+	_, _, required, _, err := consensusOn(tx, meetingID, seat)
 	if err != nil {
 		return false, false, err
 	}

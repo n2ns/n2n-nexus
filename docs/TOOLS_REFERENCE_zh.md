@@ -358,7 +358,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 行为：
 
 - 结果：`{ ok, meetingId, mode, approver, identity, delivery }`。`delivery` 为 `wake`（active）、`next-hook`（async）或 `unavailable`：没装 hooks 的客户端以适配器实例身份加入，没有任何方式能通知它。
-- 新消息通过 hooks 按会议提醒：`Meeting "<主题>" (<id>): N new message(s), #a–#b:`，然后每条消息夹在 `--- Meeting message #n from <发送方> (<机器>) at <时间>[ (<类别>)] ---` 和 `--- End of meeting message #n ---` 之间。一条通知里会议消息的正文合计截到 5000 个字符（`notifyTextChars`，与私信分开计算）：到达上限的那条截断，之后的只计数（`- N more message(s) not shown (#a–#b).`）；`read_messages(meetingId)` 返回它们。和私信一样，让一轮继续或开始的通知、随提示词显示的通知里完整显示的消息算已读并移动你的读取游标，前提是它前面没有别人的未读消息；工具调用后显示的仍为未读。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
+- 新消息通过 hooks 按会议提醒：`Meeting "<主题>" (<id>): N new message(s), #a–#b:`，然后每条消息夹在 `--- Meeting message #n from <发送方> (<机器>) at <时间>[ (<类别>)] ---` 和 `--- End of meeting message #n ---` 之间。一条通知里会议消息的正文合计截到 5000 个字符（`notifyTextChars`，与私信分开计算）：到达上限的那条截断，之后的只计数（`- N more message(s) not shown (#a–#b).`）；`read_messages(meetingId)` 返回它们。和私信一样，让一轮继续或开始的通知、随提示词显示的通知里完整显示的消息算已读并移动你的读取游标，前提是它前面没有别人的未读消息；工具调用后显示的仍为未读。`read_messages` 以未读模式返回过的消息之后不再提醒。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
 - 加入前的消息不会提醒。已是成员时再次加入只修改 `mode` 和 `approver`；改为 `async` 即可暂停。`leave_meeting` 之后再加入，从最新一条开始。
 - 记录 `meeting.join` 事件。
 

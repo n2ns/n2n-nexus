@@ -78,7 +78,7 @@ describe("tool results", () => {
         await call("read_messages", { meetingId: meeting.meetingId });
         await call("stance", { meetingId: meeting.meetingId, messageId: draft.currentProposalId, stance: "endorse" });
         await call("list_meetings", {});
-        // The user's seat: its veto, a proposed end by another, its end.
+        // The user's seat: its approval of the draft, a proposed end by another, its end.
         const seated = await call("start_meeting", { topic: "Seated", seat: "user" });
         await call("join_meeting", { meetingId: seated.meetingId, since: "beginning" }, "peer");
         await call("read_messages", { meetingId: seated.meetingId }, "peer");

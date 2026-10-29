@@ -343,10 +343,18 @@ func (c *Core) readMessages(call api.Call, a readMessagesArgs) (any, error) {
 				return nil
 			}
 		}
-		_, err = tx.Exec(`
+		if _, err = tx.Exec(`
 			INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT (instance_id, context_type, context_id) DO UPDATE SET last_read_id = excluded.last_read_id, updated_at = excluded.updated_at`,
-			id.ID, src.contextType, src.contextID, cursor, c.now())
+			id.ID, src.contextType, src.contextID, cursor, c.now()); err != nil {
+			return err
+		}
+		if src.contextType != "meeting" {
+			return nil
+		}
+		// What a member read is announced: its next notification does not repeat it.
+		_, err = tx.Exec(`UPDATE meeting_members SET notified_id = ? WHERE meeting_id = ? AND member_id = ? AND notified_id < ?`,
+			cursor, src.contextID, id.ID, cursor)
 		return err
 	})
 	if err != nil {
