@@ -191,6 +191,14 @@ describe("resolveEndpoint", () => {
         expect(fs.readdirSync(path.dirname(CACHE))).toEqual(["discovered-endpoint"]);
     });
 
+    it("leaves no temporary file behind when the cache cannot be renamed into place", async () => {
+        await responder(4321);
+        vi.spyOn(fs, "renameSync").mockImplementationOnce(() => { throw new Error("EPERM"); });
+        const found = await resolveEndpoint(DISCOVER_ENDPOINT);
+        expect(portOf(found)).toBe(4321);                                      // the lookup still answers
+        expect(fs.readdirSync(path.dirname(CACHE))).toEqual([]);
+    });
+
     it("caches 'none answered' only for a minute", async () => {
         expect(await resolveEndpoint(DISCOVER_ENDPOINT)).toBe(LOCAL_ENDPOINT);
         await responder(4321);

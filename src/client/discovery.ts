@@ -130,7 +130,12 @@ export async function resolveEndpoint(configured: string, options: { fresh?: boo
         fs.mkdirSync(path.dirname(target), { recursive: true });
         const tmp = `${target}.${process.pid}.tmp`;
         fs.writeFileSync(tmp, endpoint + "\n");
-        fs.renameSync(tmp, target);
+        try {
+            fs.renameSync(tmp, target);
+        } catch (e) {
+            fs.rmSync(tmp, { force: true });
+            throw e;
+        }
     } catch { /* caching is best effort */ }
     return endpoint;
 }
