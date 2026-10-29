@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -78,5 +79,34 @@ func TestListenNetwork(t *testing.T) {
 		if got := listenNetwork(host); got != want {
 			t.Errorf("%s: %s, want %s", host, got, want)
 		}
+	}
+}
+
+// A host bound to a name is addressed by that name, by its own health probes
+// among others, so the name is allowed without listing it in allowedHosts.
+func TestBoundNameAllowed(t *testing.T) {
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		t.Skip("no hostname")
+	}
+	if ln, err := net.Listen("tcp", net.JoinHostPort(name, "0")); err != nil {
+		t.Skipf("hostname %q does not bind: %v", name, err)
+	} else {
+		ln.Close()
+	}
+	s := config.Defaults()
+	s.Host, s.Port = name, 0
+	h, err := Start(Options{Version: "test", DataDir: t.TempDir(), Settings: s, Logger: NewLogger(io.Discard)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Stop()
+	res, err := http.Get(fmt.Sprintf("http://%s/health", net.JoinHostPort(name, fmt.Sprint(h.Addr.Port))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("GET /health as %s: %d, want 200", name, res.StatusCode)
 	}
 }

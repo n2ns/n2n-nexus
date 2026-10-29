@@ -99,9 +99,14 @@ func start(o Options, lock *Lock) (*Host, error) {
 		st.Close()
 		return nil, err
 	}
+	// A host bound to a name is addressed by that name, by its own health probes among others.
+	allowed := o.Settings.AllowedHosts
+	if o.Settings.Host != "" && net.ParseIP(o.Settings.Host) == nil {
+		allowed = append(append([]string{}, allowed...), o.Settings.Host)
+	}
 	srv := api.New(api.Options{
 		Version: o.Version, Contract: contract, Clock: clk,
-		AllowedHosts: o.Settings.AllowedHosts, RateLimit: o.Settings.RateLimit, RateBurst: o.Settings.RateBurst,
+		AllowedHosts: allowed, RateLimit: o.Settings.RateLimit, RateBurst: o.Settings.RateBurst,
 		Logger: o.Logger, Health: ag.Health, SessionOf: ag.SessionOf,
 	})
 	c := core.New(core.Deps{Store: st, Clock: clk, Contract: contract, Logger: o.Logger, Identities: ag, Meetings: ag,

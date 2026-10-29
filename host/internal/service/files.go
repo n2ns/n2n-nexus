@@ -179,10 +179,10 @@ func FirewallRuleNames(port, discoveryPort int) (tcp, udp string) {
 func WindowsFirewallScript(port, discoveryPort int) string {
 	tcp, udp := FirewallRuleNames(port, discoveryPort)
 	inner := fmt.Sprintf(`netsh advfirewall firewall delete rule name="%[1]s" | Out-Null
-netsh advfirewall firewall add rule name="%[1]s" dir=in action=allow protocol=TCP localport=%[2]d | Out-Null
+netsh advfirewall firewall add rule name="%[1]s" dir=in action=allow protocol=TCP localport=%[2]d profile=private,domain | Out-Null
 if ($LASTEXITCODE -ne 0) { exit 1 }
 netsh advfirewall firewall delete rule name="%[3]s" | Out-Null
-netsh advfirewall firewall add rule name="%[3]s" dir=in action=allow protocol=UDP localport=%[4]d | Out-Null
+netsh advfirewall firewall add rule name="%[3]s" dir=in action=allow protocol=UDP localport=%[4]d profile=private,domain | Out-Null
 if ($LASTEXITCODE -ne 0) { exit 1 }
 exit 0
 `, tcp, port, udp, discoveryPort)

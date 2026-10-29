@@ -102,8 +102,8 @@ func TestWindowsFirewallScript(t *testing.T) {
 	b64 = b64[:strings.Index(b64, "'")]
 	inner := decodePS(t, b64)
 	mustContain(t, inner,
-		`netsh advfirewall firewall add rule name="n2n-nexus-host TCP 5799" dir=in action=allow protocol=TCP localport=5799`,
-		`netsh advfirewall firewall add rule name="n2n-nexus-host UDP 5800 (discovery)" dir=in action=allow protocol=UDP localport=5800`,
+		`netsh advfirewall firewall add rule name="n2n-nexus-host TCP 5799" dir=in action=allow protocol=TCP localport=5799 profile=private,domain`,
+		`netsh advfirewall firewall add rule name="n2n-nexus-host UDP 5800 (discovery)" dir=in action=allow protocol=UDP localport=5800 profile=private,domain`,
 		`netsh advfirewall firewall delete rule name="n2n-nexus-host TCP 5799"`,
 	)
 }

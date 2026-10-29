@@ -114,7 +114,7 @@ The adapter can start before the host. It loads the host's tool list once the ho
 By default the host listens on `127.0.0.1` only. To make it the host for other machines on a trusted network:
 
 1. On the host machine, turn LAN access on:
-   - Tray: check **Allow LAN access**. The tray writes `"host": "0.0.0.0"` to `settings.json` and restarts the host. On Windows it adds inbound firewall rules for the TCP port and the UDP discovery port (5688 and 5688 by default) after a UAC prompt; on macOS and Linux it tells you which ports to allow in your firewall.
+   - Tray: check **Allow LAN access**. The tray writes `"host": "0.0.0.0"` to `settings.json` and restarts the host. On Windows it adds inbound firewall rules for the TCP port and the UDP discovery port (5688 and 5688 by default) on private and domain networks, not public ones, after a UAC prompt; on macOS and Linux it tells you which ports to allow in your firewall.
    - Service: `n2n-nexus-host service install --host 0.0.0.0` writes the address to `settings.json`; allow TCP 5688 and UDP 5688 in the firewall yourself.
 2. On the other machines, install the client with `--endpoint discover` (for example `n2n-nexus install claude --endpoint discover`), or with the host's address.
 

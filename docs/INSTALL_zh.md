@@ -114,7 +114,7 @@ Claude Code 不需要这一步：`install claude` 写入 `settings.json` 后，h
 host 默认只监听 `127.0.0.1`。要让它成为可信网络里其他机器的 host：
 
 1. 在 host 所在的机器上打开局域网访问：
-   - 托盘：勾选 **允许局域网访问**。托盘把 `"host": "0.0.0.0"` 写进 `settings.json` 并重启 host。Windows 上会在 UAC 确认后添加 TCP 端口和 UDP 发现端口（默认都是 5688）的入站防火墙规则；macOS 和 Linux 上会提示需要在防火墙放行的端口。
+   - 托盘：勾选 **允许局域网访问**。托盘把 `"host": "0.0.0.0"` 写进 `settings.json` 并重启 host。Windows 上会在 UAC 确认后添加 TCP 端口和 UDP 发现端口（默认都是 5688）的入站防火墙规则，只对专用和域网络生效，不含公用网络；macOS 和 Linux 上会提示需要在防火墙放行的端口。
    - 服务：`n2n-nexus-host service install --host 0.0.0.0` 把地址写进 `settings.json`；防火墙里的 TCP 5688 和 UDP 5688 需要自己放行。
 2. 在其他机器上用 `--endpoint discover` 安装客户端（例如 `n2n-nexus install claude --endpoint discover`），或者直接写 host 的地址。
 
