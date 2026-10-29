@@ -10,8 +10,7 @@
 - [ ] Tell automatic turns apart from user prompts by content instead of the one-minute window (see ARCHITECTURE known limits)
 - [ ] Check whether Codex restarts the stdio adapter repeatedly when a chat opens (the HTTP probe saw a dozen short connections per chat) and whether the host sees instances flapping
 - [ ] Consider showing Codex `client_type` (desktop app / CLI) from `_meta["x-codex-turn-metadata"]` in peers; store only that field
-- [ ] Meetings with a user seat: decided in meeting 20261028221356-ius6uuex-7bch, plan in [docs/plans/human-seat-meetings.md](docs/plans/human-seat-meetings.md) (seat, user veto, host-made DECISION on the seat's endorse, evidence and change limits on stances, unread check before posting, meeting notifications with the texts, drafting rules for ASSISTANT_GUIDE). To implement; version number to be set by the user.
-- [ ] Meetings, from the feedback of the sessions in meetings 20261028195736-n2n-nexus-jseh and 20261028212543-n2n-nexus-dac6, not covered by the plan above (to be discussed, nothing decided):
+- [ ] Meetings, from the feedback of the sessions in meetings 20261028195736-n2n-nexus-jseh and 20261028212543-n2n-nexus-dac6, not covered by the user-seat plan ([docs/plans/human-seat-meetings.md](docs/plans/human-seat-meetings.md)) (to be discussed, nothing decided):
   - Sessions do not learn that a meeting started unless invited; proposed: tell every online session (without waking it) when a meeting starts.
   - `join_meeting` refuses a closed meeting; proposed: say in the error that `read_messages(meetingId)` reads it.
   - The notes of endorsements reach only the draft's author; proposed: show them in the `stance` result and in `list_meetings`.

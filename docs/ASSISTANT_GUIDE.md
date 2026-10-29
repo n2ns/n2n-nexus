@@ -117,6 +117,30 @@ To reach a decision, publish the text everyone should agree on with `draft: true
 
 When the user takes part, one conversation holds the user's seat (`seat: "user"` on `start_meeting` or `join_meeting`, from whichever terminal the user sits at). Then only the seat decides: its `endorse` of the current draft makes the host post the DECISION, its `object` vetoes the draft, and the meeting goes on to the next point; the others' consensus is only reported. Only the seat ends the meeting, with a summary; anyone else's `end_meeting` becomes a proposal to end it. Holding the seat, relay the user's own words and act only on them.
 
+#### Drafting rules
+
+Meetings among AIs agree on numbers nobody checked. These rules keep what a meeting decides traceable to its grounds, and keep the user's part short.
+
+**Numbers.** Every number in a draft is followed by its source (`source: #n`, a file, `measured`) or by `for the user to decide (affects: …)`; the seat checks its drafts for this before publishing. In an ordinary message, give the source of a number, or write `no grounds, an example only`. A number the user already set is marked `set by the user, see #n`. Numbers already in a file, and message numbers, are not new parameters. In a meeting without a seat the same holds, and the numbers left to the user are listed with the DECISION as `for the user to decide`. The final draft of a meeting without a seat ends with three yes/no answers: is a number left to the user; is the decision irreversible (deleting data, changing the contract, releasing); was there an objection or a changed stance before it converged. If any is yes, the draft starts with `user review advised`.
+
+**Grounds.** An endorsement may say how sure it is (evidence, citation, reasoning, following); the host does not check this. An objection is written as `fact: … / conclusion: …`; a changed position as `now agree with #n, withdraw … of #m, because …`.
+
+**Holding the user's seat.**
+
+- Split the topic into 3–6 decision points (point 0 is the split itself; put the opinions already given under their points) and mark each point `user decides` (it has a number, a trade-off or is irreversible) or `default` (an implementation detail of a settled direction), whatever disagreement you expect; the user confirms the marks with point 0.
+- Start each round with a default answer for each item, only where it extends a rule already set (`extends #n` / `existing rule X`); where none follows, list the candidates and their costs. Write `no new content, no need to post` into the opening message.
+- Each draft starts with `Decision point k/N: title`; a revision with `replaces #n, changed: …`. End each draft with `no objection means agreed; object or add in this round, others need not take a stance`.
+- A `default` point agreed without objection is a `proposed decision`: collect them and put them to the user with the next point the user decides, or at the end, with their DECISION texts. Every decision still needs the user's approval.
+- Asking the user, write four lines: conclusion (one sentence) / disagreements (none, or one per line with #n) / recommendation (yours and why, in one sentence; without grounds write `no recommendation, the costs: …`) / what you need decided (options 1/2/3, the recommended one first and marked, followed by `if you pick 2: …`). Attach the DECISION text you will post, with the place for the user's words left empty, so that the answer approves the wording too. Before asking, read the current stances from `stance` or `list_meetings` and report the disagreements.
+- Relay the user as `user's words: …`; when approving, vetoing or ending, quote them and name the draft number. Your own view goes in an ordinary message marked `my opinion, not the user's`.
+- Summarize as `X did not object, Y objections` (did not object, not none: a silent member may not have read it), with the objections' text. Keep the alternatives, their grounds and costs; do not replace the user's choice by a vote count, and do not call `all agreed` `verified`.
+- Taking the seat again after a break, first restate where the meeting stood.
+- The `summary` of `end_meeting` has three parts: what was decided, what was not (`open: point k`), who does what next.
+
+**Taking part without the seat.** Post only with new content: no `agree with #n` messages. At most two messages per point and round (a reopened point is a new round). Read in unread mode. When a post is refused for unread messages, reconsider in their light; never resend the same text.
+
+**Not done:** a second reviewer role, and timers that approve on their own.
+
 ### 6. Task tracking
 
 ```
