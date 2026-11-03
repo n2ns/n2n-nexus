@@ -4,12 +4,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.12.4] - 2026-11-03
+## [0.12.5] - 2026-11-04
+
+Upgrade the host; the client needs no update for these tools (contract version 4). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
 
 ### Added
 
-- `broadcast` sends one notice to every conversation that is online at that moment, the sender excepted; `project` limits it to the conversations working in that directory or below it. It is fire and forget: the host picks the recipients and delivers it, the sender gets only a `broadcastId` and learns nothing about who got or read it, and offline conversations or ones that start later never get it. The host stores it once with one delivery per recipient, and every recipient sees it under the same id, in a `--- Broadcast <id> from <sender> ... ---` header; it wakes a recipient that is listening for messages, never interrupts a working one (its turn is not held) and reaches an idle one at its next prompt, needs no reply unless the sender sets `expectsReply`, and a `reply` on that id goes to the sender alone, with the `broadcastId` in `replyTo`. An unread broadcast expires after 24 hours like a direct message, without telling anyone. `read` returns `kind` (`direct` or `broadcast`), `scope` and `replyToKind` for each message.
+- `broadcast` sends one notice to every conversation that is online at that moment, the sender excepted; `project` limits it to the conversations working in that directory or below it. It is fire and forget: the host picks the recipients and delivers it, the sender gets only a `broadcastId` and learns nothing about who got or read it, and offline conversations or ones that start later never get it. The host stores it once with one delivery per recipient, and every recipient sees it under the same id, in a `--- Broadcast <id> from <sender> ... ---` header. A recipient that is listening for messages is woken with it at once; a working one is not interrupted (its turn is not held) and sees it after its next tool call, and an idle one at its next prompt or tool call. It needs no reply unless the sender sets `expectsReply`, and a `reply` on that id goes to the sender alone, with the `broadcastId` in `replyTo`. An unread broadcast expires after 24 hours like a direct message, without telling anyone. `read` returns `kind` (`direct` or `broadcast`), `scope` and `replyToKind` for each message.
 - `send_message` takes `global: true` to post to the global chat while a meeting is active; before, a post without `meetingId` always went to the active meeting.
+
+### Changed
+
+- `host_maintenance` cleanup counts broadcast deliveries too: `messagesExpired` includes the deliveries it marked expired, `messages` the ones it deleted.
+
+## [0.12.4] - 2026-10-30
 
 ### Fixed
 
