@@ -1213,7 +1213,7 @@
     {
       "name": "read",
       "title": "Read Direct Messages",
-      "description": "Read your unread direct messages from other AI sessions of your own user, oldest first, and mark them read; meetings and the global chat are read with read_messages instead. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. When a message asks for an answer (expectsReply true), answer once with reply.",
+      "description": "Read your unread direct messages and broadcasts from other AI sessions of your own user, oldest first, and mark them read; meetings and the global chat are read with read_messages instead. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. When a message asks for an answer (expectsReply true), answer once with reply.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1242,6 +1242,14 @@
                 "messageId": {
                   "type": "string"
                 },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "direct",
+                    "broadcast"
+                  ],
+                  "description": "broadcast: a broadcast you received; messageId is then the broadcast's id"
+                },
                 "from": {
                   "type": "object",
                   "properties": {
@@ -1258,11 +1266,30 @@
                   ],
                   "additionalProperties": false
                 },
+                "scope": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The working directory a broadcast was limited to; null for every online session and for a direct message"
+                },
                 "replyTo": {
                   "type": [
                     "string",
                     "null"
                   ]
+                },
+                "replyToKind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "direct",
+                    "broadcast",
+                    null
+                  ],
+                  "description": "What replyTo names: a direct message, or a broadcast (its broadcastId); null when replyTo is"
                 },
                 "text": {
                   "type": "string"
@@ -1272,23 +1299,18 @@
                 },
                 "expectsReply": {
                   "type": "boolean"
-                },
-                "broadcastId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "The broadcast this message is a copy of, null for a direct message"
                 }
               },
               "required": [
                 "messageId",
+                "kind",
                 "from",
                 "replyTo",
                 "text",
                 "createdAt",
                 "expectsReply",
-                "broadcastId"
+                "scope",
+                "replyToKind"
               ],
               "additionalProperties": false
             }
@@ -1311,7 +1333,7 @@
     {
       "name": "reply",
       "title": "Reply to Message",
-      "description": "Reply to a direct message you received (for a meeting or the global chat use send_message instead); it goes to the original sender, and the message you answer counts as read. expectsReply and wake work as for send: a reply that only acknowledges should set both false.",
+      "description": "Reply to a direct message or a broadcast you received (for a meeting or the global chat use send_message instead); it goes to the original sender as a direct message, and the message you answer counts as read. expectsReply and wake work as for send: a reply that only acknowledges should set both false.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1324,7 +1346,7 @@
           "messageId": {
             "type": "string",
             "minLength": 1,
-            "description": "A message you received, from a notification or read"
+            "description": "A message or broadcast you received (its messageId), from a notification or read"
           },
           "text": {
             "type": "string",
@@ -1392,7 +1414,7 @@
     {
       "name": "broadcast",
       "title": "Broadcast Message",
-      "description": "Send one notice to every AI session of your own user that is online now (not offline), yourself excepted; project limits it to the sessions working in that directory or below it. It is fire and forget, like a network broadcast: the host picks the recipients when you call it and delivers the message, and you learn nothing about who got or read it; sessions that are offline, or that start later, never get it. Each recipient sees it as a direct message from you, marked as a broadcast. A recipient that is listening (waiting for messages) is woken with it at once; a working or idle one is not interrupted and sees it at its next tool call or prompt. By default it needs no reply; with expectsReply true each recipient is asked to answer you with reply, which goes to you alone. Calling it again sends it again. Needs the n2n-nexus hooks.",
+      "description": "Send one notice to every AI session of your own user that is online now (not offline), yourself excepted; project limits it to the sessions working in that directory or below it. It is fire and forget, like a network broadcast: the host picks the recipients when you call it and delivers the message, and you learn nothing about who got or read it; sessions that are offline, or that start later, never get it. Every recipient sees it under the same id, the broadcastId, as a message of kind broadcast from you. A recipient that is listening (waiting for messages) is woken with it at once; a working or idle one is not interrupted and sees it at its next tool call or prompt. By default it needs no reply; with expectsReply true each recipient is asked to answer you with reply on that id, which reaches you alone with the broadcastId in replyTo. Calling it again sends it again. Needs the n2n-nexus hooks.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1429,7 +1451,7 @@
         "properties": {
           "broadcastId": {
             "type": "string",
-            "description": "Names this broadcast in the recipients' notifications and in replies to it"
+            "description": "Names this broadcast: its recipients see it as the broadcast's messageId, and their replies name it in replyTo"
           }
         },
         "required": [
@@ -3709,7 +3731,7 @@
     {
       "name": "host_maintenance",
       "title": "Clean Up the Host",
-      "description": "Host housekeeping. 'prune' removes the oldest count global chat messages (count ≥ 1 required), 'clear' removes all of them. 'cleanup' runs the hourly cleanup now: tasks past their TTL fail; finished tasks, events, read or expired direct messages, delivered notices, adapter instances not seen and sessions not active for retentionDays go (a session a direct message still references stays); an active meeting without a message for meetingRetentionDays since its last message, start or reopening closes with endReason expired; a meeting closed or archived meetingRetentionDays ago goes with its messages, decisions, stances and members. With dryRun true it changes nothing and reports what it would do. 'export' returns meeting meetingId as markdown: state, members, decisions and messages with who wrote them and on which machine.",
+      "description": "Host housekeeping. 'prune' removes the oldest count global chat messages (count ≥ 1 required), 'clear' removes all of them. 'cleanup' runs the hourly cleanup now: tasks past their TTL fail; unread direct messages and broadcast deliveries past their expiry expire; finished tasks, events, read or expired direct messages and broadcast deliveries (a broadcast with its last delivery), delivered notices, adapter instances not seen and sessions not active for retentionDays go (a session a direct message, a broadcast or a broadcast delivery still references stays); an active meeting without a message for meetingRetentionDays since its last message, start or reopening closes with endReason expired; a meeting closed or archived meetingRetentionDays ago goes with its messages, decisions, stances and members. With dryRun true it changes nothing and reports what it would do. 'export' returns meeting meetingId as markdown: state, members, decisions and messages with who wrote them and on which machine.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -3770,7 +3792,7 @@
             "description": "prune and clear: global messages left."
           },
           "cleanup": {
-            "description": "cleanup: what was removed or changed, or with dryRun would be. counts: tasksExpired (failed for their TTL), tasks, events, meetingsExpired (closed), meetings (deleted), messagesExpired (unread direct messages marked expired), messages, notices, toolUseBindings, sessions, instances.",
+            "description": "cleanup: what was removed or changed, or with dryRun would be. counts: tasksExpired (failed for their TTL), tasks, events, meetingsExpired (closed), meetings (deleted), messagesExpired (unread direct messages and broadcast deliveries marked expired), messages (direct messages and broadcast deliveries deleted), notices, toolUseBindings, sessions, instances.",
             "type": "object",
             "properties": {
               "dryRun": {

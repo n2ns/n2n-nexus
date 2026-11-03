@@ -74,7 +74,7 @@
     "messageEnd": "--- End of message %s ---",
     "messageReplyTo": "This answers your message %s.",
     "messageReplyToBroadcast": "This answers your broadcast %s.",
-    "broadcastLine": "Broadcast %s, sent to %s.",
+    "broadcastHeader": "--- Broadcast %s from %s (%s) at %s, sent to %s ---",
     "broadcastToAll": "every online session",
     "broadcastToProject": "the online sessions working in %s",
     "messageCut": "[Cut at %d of %d characters; read returns the whole message.]",

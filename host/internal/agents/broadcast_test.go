@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 func TestInProject(t *testing.T) {
@@ -29,10 +31,10 @@ func TestInProject(t *testing.T) {
 	}
 }
 
-// broadcastCopies returns, per session, the copies of broadcast id it holds.
+// broadcastCopies returns, per session, the deliveries of broadcast id it holds.
 func (h *harness) broadcastCopies(id string) map[string]int {
 	h.t.Helper()
-	rows, err := h.st.DB.Query("SELECT to_id, COUNT(*) FROM agent_messages WHERE broadcast_id = ? GROUP BY to_id", id)
+	rows, err := h.st.DB.Query("SELECT to_id, COUNT(*) FROM broadcast_deliveries WHERE broadcast_id = ? GROUP BY to_id", id)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -99,18 +101,25 @@ func TestBroadcastNotificationAndRead(t *testing.T) {
 		t.Fatalf("Stop held by a broadcast: %v", out)
 	}
 	ctx := h.hook("codex", "UserPromptSubmit", "r").context()
-	contains(t, ctx, fmt.Sprintf(texts.BroadcastLine, id, fmt.Sprintf(texts.BroadcastToProject, "/work"))+"\nfyi all\n")
+	contains(t, ctx, fmt.Sprintf(texts.BroadcastHeader, id, "codex@proj#s (box · Linux)", "codex:s", store.ISO(h.t0), fmt.Sprintf(texts.BroadcastToProject, "/work"))+"\nfyi all\n")
+	contains(t, ctx, texts.MessageEnd[:len("--- End of message ")]+id+" ---")
 	contains(t, ctx, " ---\n"+texts.NoReplyMark+"\n")
 	contains(t, ctx, texts.MessageInfoNote)
 
-	// read marks it as a broadcast; a direct message is not.
-	h.codex("s", "broadcast", map[string]any{"text": "second", "expectsReply": true})
-	h.send("s", "codex:r", "direct", false)
+	// read: a broadcast's messageId is the broadcast's id, with its kind and scope.
+	second := h.codex("s", "broadcast", map[string]any{"text": "second", "expectsReply": true, "project": "/work"}).result["broadcastId"].(string)
+	direct := h.send("s", "codex:r", "direct", false)
 	msgs := h.codex("r", "read", nil).result["messages"].([]any)
 	eq(t, len(msgs), 2)
-	eq(t, msgs[0].(map[string]any)["broadcastId"] != nil, true)
-	eq(t, msgs[0].(map[string]any)["expectsReply"], any(true))
-	eq(t, msgs[1].(map[string]any)["broadcastId"], any(nil))
+	want := []map[string]any{
+		{"messageId": second, "kind": "broadcast", "scope": "/work", "expectsReply": true, "replyTo": nil, "replyToKind": nil},
+		{"messageId": direct, "kind": "direct", "scope": nil, "expectsReply": true, "replyTo": nil, "replyToKind": nil},
+	}
+	for i, w := range want {
+		for k, v := range w {
+			eq(t, msgs[i].(map[string]any)[k], v)
+		}
+	}
 }
 
 func TestBroadcastToEveryOnlineSessionIsNamed(t *testing.T) {
@@ -118,7 +127,7 @@ func TestBroadcastToEveryOnlineSessionIsNamed(t *testing.T) {
 	h.hook("codex", "SessionStart", "s")
 	h.hook("codex", "SessionStart", "r")
 	id := h.codex("s", "broadcast", map[string]any{"text": "hello"}).result["broadcastId"].(string)
-	contains(t, h.hook("codex", "UserPromptSubmit", "r").context(), fmt.Sprintf(texts.BroadcastLine, id, texts.BroadcastToAll))
+	contains(t, h.hook("codex", "UserPromptSubmit", "r").context(), fmt.Sprintf(texts.BroadcastHeader, id, "codex@proj#s (box · Linux)", "codex:s", store.ISO(h.t0), texts.BroadcastToAll))
 }
 
 func TestBroadcastWakesListeningSessionsOnly(t *testing.T) {
@@ -135,9 +144,9 @@ func TestBroadcastWakesListeningSessionsOnly(t *testing.T) {
 
 	// Listening: woken at once with it.
 	contains(t, waiting.wait(t).str("wake"), "heads up")
-	// Only the listening copy may wake.
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE broadcast_id IS NOT NULL AND wake = 1"), 1)
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE broadcast_id IS NOT NULL AND wake = 1 AND to_id = 'codex:wait'"), 1)
+	// Only the listening session's delivery may wake.
+	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries WHERE wake = 1"), 1)
+	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries WHERE wake = 1 AND to_id = 'codex:wait'"), 1)
 	// Working: not interrupted; its next tool call shows it, and its Stop is not held.
 	contains(t, h.hook("codex", "PostToolUse", "work").context(), "heads up")
 	if out := h.hook("codex", "Stop", "work", stopInactive); out != nil {
@@ -153,14 +162,25 @@ func TestBroadcastReplyGoesToTheSender(t *testing.T) {
 	h.hook("codex", "SessionStart", "r1")
 	h.hook("codex", "SessionStart", "r2")
 	id := h.codex("s", "broadcast", map[string]any{"text": "who is free?", "expectsReply": true}).result["broadcastId"].(string)
-	copyID := h.codex("r1", "read", nil).result["messages"].([]any)[0].(map[string]any)["messageId"].(string)
-	replied := h.codex("r1", "reply", map[string]any{"messageId": copyID, "text": "me"})
+	// The recipient answers the broadcast by its id.
+	eq(t, h.codex("r1", "read", nil).result["messages"].([]any)[0].(map[string]any)["messageId"], any(id))
+	// The sender cannot answer its own broadcast, nor anyone else a broadcast it did not get.
+	eq(t, h.codex("s", "reply", map[string]any{"messageId": id, "text": "x"}).status, 400)
+	replied := h.codex("r1", "reply", map[string]any{"messageId": id, "text": "me"})
 	eq(t, replied.status, 200)
 	eq(t, replied.result["to"].(map[string]any)["id"], any("codex:s"))
-	// The sender is told which broadcast it answers; the other recipient gets nothing new.
-	ctx := h.hook("codex", "UserPromptSubmit", "s").context()
-	contains(t, ctx, fmt.Sprintf(texts.MessageReplyToBroadcast, id)+"\nme\n")
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r2'"), 1)
+	// The answered delivery is read: r1's next prompt shows nothing.
+	if out := h.hook("codex", "UserPromptSubmit", "r1"); out != nil {
+		t.Fatalf("answered broadcast announced again: %v", out)
+	}
+	// The sender sees which broadcast it answers, in the notification and in read.
+	contains(t, h.hook("codex", "PostToolUse", "s").context(), fmt.Sprintf(texts.MessageReplyToBroadcast, id)+"\nme\n")
+	m := h.codex("s", "read", nil).result["messages"].([]any)[0].(map[string]any)
+	eq(t, m["replyTo"], any(id))
+	eq(t, m["replyToKind"], any("broadcast"))
+	eq(t, m["kind"], any("direct"))
+	// The other recipient gets nothing new.
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r2'"), 0)
 }
 
 func TestBroadcastExpiresWithoutTellingTheSender(t *testing.T) {
@@ -172,6 +192,32 @@ func TestBroadcastExpiresWithoutTellingTheSender(t *testing.T) {
 	if _, err := h.ag.Cleanup(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE status = 'expired' AND broadcast_id IS NOT NULL"), 1)
+	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries WHERE status = 'expired'"), 1)
 	eq(t, h.count("SELECT COUNT(*) FROM agent_notices WHERE session_id = 'codex:s'"), 0)
+	if out := h.hook("codex", "UserPromptSubmit", "r"); out != nil {
+		t.Fatalf("expired broadcast announced: %v", out)
+	}
+}
+
+func TestBroadcastCleanup(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("codex", "SessionStart", "r")
+	id := h.codex("s", "broadcast", map[string]any{"text": "q", "expectsReply": true}).result["broadcastId"].(string)
+	h.codex("r", "reply", map[string]any{"messageId": id, "text": "a"})
+	h.codex("s", "read", nil)
+	// Past the retention, the read delivery and then the broadcast go; the reply keeps its text without the link.
+	h.at(8 * 24 * time.Hour)
+	if _, err := h.ag.Cleanup(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries"), 0)
+	eq(t, h.count("SELECT COUNT(*) FROM broadcasts"), 0)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages"), 0) // the reply was read too
+	// Sessions that only sent or got broadcasts are cleaned up once those are gone.
+	h.at(16 * 24 * time.Hour)
+	if _, err := h.ag.Cleanup(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, h.count("SELECT COUNT(*) FROM agent_sessions"), 0)
 }

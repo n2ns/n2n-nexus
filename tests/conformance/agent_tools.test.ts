@@ -5,7 +5,7 @@ import { NO_AGENT_SESSION_ERROR, agentKit, context, ids, nameOf, type HookClient
 
 type Sent = { messageId: string; to: { id: string; name: string; status: string } };
 type Read = {
-    messages: { messageId: string; from: { id: string; name: string }; replyTo: string | null; text: string; createdAt: string; expectsReply: boolean; broadcastId: string | null }[];
+    messages: { messageId: string; from: { id: string; name: string }; kind: "direct" | "broadcast"; scope: string | null; replyTo: string | null; replyToKind: "direct" | "broadcast" | null; text: string; createdAt: string; expectsReply: boolean }[];
     remaining: number;
 };
 
@@ -155,8 +155,8 @@ describe("direct-message tools: send, reply, read", () => {
         const first = await claude<Read>(s("r"), "read", { count: 2 });
         expect(first.payload.result).toEqual({
             messages: [
-                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m1", createdAt: expect.any(String), expectsReply: true, broadcastId: null },
-                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m2", createdAt: expect.any(String), expectsReply: true, broadcastId: null }
+                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, kind: "direct", scope: null, replyTo: null, replyToKind: null, text: "m1", createdAt: expect.any(String), expectsReply: true },
+                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, kind: "direct", scope: null, replyTo: null, replyToKind: null, text: "m2", createdAt: expect.any(String), expectsReply: true }
             ],
             remaining: 1
         });
@@ -193,7 +193,7 @@ describe("direct-message tools: send, reply, read", () => {
 
         const inbox = await codex<Read>(s("s"), "read");
         expect(inbox.payload.result?.messages).toEqual([
-            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: nameOf("claude", "proj", s("r")) }, replyTo: original, text: "answer", createdAt: expect.any(String), expectsReply: true, broadcastId: null }
+            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: nameOf("claude", "proj", s("r")) }, kind: "direct", scope: null, replyTo: original, replyToKind: "direct", text: "answer", createdAt: expect.any(String), expectsReply: true }
         ]);
     });
 });
@@ -218,7 +218,8 @@ describe("direct-message tools: broadcast", () => {
 
         // In the project and online: announced at its next prompt, as a broadcast that needs no reply.
         const ctx = context(await hook("codex", "UserPromptSubmit", s("same")));
-        expect(ctx).toContain(`${HOOK.texts.broadcastLine.replace("%s", id).replace("%s", HOOK.texts.broadcastToProject.replace("%s", "/work/bc"))}\nonly /work/bc\n`);
+        expect(ctx).toContain(`--- Broadcast ${id} from ${nameOf("codex", "bc", s("s"))} (box · Linux) (codex:${s("s")}) at `);
+        expect(ctx).toContain(`, sent to ${HOOK.texts.broadcastToProject.replace("%s", "/work/bc")} ---\nonly /work/bc\n--- End of message ${id} ---\n`);
         expect(ctx).toContain(HOOK.texts.noReplyMark);
         // /work/bcx is not below /work/bc; the sender and the offline session get nothing, not even once it is back.
         expect(await hook("claude", "UserPromptSubmit", s("other"))).toBeNull();
@@ -240,11 +241,15 @@ describe("direct-message tools: broadcast", () => {
 
         const asked = (await codex<Broadcast>(s("s"), "broadcast", { text: "who is free?", project: "/work/bw", expectsReply: true })).payload.result!.broadcastId;
         const inbox = (await codex<Read>(s("r"), "read")).payload.result!.messages;
-        const copy = inbox.find((m) => m.text === "who is free?")!;
-        expect(copy).toMatchObject({ broadcastId: asked, expectsReply: true, from: { id: `codex:${s("s")}` } });
-        const replied = await codex<Sent>(s("r"), "reply", { messageId: copy.messageId, text: "me" });
+        // The broadcast's id is the messageId its recipients see and answer.
+        expect(inbox.find((m) => m.text === "who is free?")).toMatchObject({ messageId: asked, kind: "broadcast", scope: "/work/bw", expectsReply: true, from: { id: `codex:${s("s")}` } });
+        const replied = await codex<Sent>(s("r"), "reply", { messageId: asked, text: "me" });
         expect(replied.payload.result?.to.id).toBe(`codex:${s("s")}`);
         expect(context(await hook("codex", "UserPromptSubmit", s("s")))).toContain(`${HOOK.texts.messageReplyToBroadcast.replace("%s", asked)}\nme\n`);
+        expect((await codex<Read>(s("s"), "read")).payload.result?.messages).toEqual([
+            { messageId: replied.payload.result!.messageId, kind: "direct", from: { id: `codex:${s("r")}`, name: nameOf("codex", "bw", s("r")) }, scope: null,
+                replyTo: asked, replyToKind: "broadcast", text: "me", createdAt: expect.any(String), expectsReply: true }
+        ]);
 
         // wake is no argument of broadcast: it is dropped, and the Stop of a session that is not listening is not held.
         expect((await codex(s("s"), "broadcast", { text: "still waits", project: "/work/bw", wake: true })).status).toBe(200);

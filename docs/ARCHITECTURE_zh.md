@@ -115,7 +115,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 全部数据都在 host 数据目录里的一个 SQLite 文件 `nexus.db` 中，同一目录下还有 `settings.json` 和 `host.lock`（各系统的位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）。
 
 - **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql`、`0002_agents.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。每个文件包含一个模块当前的完整表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；以后改表结构时新增编号文件。
-- **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`，以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
+- **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`broadcasts` 和 `broadcast_deliveries`（每次广播一行、每个收件方一行；`agent_inbox` 视图把直接消息和送达记录合成一个收件箱）、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`，以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
 - **事务**：每个写操作一个事务，多行修改（会议消息，开始 / 结束 / 重开会议，项目改名）要么全部生效，要么都不生效。数据库使用 WAL 模式，开启 `foreign_keys`，忙等超时 5 秒，只用一个连接。
 - **只有 host 打开数据库**。MCP 适配器和 hooks 都走 HTTP。
 - **活动日志**：通过工具产生的状态变更（项目同步 / 更新 / 改名 / 删除 / 资产、文档同步、策略更新、会议开始 / 结束 / 归档 / 重开、维护）记录为结构化事件，用 `list_events` 读取，不混入聊天流。
@@ -127,8 +127,8 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 启动时一次，之后每小时一次，host 按 `settings.json` 的两个保留期设置（[使用手册](USER_GUIDE_zh.md#settingsjson)）清理：`retentionDays`（默认 7）和 `meetingRetentionDays`（默认 30）：
 
 - 把超过 TTL 的待处理或运行中任务标为 `failed`，删除结束（`completed`、`failed`、`cancelled`）`retentionDays` 天后的任务和 `retentionDays` 天前的事件；
-- 让超过 24 小时有效期的未读直接消息过期（通知发送方，广播除外），删除 `retentionDays` 天前已读或已过期的直接消息和已发出的通知；
-- 删除 `retentionDays` 天没有活动的会话，连同它的通知、空闲订阅、工具调用绑定和读取游标；仍被直接消息引用或正挂着等待的会话不删；`retentionDays` 天没出现的适配器实例不再记录；
+- 让超过 24 小时有效期的未读直接消息和广播送达记录过期（直接消息通知发送方），删除 `retentionDays` 天前已读或已过期的直接消息、广播送达记录和已发出的通知，广播随最后一条送达记录删除；
+- 删除 `retentionDays` 天没有活动的会话，连同它的通知、空闲订阅、工具调用绑定和读取游标；仍被直接消息、广播或广播送达记录引用，或正挂着等待的会话不删；`retentionDays` 天没出现的适配器实例不再记录；
 - 连续 `meetingRetentionDays` 天没有发言（从最后一条消息、开始或重新开启算起）的进行中会议以 `endReason: expired` 关闭并通知成员，不产生决议；
 - 删除关闭或归档 `meetingRetentionDays` 天的会议，连同消息、决议、表态、成员、认可人和读取游标；
 - 删除已过期（5 分钟）的工具调用绑定。

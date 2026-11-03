@@ -128,7 +128,7 @@ type Hook struct {
 		MessageEnd              string `json:"messageEnd"`
 		MessageReplyTo          string `json:"messageReplyTo"`
 		MessageReplyToBroadcast string `json:"messageReplyToBroadcast"`
-		BroadcastLine           string `json:"broadcastLine"`
+		BroadcastHeader         string `json:"broadcastHeader"`
 		BroadcastToAll          string `json:"broadcastToAll"`
 		BroadcastToProject      string `json:"broadcastToProject"`
 		MessageCut              string `json:"messageCut"`

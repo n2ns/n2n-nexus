@@ -163,19 +163,20 @@ func (a *Agents) Close() {
 	}
 }
 
-// Cleanup (api.Cleaner) expires unread messages past their expiry (telling
-// the senders), deletes tool-use bindings past their TTL and, after
-// RetentionDays, read or expired direct messages, delivered notices, adapter
-// instances not seen and sessions not active (with their notices, idle
-// subscriptions, bindings and read cursors) that no direct message references
-// and that hold no wait. With dryRun it changes nothing and reports what it would do.
+// Cleanup (api.Cleaner) expires unread direct messages (telling the senders)
+// and broadcast deliveries (telling nobody) past their expiry, deletes
+// tool-use bindings past their TTL and, after RetentionDays, read or expired
+// direct messages and broadcast deliveries (a broadcast with its last
+// delivery), delivered notices, adapter instances not seen and sessions not
+// active (with their notices, idle subscriptions, bindings and read cursors)
+// that no direct message, broadcast or delivery references and that hold no wait. With dryRun it changes nothing and reports what it would do.
 func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var out api.Cleanup
 	now := a.o.Clock.Now()
 	if dryRun {
-		if err := a.db().QueryRowContext(ctx, "SELECT COUNT(*) FROM agent_messages WHERE status = 'unread' AND expires_at <= ?", a.iso(now)).Scan(&out.MessagesExpired); err != nil {
+		if err := a.db().QueryRowContext(ctx, "SELECT COUNT(*) FROM agent_inbox WHERE status = 'unread' AND expires_at <= ?", a.iso(now)).Scan(&out.MessagesExpired); err != nil {
 			return out, err
 		}
 	} else {
@@ -196,6 +197,21 @@ func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) 
 		}
 		var err error
 		if out.Messages, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM agent_messages WHERE "+old, cutoff, cutoff)); err != nil {
+			return err
+		}
+		// Broadcast deliveries go by the same rule; a broadcast goes with its
+		// last delivery, and replies to it keep their text.
+		deliveries, err := store.Affected(tx.ExecContext(ctx, `DELETE FROM broadcast_deliveries WHERE (status = 'read' AND read_at < ?)
+			OR (status = 'expired' AND broadcast_id IN (SELECT id FROM broadcasts WHERE expires_at < ?))`, cutoff, cutoff))
+		if err != nil {
+			return err
+		}
+		out.Messages += deliveries
+		orphan := "SELECT id FROM broadcasts b WHERE b.created_at < ? AND NOT EXISTS (SELECT 1 FROM broadcast_deliveries d WHERE d.broadcast_id = b.id)"
+		if _, err := tx.ExecContext(ctx, "UPDATE agent_messages SET reply_to_broadcast = NULL WHERE reply_to_broadcast IN ("+orphan+")", cutoff); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM broadcasts WHERE id IN ("+orphan+")", cutoff); err != nil {
 			return err
 		}
 		if out.Notices, err = store.Affected(tx.ExecContext(ctx, "DELETE FROM agent_notices WHERE notified_at IS NOT NULL AND notified_at < ?", cutoff)); err != nil {
@@ -235,12 +251,14 @@ func (a *Agents) Cleanup(ctx context.Context, dryRun bool) (api.Cleanup, error) 
 }
 
 // oldSessions lists the sessions not active since cutoff that no direct
-// message references and that hold no wait (mu held).
+// message, broadcast or broadcast delivery references and that hold no wait (mu held).
 func (a *Agents) oldSessions(ctx context.Context, tx *sql.Tx, cutoff string) ([]api.CleanedSession, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT s.id, s.name FROM agent_sessions s
 		WHERE s.last_active_at < ?
 			AND NOT EXISTS (SELECT 1 FROM agent_messages m WHERE m.from_id = s.id OR m.to_id = s.id)
+			AND NOT EXISTS (SELECT 1 FROM broadcasts b WHERE b.from_id = s.id)
+			AND NOT EXISTS (SELECT 1 FROM broadcast_deliveries d WHERE d.to_id = s.id)
 		ORDER BY s.last_active_at, s.id`, cutoff)
 	if err != nil {
 		return nil, err
@@ -505,7 +523,7 @@ func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 		return nil
 	}
 	a.o.Logger.Printf("agents: wake %s of %s was not delivered (the client reported the wake failed): its %d message(s) and %d notice(s) count as not announced and are delivered again", dispatchID, sessionID, len(d.messageIDs), len(d.noticeIDs))
-	if err := a.unmarkNotified(d.messageIDs, d.noticeIDs); err != nil {
+	if err := a.unmarkNotified(sessionID, d.messageIDs, d.noticeIDs); err != nil {
 		return err
 	}
 	if err := a.restoreMembers(sessionID, d.members); err != nil {
@@ -698,16 +716,19 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			if i == limit {
 				break
 			}
-			lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, displayName(m.FromName, m.FromMachine, m.FromTitle), m.FromID, m.CreatedAt))
-			switch {
-			case m.BroadcastID != nil:
+			from := displayName(m.FromName, m.FromMachine, m.FromTitle)
+			if m.Kind == "broadcast" {
 				to := h.Texts.BroadcastToAll
-				if m.BroadcastProject != nil {
-					to = fmt.Sprintf(h.Texts.BroadcastToProject, *m.BroadcastProject)
+				if m.Scope != nil {
+					to = fmt.Sprintf(h.Texts.BroadcastToProject, *m.Scope)
 				}
-				lines = append(lines, fmt.Sprintf(h.Texts.BroadcastLine, *m.BroadcastID, to))
-			case m.ReplyToBroadcast != nil:
-				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyToBroadcast, *m.ReplyToBroadcast))
+				lines = append(lines, fmt.Sprintf(h.Texts.BroadcastHeader, m.ID, from, m.FromID, m.CreatedAt, to))
+			} else {
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, from, m.FromID, m.CreatedAt))
+			}
+			switch {
+			case m.ReplyKind != nil && *m.ReplyKind == "broadcast":
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyToBroadcast, *m.ReplyTo))
 			case m.ReplyTo != nil:
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
@@ -779,12 +800,12 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 	now := a.iso(a.o.Clock.Now())
 	err := a.tx(func(tx *sql.Tx) error {
 		for _, m := range b.messages {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET notified_at = ? WHERE id = ? AND notified_at IS NULL", now, m.ID); err != nil {
+			if err := updateItem(tx, sessionID, m.ID, "notified_at = ?", "notified_at IS NULL", now); err != nil {
 				return err
 			}
 		}
 		for _, id := range shown {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET status = 'read', read_at = ? WHERE id = ? AND status = 'unread'", now, id); err != nil {
+			if err := updateItem(tx, sessionID, id, "status = 'read', read_at = ?", "status = 'unread'", now); err != nil {
 				return err
 			}
 		}

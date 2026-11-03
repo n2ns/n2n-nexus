@@ -74,12 +74,12 @@ type kind struct {
 	Wake         bool `json:"wake"`
 }
 
-func (a *Agents) deliver(from, to *session, text string, replyTo *string, notifyWhenIdle bool, k kind) (any, error) {
+func (a *Agents) deliver(from, to *session, text string, replyTo *message, notifyWhenIdle bool, k kind) (any, error) {
 	if to.ID == from.ID {
 		return nil, api.Errorf("You cannot send a message to yourself.")
 	}
 	now := a.o.Clock.Now()
-	id, err := a.addMessage(from.ID, to.ID, text, replyTo, k.ExpectsReply, k.Wake, now)
+	id, err := a.addMessage(from.ID, to.ID, text, replyTo, k, now)
 	if err != nil {
 		return nil, err
 	}
@@ -195,24 +195,24 @@ func (a *Agents) toolReply(c api.Call, args replyArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	original, err := a.getMessage(args.MessageID)
+	original, err := a.getMessage(args.MessageID, self.ID)
 	if err != nil {
 		return nil, err
 	}
-	if original == nil || original.ToID != self.ID {
+	if original == nil {
 		return nil, api.Errorf("Message '%s' not found or not sent to you; use a messageId from a notification or read.", args.MessageID)
 	}
 	sender, err := getSession(a.db(), original.FromID)
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.deliver(self, sender, args.Text, &original.ID, false, args.kind)
+	out, err := a.deliver(self, sender, args.Text, original, false, args.kind)
 	if err != nil {
 		return nil, err
 	}
 	// Answered: a message shown in a notification needs no read, and Stop no longer holds the turn for it.
 	at := a.iso(a.o.Clock.Now())
-	if _, err := a.db().ExecContext(bg, "UPDATE agent_messages SET status = 'read', read_at = ?, notified_at = COALESCE(notified_at, ?) WHERE id = ? AND status = 'unread'", at, at, original.ID); err != nil {
+	if err := updateItem(a.db(), self.ID, original.ID, "status = 'read', read_at = ?, notified_at = COALESCE(notified_at, ?)", "status = 'unread'", at, at); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -237,16 +237,19 @@ func (a *Agents) toolRead(c api.Call, args readArgs) (any, error) {
 	}
 	type item struct {
 		MessageID    string  `json:"messageId"`
+		Kind         string  `json:"kind"`
 		From         from    `json:"from"`
+		Scope        *string `json:"scope"`
 		ReplyTo      *string `json:"replyTo"`
+		ReplyToKind  *string `json:"replyToKind"`
 		Text         string  `json:"text"`
 		CreatedAt    string  `json:"createdAt"`
 		ExpectsReply bool    `json:"expectsReply"`
-		BroadcastID  *string `json:"broadcastId"`
 	}
 	items := []item{}
 	for _, m := range messages {
-		items = append(items, item{MessageID: m.ID, From: from{m.FromID, m.FromName}, ReplyTo: m.ReplyTo, Text: m.Text, CreatedAt: m.CreatedAt, ExpectsReply: m.ExpectsReply, BroadcastID: m.BroadcastID})
+		items = append(items, item{MessageID: m.ID, Kind: m.Kind, From: from{m.FromID, m.FromName}, Scope: m.Scope, ReplyTo: m.ReplyTo, ReplyToKind: m.ReplyKind,
+			Text: m.Text, CreatedAt: m.CreatedAt, ExpectsReply: m.ExpectsReply})
 	}
 	return map[string]any{"messages": items, "remaining": remaining}, nil
 }

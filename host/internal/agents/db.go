@@ -71,18 +71,22 @@ func knownPlatform(platform string) bool {
 	return ok
 }
 
+// message is an item of a session's inbox (the agent_inbox view): a direct
+// message, or a broadcast's delivery, whose ID is the broadcast's.
 type message struct {
+	// Kind is "direct" or "broadcast".
+	Kind                                                     string
 	ID, FromID, FromName, FromTitle, FromMachine, ToID, Text string
-	ReplyTo                                                  *string
-	Status, CreatedAt, ExpiresAt                             string
-	NotifiedAt, ReadAt                                       *string
+	// ReplyTo is the direct message or broadcast this one answers, ReplyKind
+	// says which ("direct" or "broadcast"); both nil when it answers nothing.
+	ReplyTo, ReplyKind *string
+	// Scope is the working directory a broadcast was limited to, nil for every
+	// online session and for a direct message.
+	Scope                        *string
+	Status, CreatedAt, ExpiresAt string
+	NotifiedAt, ReadAt           *string
 	// ExpectsReply: the sender wants an answer; Wake: the message may wake the recipient.
 	ExpectsReply, Wake bool
-	// BroadcastID: the broadcast the message is a copy of, nil for a direct
-	// message; BroadcastProject: the working directory that broadcast was
-	// limited to, nil for every online session. ReplyToBroadcast: the
-	// broadcast of the message this one answers, nil when it is none.
-	BroadcastID, BroadcastProject, ReplyToBroadcast *string
 }
 
 type notice struct {
@@ -351,18 +355,33 @@ func (a *Agents) listPeers(selfID string, now time.Time) ([]*session, error) {
 	return querySessions(a.db(), "SELECT "+sessionColumns+" FROM agent_sessions WHERE id != ? AND (status != 'offline' OR last_active_at > ?) ORDER BY last_active_at DESC", selfID, a.iso(since))
 }
 
-func (a *Agents) addMessage(fromID, toID, text string, replyTo *string, expectsReply, wake bool, now time.Time) (string, error) {
-	return a.insertMessage(a.db(), fromID, toID, text, replyTo, nil, nil, kind{expectsReply, wake}, now)
+// addMessage adds an unread direct message and returns its id; replyTo is
+// the inbox item it answers, nil for none.
+func (a *Agents) addMessage(fromID, toID, text string, replyTo *message, k kind, now time.Time) (string, error) {
+	var direct, broadcast *string
+	if replyTo != nil {
+		if replyTo.Kind == "broadcast" {
+			broadcast = &replyTo.ID
+		} else {
+			direct = &replyTo.ID
+		}
+	}
+	id := uuid.NewString()
+	_, err := a.db().ExecContext(bg,
+		"INSERT INTO agent_messages (id, from_id, to_id, text, reply_to, reply_to_broadcast, status, created_at, expires_at, expects_reply, wake) VALUES (?, ?, ?, ?, ?, ?, 'unread', ?, ?, ?, ?)",
+		id, fromID, toID, text, direct, broadcast, a.iso(now), a.iso(now.Add(ms(a.o.Contract.Hook.Timing.MessageTtlMs))), k.ExpectsReply, k.Wake)
+	return id, err
 }
 
-// insertMessage adds an unread message and returns its id; broadcastID and
-// project are those of the broadcast it is a copy of, nil for a direct message.
-func (a *Agents) insertMessage(q querier, fromID, toID, text string, replyTo, broadcastID, project *string, k kind, now time.Time) (string, error) {
-	id := uuid.NewString()
-	_, err := q.ExecContext(bg,
-		"INSERT INTO agent_messages (id, from_id, to_id, text, reply_to, status, created_at, expires_at, expects_reply, wake, broadcast_id, broadcast_project) VALUES (?, ?, ?, ?, ?, 'unread', ?, ?, ?, ?, ?, ?)",
-		id, fromID, toID, text, replyTo, a.iso(now), a.iso(now.Add(ms(a.o.Contract.Hook.Timing.MessageTtlMs))), k.ExpectsReply, k.Wake, broadcastID, project)
-	return id, err
+// updateItem runs "UPDATE <table> SET set WHERE <item> AND cond" on the inbox
+// item id of session toID, whichever kind it is; args fill set, then cond.
+func updateItem(q querier, toID, id, set, cond string, args ...any) error {
+	args = append(args, id, toID)
+	if _, err := q.ExecContext(bg, "UPDATE agent_messages SET "+set+" WHERE "+cond+" AND id = ? AND to_id = ?", args...); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(bg, "UPDATE broadcast_deliveries SET "+set+" WHERE "+cond+" AND broadcast_id = ? AND to_id = ?", args...)
+	return err
 }
 
 // onlineSessions: the sessions other than selfID that are not offline, most recent first.
@@ -370,42 +389,46 @@ func (a *Agents) onlineSessions(selfID string) ([]*session, error) {
 	return querySessions(a.db(), "SELECT "+sessionColumns+" FROM agent_sessions WHERE id != ? AND status != 'offline' ORDER BY last_active_at DESC", selfID)
 }
 
-// addBroadcast writes one copy of a broadcast per recipient in one
-// transaction and returns the broadcast id. A copy may wake its recipient only
-// when that one is listening now.
+// addBroadcast writes a broadcast and its delivery to each recipient in one
+// transaction and returns its id. A delivery may wake its recipient only when
+// that one is listening now.
 func (a *Agents) addBroadcast(fromID string, to []*session, text string, project *string, expectsReply bool, now time.Time) (string, error) {
-	broadcastID := uuid.NewString()
+	id := uuid.NewString()
 	err := a.tx(func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(bg, "INSERT INTO broadcasts (id, from_id, text, project, expects_reply, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			id, fromID, text, project, expectsReply, a.iso(now), a.iso(now.Add(ms(a.o.Contract.Hook.Timing.MessageTtlMs)))); err != nil {
+			return err
+		}
 		for _, s := range to {
-			k := kind{ExpectsReply: expectsReply, Wake: s.Status == "listening"}
-			if _, err := a.insertMessage(tx, fromID, s.ID, text, nil, &broadcastID, project, k, now); err != nil {
+			if _, err := tx.ExecContext(bg, "INSERT INTO broadcast_deliveries (broadcast_id, to_id, status, wake) VALUES (?, ?, 'unread', ?)", id, s.ID, s.Status == "listening"); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
-	return broadcastID, err
+	return id, err
 }
 
 const messageSelect = `
-    SELECT m.id, m.from_id, s.name AS from_name, s.title AS from_title, s.hostname, s.platform, s.environment, s.label, m.to_id, m.text, m.reply_to, m.status,
-           m.created_at, m.expires_at, m.notified_at, m.read_at, m.expects_reply, m.wake,
-           m.broadcast_id, m.broadcast_project, r.broadcast_id
-    FROM agent_messages m JOIN agent_sessions s ON s.id = m.from_id LEFT JOIN agent_messages r ON r.id = m.reply_to`
+    SELECT m.kind, m.id, m.from_id, s.name AS from_name, s.title AS from_title, s.hostname, s.platform, s.environment, s.label, m.to_id, m.text,
+           m.reply_to, m.reply_kind, m.scope, m.status, m.created_at, m.expires_at, m.notified_at, m.read_at, m.expects_reply, m.wake
+    FROM agent_inbox m JOIN agent_sessions s ON s.id = m.from_id`
 
 func queryMessages(q querier, query string, args ...any) ([]*message, error) {
 	rows, err := q.QueryContext(bg, query, args...)
 	return store.Append(nil, rows, err, func(rows *sql.Rows) (*message, error) {
 		var m message
 		var from session
-		err := rows.Scan(&m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Environment, &from.Label, &m.ToID, &m.Text, &m.ReplyTo, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake, &m.BroadcastID, &m.BroadcastProject, &m.ReplyToBroadcast)
+		err := rows.Scan(&m.Kind, &m.ID, &m.FromID, &m.FromName, &m.FromTitle, &from.Hostname, &from.Platform, &from.Environment, &from.Label, &m.ToID, &m.Text,
+			&m.ReplyTo, &m.ReplyKind, &m.Scope, &m.Status, &m.CreatedAt, &m.ExpiresAt, &m.NotifiedAt, &m.ReadAt, &m.ExpectsReply, &m.Wake)
 		m.FromMachine = from.machineName()
 		return &m, err
 	})
 }
 
-func (a *Agents) getMessage(id string) (*message, error) {
-	list, err := queryMessages(a.db(), messageSelect+" WHERE m.id = ?", id)
+// getMessage returns the inbox item id of session toID, nil when there is none.
+func (a *Agents) getMessage(id, toID string) (*message, error) {
+	list, err := queryMessages(a.db(), messageSelect+" WHERE m.id = ? AND m.to_id = ?", id, toID)
 	if err != nil || len(list) == 0 {
 		return nil, err
 	}
@@ -414,7 +437,7 @@ func (a *Agents) getMessage(id string) (*message, error) {
 
 // unread: unread messages for a session, oldest first.
 func unread(q querier, toID string) ([]*message, error) {
-	return queryMessages(q, messageSelect+" WHERE m.to_id = ? AND m.status = 'unread' ORDER BY m.created_at, m.rowid", toID)
+	return queryMessages(q, messageSelect+" WHERE m.to_id = ? AND m.status = 'unread' ORDER BY m.created_at, m.kind, m.seq", toID)
 }
 
 // pendingNotices: notices not delivered by a hook yet, oldest first.
@@ -437,10 +460,10 @@ func (a *Agents) addNotice(q querier, sessionID, text, meetingID string, now tim
 
 // unmarkNotified marks messages and notices as not notified again (a wake
 // whose delivery failed); the messages it showed whole are unread again.
-func (a *Agents) unmarkNotified(messageIDs []string, noticeIDs []int64) error {
+func (a *Agents) unmarkNotified(sessionID string, messageIDs []string, noticeIDs []int64) error {
 	return a.tx(func(tx *sql.Tx) error {
 		for _, id := range messageIDs {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET notified_at = NULL, status = 'unread', read_at = NULL WHERE id = ? AND status IN ('unread', 'read')", id); err != nil {
+			if err := updateItem(tx, sessionID, id, "notified_at = NULL, status = 'unread', read_at = NULL", "status IN ('unread', 'read')"); err != nil {
 				return err
 			}
 		}
@@ -468,11 +491,11 @@ func (a *Agents) readUnread(toID string, count int, now time.Time) ([]*message, 
 		messages = all
 		at := a.iso(now)
 		for _, m := range messages {
-			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET status = 'read', read_at = ?, notified_at = COALESCE(notified_at, ?) WHERE id = ?", at, at, m.ID); err != nil {
+			if err := updateItem(tx, toID, m.ID, "status = 'read', read_at = ?, notified_at = COALESCE(notified_at, ?)", "1", at, at); err != nil {
 				return err
 			}
 		}
-		return tx.QueryRowContext(bg, "SELECT COUNT(*) FROM agent_messages WHERE to_id = ? AND status = 'unread'", toID).Scan(&remaining)
+		return tx.QueryRowContext(bg, "SELECT COUNT(*) FROM agent_inbox WHERE to_id = ? AND status = 'unread'", toID).Scan(&remaining)
 	})
 	return messages, remaining, err
 }
@@ -520,16 +543,13 @@ func (a *Agents) expireMessages(now time.Time) ([]string, int, error) {
 	var n int
 	err := a.tx(func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(bg, `
-            SELECT m.id, m.from_id, m.to_id, m.text, s.name, m.broadcast_id IS NOT NULL
+            SELECT m.id, m.from_id, m.to_id, m.text, s.name
             FROM agent_messages m JOIN agent_sessions s ON s.id = m.to_id
             WHERE m.status = 'unread' AND m.expires_at <= ?`, a.iso(now))
-		type row struct {
-			id, from, to, text, toName string
-			broadcast                  bool
-		}
+		type row struct{ id, from, to, text, toName string }
 		list, err := store.Append(nil, rows, err, func(rows *sql.Rows) (row, error) {
 			var r row
-			return r, rows.Scan(&r.id, &r.from, &r.to, &r.text, &r.toName, &r.broadcast)
+			return r, rows.Scan(&r.id, &r.from, &r.to, &r.text, &r.toName)
 		})
 		if err != nil {
 			return err
@@ -538,10 +558,6 @@ func (a *Agents) expireMessages(now time.Time) ([]string, int, error) {
 		for _, r := range list {
 			if _, err := tx.ExecContext(bg, "UPDATE agent_messages SET status = 'expired' WHERE id = ?", r.id); err != nil {
 				return err
-			}
-			// A broadcast goes to whoever is online; its sender is not told who did not read it.
-			if r.broadcast {
-				continue
 			}
 			text := fmt.Sprintf("Your message to %s (%s) expired unread: \"%s\"", r.toName, r.to, a.preview(r.text))
 			if err := a.addNotice(tx, r.from, text, "", now); err != nil {
@@ -552,8 +568,10 @@ func (a *Agents) expireMessages(now time.Time) ([]string, int, error) {
 				senders = append(senders, r.from)
 			}
 		}
-		n = len(list)
-		return nil
+		// A broadcast's deliveries expire with it and tell nobody.
+		expired, err := store.Affected(tx.ExecContext(bg, "UPDATE broadcast_deliveries SET status = 'expired' WHERE status = 'unread' AND broadcast_id IN (SELECT id FROM broadcasts WHERE expires_at <= ?)", a.iso(now)))
+		n = len(list) + int(expired)
+		return err
 	})
 	return senders, n, err
 }
