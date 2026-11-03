@@ -450,3 +450,27 @@ func TestJoinSinceZeroIsTheBeginning(t *testing.T) {
 		t.Fatalf("since 0 %v", got)
 	}
 }
+
+func TestSendMessageGlobalWhileAMeetingIsActive(t *testing.T) {
+	h := newHarness(t)
+	a := h.startMeeting("Busy", "ide-a")
+	h.ok("send_message", map[string]any{"message": "in meeting"}, "ide-b")
+	// global posts to the global chat although a meeting is active and ide-c has not read it.
+	res := h.ok("send_message", map[string]any{"message": "to all", "global": true}, "ide-c")
+	if res["sentTo"] != "global" || res["ok"] != true || res["meetingId"] != nil {
+		t.Fatalf("global %v", res)
+	}
+	if got := h.texts(map[string]any{}, "reader"); !slices.Equal(got, []string{"to all"}) {
+		t.Fatalf("global chat %v", got)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM meeting_messages WHERE meeting_id = ? AND text = 'to all'`, a); n != 0 {
+		t.Fatalf("%d copies in the meeting", n)
+	}
+	// Without it the active meeting still gets the message.
+	h.catchUp(a, "ide-c")
+	if res := h.ok("send_message", map[string]any{"message": "default"}, "ide-c"); res["sentTo"] != "meeting" {
+		t.Fatalf("default %v", res)
+	}
+	h.fails(400, "global posts to the global chat: leave out meetingId and draft, or global.", "send_message", map[string]any{"message": "x", "global": true, "meetingId": a}, "ide-c")
+	h.fails(400, "global posts to the global chat: leave out meetingId and draft, or global.", "send_message", map[string]any{"message": "x", "global": true, "draft": true}, "ide-c")
+}

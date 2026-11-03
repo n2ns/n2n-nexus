@@ -35,9 +35,14 @@ type sendMessageArgs struct {
 	MeetingID string `json:"meetingId"`
 	// Draft publishes the message as the meeting's current draft (a PROPOSAL).
 	Draft bool `json:"draft"`
+	// Global posts to the global chat even while a meeting is active.
+	Global bool `json:"global"`
 }
 
 func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
+	if a.Global && (a.MeetingID != "" || a.Draft) {
+		return nil, api.Errorf("global posts to the global chat: leave out meetingId and draft, or global.")
+	}
 	if a.Draft {
 		if a.Category != "" && a.Category != "PROPOSAL" {
 			return nil, api.Errorf("A draft is a PROPOSAL; leave category out or set it to PROPOSAL, not %s.", a.Category)
@@ -51,7 +56,7 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 	var result map[string]any
 	err = c.tx(call, func(tx *sql.Tx) error {
 		meetingID := a.MeetingID
-		if meetingID == "" {
+		if meetingID == "" && !a.Global {
 			var err error
 			if meetingID, err = defaultMeetingID(tx); err != nil {
 				return err

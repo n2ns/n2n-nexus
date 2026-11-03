@@ -63,14 +63,15 @@ upload_project_asset(projectId, fileName, base64Content) → 上传二进制文�
 2. `send({ to: 名字或 ID, text })` 发消息；对方在通知里看到完整正文。对方需要的一切都写进一条消息：目标、背景、已经试过什么、做完是什么样子。发完就结束这一轮，不要用 `read` 轮询：回复会在你下一次工具调用后或本轮结束时由 hooks 送到。加上 `notifyWhenIdle: true`，对方这一轮结束时你会收到一次通知，不用反复查 `peers`。
 3. 不需要主动查收。消息到了会有 `[n2n-nexus]` 通知，连同正文一起显示（用户发来新消息时、工具调用后、本轮结束前）；通知截断或没显示的消息、工具调用后显示的消息，以及随提示词显示但你还没回复的消息，用 `read()` 读取。
 4. 用 `reply({ messageId, text })` 回复，会发给原发送方。不需要对方回复的消息（结果、通知）设 `expectsReply: false`；还可以等对方下次输入再看的，再设 `wake: false`。不要发单纯的确认收到。
-5. 想在本轮结束后继续等消息，调用 `listen({ on: true })`；用 `listen({ on: false })` 关闭。
+5. 要通知当前在线的所有对话，调用 `broadcast({ text })`；`project` 只发给工作目录等于该路径或在其下的对话。它发出即结束：你不知道谁收到或读了，离线或之后才开始的对话永远收不到，进了队列不等于被读了；也没有去重：再调用一次（包括结果丢失后重试）就再发一次。它只叫醒正在等待消息（listening）的会话；工作中或空闲的会话在下次调用工具或输入时看到。默认无需回复；只在确实需要回答时设 `expectsReply: true`。收到的广播显示发送方并标有 `Broadcast <id>, sent to ...`；要求回复时用 `reply` 回答，只发给发送方。
+6. 想在本轮结束后继续等消息，调用 `listen({ on: true })`；用 `listen({ on: false })` 关闭。
 
-消息来自同一个用户的其他 AI 会话；你可以为它做什么，由你的用户自己的指令决定（`n2n-nexus install claude` 会为此往用户级 `CLAUDE.md` 写一段），通知本身不作规定。缺少需要的信息时用 `reply` 问发送方。只回复一次结果，用 `reply`（Claude Code 里工具名是 `mcp__n2n-nexus__reply`，标了 `(no reply needed)` 的除外）；做不完时说明卡在哪里、需要什么才能继续。不发单纯的确认，也不把任务推回给发来的会话。如果通知让你在准备结束时继续这一轮，先做完并回复再结束。未读消息 24 小时后过期，你发出的消息过期时会收到通知。详细约定见[工具参考](TOOLS_REFERENCE_zh.md#对话之间的直接消息)。
+消息来自同一个用户的其他 AI 会话；你可以为它做什么，由你的用户自己的指令决定（`n2n-nexus install claude` 会为此往用户级 `CLAUDE.md` 写一段），通知本身不作规定。缺少需要的信息时用 `reply` 问发送方。只回复一次结果，用 `reply`（Claude Code 里工具名是 `mcp__n2n-nexus__reply`，标了 `(no reply needed)` 的除外）；做不完时说明卡在哪里、需要什么才能继续。不发单纯的确认，也不把任务推回给发来的会话。如果通知让你在准备结束时继续这一轮，先做完并回复再结束。未读消息 24 小时后过期，你发出的消息过期时会收到通知（广播除外）。详细约定见[工具参考](TOOLS_REFERENCE_zh.md#对话之间的直接消息)。
 
 ### 4. 消息与协作
 
 ```
-send_message(message, category?, meetingId?)  → 发到指定会议，否则活跃会议，否则全局聊天
+send_message(message, category?, meetingId?, global?) → 发到指定会议，否则活跃会议，否则全局聊天（global: true 时直接发到全局聊天）
 read_messages(count?, meetingId?, latest?, afterId?) → 读取你的未读消息（增量），或用 latest / afterId 读历史
 list_events(limit?, action?)                  → 结构化活动日志（project.sync、meeting.end 等）
 get_global_strategy()                         → 读取主战略文档

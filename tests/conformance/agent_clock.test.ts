@@ -114,6 +114,21 @@ describe("agent sessions over time", () => {
         expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
     });
 
+    it("expires an unread broadcast after MESSAGE_TTL_MS without telling the sender", async () => {
+        const s = ids();
+        const t0 = nextBase();
+        await host.setClock(t0);
+        await hook("codex", "SessionStart", s("s"));
+        await hook("claude", "SessionStart", s("r"));
+        expect((await codexTool(s("s"), "broadcast", { text: "stale notice" })).status).toBe(200);
+        await host.setClock(t0 + MESSAGE_TTL_MS + 1000);
+
+        await hook("codex", "SessionStart", s("other"));                        // any hook runs the expiry check
+        expect(await hook("codex", "UserPromptSubmit", s("s"))).toBeNull();
+        expect(await hook("claude", "UserPromptSubmit", s("r"))).toBeNull();
+        expect((await claudeTool<{ messages: unknown[] }>(s("r"), "read")).payload.result?.messages).toEqual([]);
+    });
+
     it("resolves a Claude tool call through the PreToolUse binding until it expires", async () => {
         const s = ids();
         const t0 = nextBase();

@@ -188,7 +188,7 @@ func TestRegistersEveryCoreTool(t *testing.T) {
 	missing := h.srv.Missing()
 	slices.Sort(missing)
 	// What is left belongs to internal/agents.
-	if want := []string{"listen", "peers", "read", "reply", "send", "set_profile"}; !slices.Equal(missing, want) {
+	if want := []string{"broadcast", "listen", "peers", "read", "reply", "send", "set_profile"}; !slices.Equal(missing, want) {
 		t.Fatalf("tools without a handler: %v, want %v", missing, want)
 	}
 }

@@ -1,11 +1,11 @@
-// Direct-message tools (peers, send, read, reply, listen, set_profile) through POST /api/tools/call.
+// Direct-message tools (peers, send, read, reply, broadcast, listen, set_profile) through POST /api/tools/call.
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, useHost, type Caller } from "./harness.js";
-import { NO_AGENT_SESSION_ERROR, agentKit, ids, nameOf, type HookClient, type Profile } from "./agents.js";
+import { NO_AGENT_SESSION_ERROR, agentKit, context, ids, nameOf, type HookClient, type Profile } from "./agents.js";
 
 type Sent = { messageId: string; to: { id: string; name: string; status: string } };
 type Read = {
-    messages: { messageId: string; from: { id: string; name: string }; replyTo: string | null; text: string; createdAt: string; expectsReply: boolean }[];
+    messages: { messageId: string; from: { id: string; name: string }; replyTo: string | null; text: string; createdAt: string; expectsReply: boolean; broadcastId: string | null }[];
     remaining: number;
 };
 
@@ -22,11 +22,11 @@ const claude = <T>(sessionId: string, tool: string, args: Record<string, unknown
 
 const DM_TOOLS: [string, Record<string, unknown>][] = [
     ["peers", {}], ["send", { to: "x", text: "hi" }], ["read", {}], ["reply", { messageId: "m", text: "hi" }],
-    ["listen", { on: true }], ["set_profile", { note: "n" }]
+    ["listen", { on: true }], ["set_profile", { note: "n" }], ["broadcast", { text: "hi" }]
 ];
 
 describe("direct-message tools: identity", () => {
-    it("rejects all six tools without a resolvable session and leaves other tools alone", async () => {
+    it("rejects all seven tools without a resolvable session and leaves other tools alone", async () => {
         const s = ids();
         await hook("claude", "SessionStart", s("known"));
         const noSession = { ok: false, error: NO_AGENT_SESSION_ERROR };
@@ -155,8 +155,8 @@ describe("direct-message tools: send, reply, read", () => {
         const first = await claude<Read>(s("r"), "read", { count: 2 });
         expect(first.payload.result).toEqual({
             messages: [
-                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m1", createdAt: expect.any(String), expectsReply: true },
-                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m2", createdAt: expect.any(String), expectsReply: true }
+                { messageId: sent[0], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m1", createdAt: expect.any(String), expectsReply: true, broadcastId: null },
+                { messageId: sent[1], from: { id: `codex:${s("s")}`, name: nameOf("codex", "proj", s("s")) }, replyTo: null, text: "m2", createdAt: expect.any(String), expectsReply: true, broadcastId: null }
             ],
             remaining: 1
         });
@@ -193,7 +193,61 @@ describe("direct-message tools: send, reply, read", () => {
 
         const inbox = await codex<Read>(s("s"), "read");
         expect(inbox.payload.result?.messages).toEqual([
-            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: nameOf("claude", "proj", s("r")) }, replyTo: original, text: "answer", createdAt: expect.any(String), expectsReply: true }
+            { messageId: replied.payload.result!.messageId, from: { id: `claude:${s("r")}`, name: nameOf("claude", "proj", s("r")) }, replyTo: original, text: "answer", createdAt: expect.any(String), expectsReply: true, broadcastId: null }
         ]);
+    });
+});
+
+describe("direct-message tools: broadcast", () => {
+    type Broadcast = { broadcastId: string };
+
+    it("goes to the sessions online now, the sender excepted, within project when given, also while a meeting is active", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"), "/work/bc");
+        await hook("codex", "SessionStart", s("same"), "/work/bc/sub");
+        await hook("claude", "SessionStart", s("other"), "/work/bcx");
+        await hook("codex", "SessionStart", s("off"), "/work/bc");
+        await hook("codex", "SessionEnd", s("off"));
+        // An active meeting changes nothing for a broadcast.
+        const meeting = (await codex<{ meetingId: string }>(s("s"), "start_meeting", { topic: "busy" })).payload.result!.meetingId;
+
+        const sent = await codex<Broadcast>(s("s"), "broadcast", { text: "only /work/bc", project: "/work/bc" });
+        expect(sent.status).toBe(200);
+        expect(sent.payload.result).toEqual({ broadcastId: expect.any(String) });
+        const id = sent.payload.result!.broadcastId;
+
+        // In the project and online: announced at its next prompt, as a broadcast that needs no reply.
+        const ctx = context(await hook("codex", "UserPromptSubmit", s("same")));
+        expect(ctx).toContain(`${HOOK.texts.broadcastLine.replace("%s", id).replace("%s", HOOK.texts.broadcastToProject.replace("%s", "/work/bc"))}\nonly /work/bc\n`);
+        expect(ctx).toContain(HOOK.texts.noReplyMark);
+        // /work/bcx is not below /work/bc; the sender and the offline session get nothing, not even once it is back.
+        expect(await hook("claude", "UserPromptSubmit", s("other"))).toBeNull();
+        expect(await hook("codex", "UserPromptSubmit", s("s"))).toBeNull();
+        await hook("codex", "SessionStart", s("off"), "/work/bc");
+        expect(await hook("codex", "UserPromptSubmit", s("off"))).toBeNull();
+
+        // Nobody online in the project: still sent, to nobody.
+        expect((await codex<Broadcast>(s("s"), "broadcast", { text: "x", project: "/nowhere" })).payload.result).toEqual({ broadcastId: expect.any(String) });
+        expect((await codex(s("s"), "end_meeting", { meetingId: meeting })).status).toBe(200);
+    });
+
+    it("does not hold an idle or working session's Stop, and a reply goes to the sender naming the broadcast", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"), "/work/bw");
+        await hook("codex", "SessionStart", s("r"), "/work/bw");
+        await codex(s("s"), "broadcast", { text: "can wait", project: "/work/bw" });
+        expect(await kit.hook("codex", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
+
+        const asked = (await codex<Broadcast>(s("s"), "broadcast", { text: "who is free?", project: "/work/bw", expectsReply: true })).payload.result!.broadcastId;
+        const inbox = (await codex<Read>(s("r"), "read")).payload.result!.messages;
+        const copy = inbox.find((m) => m.text === "who is free?")!;
+        expect(copy).toMatchObject({ broadcastId: asked, expectsReply: true, from: { id: `codex:${s("s")}` } });
+        const replied = await codex<Sent>(s("r"), "reply", { messageId: copy.messageId, text: "me" });
+        expect(replied.payload.result?.to.id).toBe(`codex:${s("s")}`);
+        expect(context(await hook("codex", "UserPromptSubmit", s("s")))).toContain(`${HOOK.texts.messageReplyToBroadcast.replace("%s", asked)}\nme\n`);
+
+        // wake is no argument of broadcast: it is dropped, and the Stop of a session that is not listening is not held.
+        expect((await codex(s("s"), "broadcast", { text: "still waits", project: "/work/bw", wake: true })).status).toBe(200);
+        expect(await kit.hook("codex", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
     });
 });

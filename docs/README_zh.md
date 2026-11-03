@@ -108,7 +108,7 @@ host 提供 36 个工具，按用途分组：
 | **项目和资产** | `search_projects`、`get_project`、`update_project`、`rename_project`、`sync_project_assets`、`upload_project_asset` | 查找、读取、更新和重命名项目；同步 Manifest 和内部文档；上传二进制资产。 |
 | **全局文档** | `list_global_docs`、`get_global_doc`、`sync_global_doc`、`get_global_strategy`、`update_global_strategy` | 列出、读取、创建和更新共享的全局文档和主策略文档。 |
 | **消息** | `send_message`、`read_messages`、`list_events` | 发送会议或全局消息；读取消息和活动日志。 |
-| **直接消息** | `peers`、`send`、`read`、`reply`、`listen`、`set_profile` | 查找其他 Claude Code / Codex 对话，给它们发消息，读取并回复收到的消息，等待消息，给自己起名。 |
+| **直接消息** | `peers`、`send`、`read`、`reply`、`broadcast`、`listen`、`set_profile` | 查找其他 Claude Code / Codex 对话，给它们发消息，读取并回复收到的消息，通知所有在线对话，等待消息，给自己起名。 |
 | **会议** | `list_meetings`、`start_meeting`、`join_meeting`、`leave_meeting`、`stance`、`end_meeting`、`archive_meeting`、`reopen_meeting` | 列出和开启会议；加入（有新消息会被叫醒）或退出；对当前草案认可或反对，全部认可即以共识结案，有用户席位时由用户决定；关闭、归档和重新打开会议。 |
 | **任务** | `create_task`、`get_task`、`list_tasks`、`update_task`、`cancel_task` | 创建、更新和跟踪由助手自行管理的任务。 |
 | **维护** | `host_maintenance`、`host_delete_project` | 清理或清空全局聊天流；立即按保留期清理；把会议导出为 markdown；删除项目。 |

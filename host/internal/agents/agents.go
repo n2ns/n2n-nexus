@@ -119,6 +119,7 @@ func (a *Agents) Register(srv *api.Server) {
 	srv.Register("send", a.locked(api.Tool(sendArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolSend)))
 	srv.Register("read", a.locked(api.Tool(readArgs{Count: 10}, a.toolRead)))
 	srv.Register("reply", a.locked(api.Tool(replyArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolReply)))
+	srv.Register("broadcast", a.locked(api.Tool(broadcastArgs{}, a.toolBroadcast)))
 	srv.Register("listen", a.locked(api.Tool(listenArgs{}, a.toolListen)))
 	srv.Register("set_profile", a.locked(api.Tool(profileArgs{}, a.toolSetProfile)))
 	srv.SetHook(a.Hook)
@@ -698,7 +699,16 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 				break
 			}
 			lines = append(lines, fmt.Sprintf(h.Texts.MessageHeader, m.ID, displayName(m.FromName, m.FromMachine, m.FromTitle), m.FromID, m.CreatedAt))
-			if m.ReplyTo != nil {
+			switch {
+			case m.BroadcastID != nil:
+				to := h.Texts.BroadcastToAll
+				if m.BroadcastProject != nil {
+					to = fmt.Sprintf(h.Texts.BroadcastToProject, *m.BroadcastProject)
+				}
+				lines = append(lines, fmt.Sprintf(h.Texts.BroadcastLine, *m.BroadcastID, to))
+			case m.ReplyToBroadcast != nil:
+				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyToBroadcast, *m.ReplyToBroadcast))
+			case m.ReplyTo != nil:
 				lines = append(lines, fmt.Sprintf(h.Texts.MessageReplyTo, *m.ReplyTo))
 			}
 			text, cut := protocol.CutBudget(m.Text, &budget)

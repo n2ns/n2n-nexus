@@ -127,7 +127,7 @@ Meeting members and stances store their resolved identity kind; draft eligibilit
 At startup and then every hour the host cleans up, with the two retention settings of `settings.json` ([User guide](USER_GUIDE.md#settingsjson)), `retentionDays` (default 7) and `meetingRetentionDays` (default 30):
 
 - marks pending or running tasks past their TTL as `failed`, and deletes finished tasks (`completed`, `failed`, `cancelled`) and events `retentionDays` after;
-- expires unread direct messages past their 24-hour lifetime (telling the senders), and deletes read or expired direct messages and delivered notices `retentionDays` after;
+- expires unread direct messages past their 24-hour lifetime (telling the senders, except for broadcasts), and deletes read or expired direct messages and delivered notices `retentionDays` after;
 - deletes sessions not active for `retentionDays`, with their notices, idle subscriptions, tool-use bindings and read cursors, unless a direct message still references them or they hold a wait; adapter instances not seen for `retentionDays` are forgotten;
 - closes an active meeting without a message for `meetingRetentionDays` (counted from its last message, its start or its reopening) with `endReason: expired`, telling its members; it makes no decision;
 - deletes meetings closed or archived `meetingRetentionDays` ago, with their messages, decisions, stances, members, approvers and read cursors;

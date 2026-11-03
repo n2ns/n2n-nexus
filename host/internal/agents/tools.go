@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"strings"
+
 	"github.com/n2ns/n2n-nexus/host/internal/api"
 )
 
@@ -136,6 +138,52 @@ func (a *Agents) toolSend(c api.Call, args sendArgs) (any, error) {
 	return a.deliver(self, to, args.Text, nil, args.NotifyWhenIdle, args.kind)
 }
 
+type broadcastArgs struct {
+	Text         string  `json:"text"`
+	Project      *string `json:"project"`
+	ExpectsReply bool    `json:"expectsReply"`
+}
+
+// inProject: cwd is dir or lies below it (whole path components, either separator).
+func inProject(cwd, dir string) bool {
+	dir = strings.TrimRight(dir, `/\`)
+	return cwd == dir || strings.HasPrefix(cwd, dir+"/") || strings.HasPrefix(cwd, dir+`\`)
+}
+
+// toolBroadcast sends one copy of a message to every session that is online
+// now (within project when given), the sender excepted; offline sessions get
+// none. Fire and forget: the sender learns nothing about who got or read it.
+// It wakes the recipients that are listening; a working or idle one is not
+// interrupted (its Stop is not held) and sees it at its next prompt or tool call.
+func (a *Agents) toolBroadcast(c api.Call, args broadcastArgs) (any, error) {
+	self, err := a.resolve(c)
+	if err != nil {
+		return nil, err
+	}
+	online, err := a.onlineSessions(self.ID)
+	if err != nil {
+		return nil, err
+	}
+	to := []*session{}
+	for _, s := range online {
+		if args.Project == nil || inProject(s.Cwd, *args.Project) {
+			to = append(to, s)
+		}
+	}
+	broadcastID, err := a.addBroadcast(self.ID, to, args.Text, args.Project, args.ExpectsReply, a.o.Clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	var listening []string
+	for _, s := range to {
+		if s.Status == "listening" {
+			listening = append(listening, s.ID)
+		}
+	}
+	a.wake(listening...)
+	return map[string]any{"broadcastId": broadcastID}, nil
+}
+
 type replyArgs struct {
 	MessageID string `json:"messageId"`
 	Text      string `json:"text"`
@@ -194,10 +242,11 @@ func (a *Agents) toolRead(c api.Call, args readArgs) (any, error) {
 		Text         string  `json:"text"`
 		CreatedAt    string  `json:"createdAt"`
 		ExpectsReply bool    `json:"expectsReply"`
+		BroadcastID  *string `json:"broadcastId"`
 	}
 	items := []item{}
 	for _, m := range messages {
-		items = append(items, item{MessageID: m.ID, From: from{m.FromID, m.FromName}, ReplyTo: m.ReplyTo, Text: m.Text, CreatedAt: m.CreatedAt, ExpectsReply: m.ExpectsReply})
+		items = append(items, item{MessageID: m.ID, From: from{m.FromID, m.FromName}, ReplyTo: m.ReplyTo, Text: m.Text, CreatedAt: m.CreatedAt, ExpectsReply: m.ExpectsReply, BroadcastID: m.BroadcastID})
 	}
 	return map[string]any{"messages": items, "remaining": remaining}, nil
 }

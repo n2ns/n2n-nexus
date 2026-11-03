@@ -1272,6 +1272,13 @@
                 },
                 "expectsReply": {
                   "type": "boolean"
+                },
+                "broadcastId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The broadcast this message is a copy of, null for a direct message"
                 }
               },
               "required": [
@@ -1280,7 +1287,8 @@
                 "replyTo",
                 "text",
                 "createdAt",
-                "expectsReply"
+                "expectsReply",
+                "broadcastId"
               ],
               "additionalProperties": false
             }
@@ -1376,6 +1384,56 @@
         "required": [
           "messageId",
           "to"
+        ],
+        "additionalProperties": false
+      },
+      "publishOutputSchema": false
+    },
+    {
+      "name": "broadcast",
+      "title": "Broadcast Message",
+      "description": "Send one notice to every AI session of your own user that is online now (not offline), yourself excepted; project limits it to the sessions working in that directory or below it. It is fire and forget, like a network broadcast: the host picks the recipients when you call it and delivers the message, and you learn nothing about who got or read it; sessions that are offline, or that start later, never get it. Each recipient sees it as a direct message from you, marked as a broadcast. A recipient that is listening (waiting for messages) is woken with it at once; a working or idle one is not interrupted and sees it at its next tool call or prompt. By default it needs no reply; with expectsReply true each recipient is asked to answer you with reply, which goes to you alone. Calling it again sends it again. Needs the n2n-nexus hooks.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000,
+            "description": "Plain text, shown whole in each recipient's notification (a long message is cut there, and read returns it)."
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Only sessions whose working directory is this path or below it (whole path components, compared as written)"
+          },
+          "expectsReply": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: ask every recipient to answer you with reply."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "broadcastId": {
+            "type": "string",
+            "description": "Names this broadcast in the recipients' notifications and in replies to it"
+          }
+        },
+        "required": [
+          "broadcastId"
         ],
         "additionalProperties": false
       },
@@ -1549,7 +1607,7 @@
     {
       "name": "send_message",
       "title": "Post Message",
-      "description": "Post to a meeting or to the global chat; a direct message to one session is send (or reply). Post to a meeting (meetingId, else the active meeting) or, when no meeting is active, to the shared global chat that every session can read with read_messages. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither. Before posting to a meeting, read what others said: when messages of others came after you last read the meeting (read_messages in unread mode, a notification that showed them whole, or an earlier refusal; history reads do not count), the message is not sent: ok is false, refused true and unread has those messages, which now count as read. Take them into account rather than resending the same text. The next send_message to that meeting goes through even if more messages arrived, with a note of the unread numbers appended to its text; a draft or a DECISION never does: it is posted only once everything is read. Global chat has no such check.",
+      "description": "Post to a meeting or to the global chat; a direct message to one session is send (or reply). Post to a meeting (meetingId, else the active meeting) or, when no meeting is active or global is true, to the shared global chat that every session can read with read_messages; nobody is notified of a global chat message, broadcast notifies every online session. The sender is this conversation's session id (claude:<id> / codex:<id>) when the n2n-nexus hooks are installed, else the MCP adapter instance; identity says which. messageId is the message's number in its meeting (from 1), or its global chat id. draft: true publishes the message as the meeting's current draft (a PROPOSAL; currentProposalId is its number): its required approvers are the members that are required approvers and conversation sessions at that moment, and the members take a stance on it with stance. Only a draft replaces the current draft and starts its stances afresh; a PROPOSAL sent without draft changes neither. Before posting to a meeting, read what others said: when messages of others came after you last read the meeting (read_messages in unread mode, a notification that showed them whole, or an earlier refusal; history reads do not count), the message is not sent: ok is false, refused true and unread has those messages, which now count as read. Take them into account rather than resending the same text. The next send_message to that meeting goes through even if more messages arrived, with a note of the unread numbers appended to its text; a draft or a DECISION never does: it is posted only once everything is read. Global chat has no such check.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1576,13 +1634,17 @@
             "description": "Optional label. DECISION is also added to the meeting's decisions list. Omitted = no category."
           },
           "meetingId": {
-            "description": "Target meeting. Defaults to the active meeting, or global chat when none is active.",
+            "description": "Target meeting. Defaults to the active meeting, or global chat when none is active (global true posts there anyway).",
             "type": "string",
             "minLength": 1
           },
           "draft": {
             "type": "boolean",
             "description": "Publish as the meeting's current draft for the members to endorse or object to (meetings only; category is PROPOSAL, any other category fails)."
+          },
+          "global": {
+            "type": "boolean",
+            "description": "true: post to the global chat even while a meeting is active (not with meetingId or draft)."
           }
         },
         "required": [

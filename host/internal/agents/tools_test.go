@@ -18,7 +18,7 @@ var dmTools = []struct {
 }{
 	{"peers", nil}, {"send", map[string]any{"to": "x", "text": "hi"}}, {"read", nil},
 	{"reply", map[string]any{"messageId": "m", "text": "hi"}}, {"listen", map[string]any{"on": true}},
-	{"set_profile", map[string]any{"note": "n"}},
+	{"set_profile", map[string]any{"note": "n"}}, {"broadcast", map[string]any{"text": "hi"}},
 }
 
 func TestToolsNeedASession(t *testing.T) {

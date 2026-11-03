@@ -127,7 +127,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 启动时一次，之后每小时一次，host 按 `settings.json` 的两个保留期设置（[使用手册](USER_GUIDE_zh.md#settingsjson)）清理：`retentionDays`（默认 7）和 `meetingRetentionDays`（默认 30）：
 
 - 把超过 TTL 的待处理或运行中任务标为 `failed`，删除结束（`completed`、`failed`、`cancelled`）`retentionDays` 天后的任务和 `retentionDays` 天前的事件；
-- 让超过 24 小时有效期的未读直接消息过期（通知发送方），删除 `retentionDays` 天前已读或已过期的直接消息和已发出的通知；
+- 让超过 24 小时有效期的未读直接消息过期（通知发送方，广播除外），删除 `retentionDays` 天前已读或已过期的直接消息和已发出的通知；
 - 删除 `retentionDays` 天没有活动的会话，连同它的通知、空闲订阅、工具调用绑定和读取游标；仍被直接消息引用或正挂着等待的会话不删；`retentionDays` 天没出现的适配器实例不再记录；
 - 连续 `meetingRetentionDays` 天没有发言（从最后一条消息、开始或重新开启算起）的进行中会议以 `endReason: expired` 关闭并通知成员，不产生决议；
 - 删除关闭或归档 `meetingRetentionDays` 天的会议，连同消息、决议、表态、成员、认可人和读取游标；

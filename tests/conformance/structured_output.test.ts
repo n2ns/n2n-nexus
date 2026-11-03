@@ -61,8 +61,10 @@ describe("tool results", () => {
         await call("send", { to: "codex:peer", text: "direct hi", notifyWhenIdle: true });
         const inbox = await call("read", {}, "peer") as { messages: { messageId: string }[] };
         await call("reply", { messageId: inbox.messages[0].messageId, text: "direct reply" }, "peer");
+        await call("broadcast", { text: "to everyone online" });
         await call("read", {});
         const meeting = await call("start_meeting", { topic: "Plan" });
+        await call("send_message", { message: "global while a meeting is active", global: true });
         await call("send_message", { message: "in meeting", category: "DECISION" });
         await call("read_messages", { meetingId: meeting.meetingId, count: 5 });
         await call("host_maintenance", { action: "export", meetingId: meeting.meetingId });
