@@ -92,8 +92,9 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
                                     │  等待期间会话显示为 "listening"
                                     ├─ 有新消息 ─▶ { wake: 通知, dispatchId }
                                     │     Claude Code：asyncRewake hook 以退出码 2 结束，通知开启新的一轮
-                                    │     Codex：独立后台进程执行 `codex queue --thread <id> --message <通知>`，
-                                    │       再回报 POST /api/hook {WakeResult, dispatch_id, ok}
+                                    │     Codex：独立后台进程（Windows 上由 PowerShell 的 Start-Process 启动，它不传递任何句柄：
+                                    │       Node 直接派生的进程会继承 hook 的输出管道，Codex 会一直等这些管道）执行
+                                    │       `codex queue --thread <id> --message <通知>`，再回报 POST /api/hook {WakeResult, dispatch_id, ok}
                                     ├─ 该会话有其他任何事件 ─▶ null（等待结束）
                                     └─ 时间到或 host 关闭 ─▶ { timeout: true }（再次请求）
 ```

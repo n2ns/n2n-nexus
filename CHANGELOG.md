@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 - `broadcast` sends one notice to every conversation that is online at that moment, the sender excepted; `project` limits it to the conversations working in that directory or below it. It is fire and forget: the host picks the recipients and delivers it, the sender gets only a `broadcastId` and learns nothing about who got or read it, and offline conversations or ones that start later never get it. The host stores it once with one delivery per recipient, and every recipient sees it under the same id, in a `--- Broadcast <id> from <sender> ... ---` header; it wakes a recipient that is listening for messages, never interrupts a working one (its turn is not held) and reaches an idle one at its next prompt, needs no reply unless the sender sets `expectsReply`, and a `reply` on that id goes to the sender alone, with the `broadcastId` in `replyTo`. An unread broadcast expires after 24 hours like a direct message, without telling anyone. `read` returns `kind` (`direct` or `broadcast`), `scope` and `replyToKind` for each message.
 - `send_message` takes `global: true` to post to the global chat while a meeting is active; before, a post without `meetingId` always went to the active meeting.
 
+### Fixed
+
+- On Windows, a Codex conversation is woken while idle again. The background wait copy that the Stop `--wait` hook starts inherited the pipes Codex reads the hook's output from (Codex runs the hook through PowerShell), so Codex waited for them until the hook's timeout and ended the copy with the hook: the session never showed as `listening` and only saw messages at its next prompt or tool call. The copy is now started by PowerShell's `Start-Process`, which passes no handles on.
+
 ### Changed
 
 - A wake the client reports as failed (`codex queue` returned an error or a non-zero exit) is logged in `host.log` when the host undoes it: the session, the wake and how many messages and notices are delivered again. Before, the undo and the retry left no trace.

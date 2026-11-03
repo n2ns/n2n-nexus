@@ -7,6 +7,7 @@
  * is silent: exit 0 with nothing on stdout, so the client carries on unaffected.
  */
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 import {
     BACKGROUND_WAIT_EVENT, WAKE_RESULT_EVENT, HOOK_INPUT_FIELDS, HOOK_REQUEST_TIMEOUT_MS, HOOK_STOP_REQUEST_TIMEOUT_MS, SESSION_END_REQUEST_TIMEOUT_MS, WAIT_HOOK_TIMEOUT_SEC, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS, noDaemonHint,
@@ -161,7 +162,7 @@ async function runWait(argv: string[]): Promise<number> {
         if (client === "codex") {
             const { entryScript } = await import("./entry.js");
             const args = [entryScript(), "hook", "codex", "--wait", "--session", sessionId, ...(argValue(argv, "--endpoint") ? ["--endpoint", configured] : [])];
-            spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+            await startDetached(process.execPath, args);
             return 0;
         }
     }
@@ -185,6 +186,31 @@ async function runWait(argv: string[]): Promise<number> {
         if (ok || !reported || Date.now() + delay >= deadline) return 0;
         await new Promise((resolve) => setTimeout(resolve, delay));
     }
+}
+
+/**
+ * Start a program that outlives this hook, with no stdio. On Windows it is
+ * started by PowerShell's Start-Process (ShellExecute), which passes no handles
+ * on: a process Node spawns inherits every inheritable handle of this one, and
+ * when Codex runs the hook through PowerShell (`commandWindows`) those include
+ * the pipes Codex reads the hook's output from. Codex then waits for the pipes
+ * until the hook's timeout and ends the wait copy with the hook.
+ */
+async function startDetached(file: string, args: string[]): Promise<void> {
+    if (process.platform !== "win32") {
+        spawn(file, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        return;
+    }
+    const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
+    // Start-Process joins -ArgumentList with spaces, so each argument is quoted for the command line itself.
+    const quoted = (s: string) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
+    const command = `Start-Process -WindowStyle Hidden -FilePath ${literal(file)} -ArgumentList ${args.map((a) => literal(quoted(a))).join(",")}`;
+    const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    await new Promise<void>((resolve, reject) => {
+        const launcher = spawn(powershell, ["-NoProfile", "-NonInteractive", "-Command", command], { stdio: "ignore", windowsHide: true });
+        launcher.on("error", reject);
+        launcher.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Start-Process exited with ${code}`))));
+    });
 }
 
 /** Run the hook command; resolves to exit code 0, or 2 when a background wait wakes a Claude conversation. */

@@ -11,6 +11,10 @@
 - `broadcast` 把一条通知发给当时所有在线的对话，不含发送方；`project` 只发给工作目录等于该路径或位于其下的对话。它发出即结束：收件方由 host 选定并送达，发送方只拿到 `broadcastId`，不知道谁收到或读了，离线或之后才开始的对话永远收不到。host 只存一份，每个收件方一条送达记录，所有收件方看到的都是同一个 id，以 `--- Broadcast <id> from <发送方> ... ---` 开头；它叫醒正在等待消息的收件方，不打断工作中的会话（本轮结束时不拦住），空闲的会话在下次输入时看到，除非发送方设了 `expectsReply` 否则无需回复，对这个 id 的 `reply` 只发给发送方，`replyTo` 就是 `broadcastId`。未读的广播和直接消息一样 24 小时后过期，过期不通知任何人。`read` 的每条消息新增 `kind`（`direct` 或 `broadcast`）、`scope` 和 `replyToKind`。
 - `send_message` 新增 `global: true`，有活跃会议时也能发到全局聊天；此前不带 `meetingId` 的消息总是发到活跃会议。
 
+### 修复
+
+- Windows 上空闲的 Codex 对话重新能被叫醒。Stop `--wait` hook 启动的后台等待进程继承了 Codex 读取 hook 输出用的管道（Codex 通过 PowerShell 运行 hook），Codex 一直等这些管道直到 hook 超时，然后连等待进程一起结束：会话从不显示为 `listening`，只在下次输入或调用工具时才看到消息。现在等待进程由 PowerShell 的 `Start-Process` 启动，它不传递任何句柄。
+
 ### 变更
 
 - 客户端回报失败的唤醒（`codex queue` 出错或退出码非 0）在 host 撤销它时记入 `host.log`：会话、唤醒 ID、再次送达的消息和通知各有几条。此前撤销和重试不留任何痕迹。
