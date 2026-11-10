@@ -15,6 +15,7 @@ import {
 } from "../contract.js";
 import { NexusClient, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../client/nexus-client.js";
 import { DISCOVER_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
+import { SHELL_NAMES, hookClientPid, parsePid, processAlive } from "./client-process.js";
 import { machineInfo } from "./machine.js";
 import { readTitle } from "./title.js";
 
@@ -176,7 +177,6 @@ async function runWait(argv: string[]): Promise<number> {
     const { client, configured } = clientAndEndpoint(argv);
     // claude -p (unattended) waits for this hook before it exits, and nobody would see a woken turn.
     if (client === "claude" && process.env.CLAUDE_CODE_SESSION_ATTENDED === "0") return 0;
-    const { hookClientPid, parsePid, processAlive } = await import("./client-process.js");
     let sessionId = argValue(argv, "--session");
     if (!sessionId) {
         const stdin: unknown = JSON.parse(await readStdin());
@@ -184,10 +184,8 @@ async function runWait(argv: string[]): Promise<number> {
         sessionId = stdin.session_id;
         if (client === "codex") {
             const { entryScript } = await import("./entry.js");
-            const pid = hookClientPid();
-            const args = [entryScript(), "hook", "codex", "--wait", "--session", sessionId, ...(argValue(argv, "--endpoint") ? ["--endpoint", configured] : []),
-                ...(pid !== undefined ? ["--client-pid", String(pid)] : [])];
-            await startDetached(process.execPath, args);
+            const args = [entryScript(), "hook", "codex", "--wait", "--session", sessionId, ...(argValue(argv, "--endpoint") ? ["--endpoint", configured] : [])];
+            await startDetached(process.execPath, args, hookClientPid);
             return 0;
         }
     }
@@ -227,17 +225,27 @@ async function runWait(argv: string[]): Promise<number> {
  * on: a process Node spawns inherits every inheritable handle of this one, and
  * when Codex runs the hook through PowerShell (`commandWindows`) those include
  * the pipes Codex reads the hook's output from. Codex then waits for the pipes
- * until the hook's timeout and ends the wait copy with the hook.
+ * until the hook's timeout and ends the wait copy with the hook. The copy gets
+ * the client process as `--client-pid`: from `clientPid` on Linux and macOS,
+ * found by the launching PowerShell itself on Windows.
  */
-async function startDetached(file: string, args: string[]): Promise<void> {
+async function startDetached(file: string, args: string[], clientPid: () => number | undefined): Promise<void> {
     if (process.platform !== "win32") {
-        spawn(file, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        const pid = clientPid();
+        spawn(file, [...args, ...(pid !== undefined ? ["--client-pid", String(pid)] : [])], { detached: true, stdio: "ignore", windowsHide: true }).unref();
         return;
     }
     const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
     // Start-Process joins -ArgumentList with spaces, so each argument is quoted for the command line itself.
     const quoted = (s: string) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
-    const command = `Start-Process -WindowStyle Hidden -FilePath ${literal(file)} -ArgumentList ${args.map((a) => literal(quoted(a))).join(",")}`;
+    // The client process (--client-pid) is found here, in the PowerShell that starts the copy anyway, not
+    // in one of its own: the nearest ancestor of this hook that is not a shell (Codex runs commandWindows
+    // through PowerShell). Not found: the copy runs without it.
+    const shells = SHELL_NAMES.map(literal).join(",");
+    const command = `$a = @(${args.map((a) => literal(quoted(a))).join(",")}); `
+        + `try { $c = ${process.ppid}; for ($i = 0; $i -lt 4; $i++) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $c); if (-not $p) { break }; `
+        + `if (@(${shells}) -notcontains ($p.Name -replace '[.]exe$', '').ToLower()) { $a += ${literal(quoted("--client-pid"))}, ('"' + $c + '"'); break }; $c = $p.ParentProcessId } } catch { }; `
+        + `Start-Process -WindowStyle Hidden -FilePath ${literal(file)} -ArgumentList $a`;
     const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     await new Promise<void>((resolve, reject) => {
         const launcher = spawn(powershell, ["-NoProfile", "-NonInteractive", "-Command", command], { stdio: "ignore", windowsHide: true });

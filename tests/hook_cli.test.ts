@@ -513,7 +513,7 @@ describe("nextQueueRetry", () => {
 });
 
 describe("hookClientPid", () => {
-    it("is the parent process when that is not a shell", () => {
+    it.skipIf(process.platform === "win32")("is the parent process when that is not a shell", () => {
         expect(hookClientPid()).toBe(process.ppid);
     });
 
