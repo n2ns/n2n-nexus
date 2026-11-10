@@ -141,6 +141,19 @@ export async function waitForWake(client: HookClient, sessionId: string, configu
 }
 
 /**
+ * The delay before the Codex wait tries again after the failed `codex queue`
+ * it waited `delay` before (the first failure waits WAKE_RETRY_FIRST_DELAY_MS),
+ * doubled each time, or null once it would reach WAKE_RETRY_MAX_DELAY_MS
+ * (about 8.5 minutes of failures): Codex does not have the conversation loaded
+ * (its terminal was closed, the app restarted), so the wait ends, and the
+ * messages, undone by the failure report, wait for the user's next prompt there.
+ */
+export function nextQueueRetry(delay: number): number | null {
+    const next = delay * 2;
+    return next >= WAKE_RETRY_MAX_DELAY_MS ? null : next;
+}
+
+/**
  * `--wait`, started by a Stop hook when a turn ends. Claude runs it as an
  * asyncRewake hook: exit code 2 with the notification on stderr wakes the
  * conversation. Codex has no such hook, so its Stop hook starts a detached copy
@@ -149,7 +162,8 @@ export async function waitForWake(client: HookClient, sessionId: string, configu
  * and reports to the host whether it did (WAKE_RESULT_EVENT): after a failed
  * queue the host undoes the wake and the copy waits again after a delay that
  * doubles on each failure, so the same messages wake the session on a later
- * try without retrying a broken `codex` in a loop.
+ * try without retrying a broken `codex` in a loop; once the delay reaches its
+ * maximum the copy ends, and the messages wait for the user's next prompt.
  *
  * The wait ends when the client it would wake is gone (Claude Code's
  * CLAUDE_PID, or the Codex process the Stop hook passes as `--client-pid`),
@@ -186,7 +200,7 @@ async function runWait(argv: string[]): Promise<number> {
         .hook({ client, input: { hook_event_name: WAKE_RESULT_EVENT, session_id: sessionId, dispatch_id: wake.dispatchId, ok } }, HOOK_REQUEST_TIMEOUT_MS)
         .then(() => true, () => false);
     const deadline = Date.now() + WAIT_DEADLINE_MS;
-    for (let delay = WAKE_RETRY_FIRST_DELAY_MS; ; delay = Math.min(delay * 2, WAKE_RETRY_MAX_DELAY_MS)) {
+    for (let delay: number | null = WAKE_RETRY_FIRST_DELAY_MS; ; delay = nextQueueRetry(delay)) {
         const wake = await waitForWake(client, sessionId, configured, deadline - Date.now(), clientGone);
         if (wake === null) return 0;
         if (clientGone()) {
@@ -202,7 +216,7 @@ async function runWait(argv: string[]): Promise<number> {
         const ok = !queued.error && queued.status === 0;
         const reported = await report(wake, ok);
         // Unknown result (no report): the host keeps the wake, and waiting again would deliver nothing.
-        if (ok || !reported || Date.now() + delay >= deadline) return 0;
+        if (ok || !reported || delay === null || Date.now() + delay >= deadline) return 0;
         await new Promise((resolve) => setTimeout(resolve, delay));
     }
 }

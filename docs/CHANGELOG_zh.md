@@ -16,6 +16,7 @@
 ### 修复
 
 - 客户端被强制结束或崩溃（没有 `SessionEnd`）后，它的后台等待不再让对话一直显示为 `listening`，也不再替它领走唤醒：等待在每次请求前（间隔最长 590 秒）检查 Claude Code（`CLAUDE_PID`）或运行 Stop hook 的 Codex 进程是否还在，不在就结束；之后才到的唤醒回报为未送达，host 会再次提醒这些消息，而不是把它们标为已读。以前，带着后台等待被强制结束的 Claude Code 对话会丢掉叫醒它的那条消息。
+- Codex 的后台等待在 `codex queue` 连续失败 10 次（约 8.5 分钟）后停止重试，不再一直试到期限：这说明 Codex 没有加载该对话；期限改为一天后，被关闭的终端（其 app-server 仍在运行）否则会整天每 5 分钟重试一次。消息保持未读，留到用户下次输入时再提醒。
 - `n2n-nexus doctor claude` 会报告超时时间与客户端不一致（旧版 install 留下的）或缺失的后台等待 hook。
 - 既没有对话身份、也没有实例的工具调用（`POST /api/tools/call` 不带 `instanceId`，也没装 hooks）会被所有以某个身份行事的工具拒绝：`send_message`、`start_meeting`、`end_meeting`、`archive_meeting`、`reopen_meeting`、`join_meeting`、`leave_meeting` 和 `stance`，与 `read_messages` 原有的做法一致。以前，所有这样的调用方共用同一个身份 `unknown`，共用一个成员记录和一个已读游标。MCP 适配器总会带上 `instanceId`。
 - 工具调用后的提醒里出现过的会议消息（那个上下文可能属于子代理）不会再被对话漏掉：成员在下次用户输入时会被告知还有几条之前的他人消息未读，active 成员的本轮在结束时还会为此再继续一次，与之前仍未读的私信相同。

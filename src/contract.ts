@@ -86,7 +86,11 @@ export const HOOK_TIMEOUT_SEC: number = contract.timing.hookTimeoutSec;
 export const CODEX_SESSION_END_TIMEOUT_SEC: number = contract.timing.codexSessionEndTimeoutSec;
 /** HTTP timeout of a SessionEnd hook, which is not resent after a timeout so it ends within CODEX_SESSION_END_TIMEOUT_SEC. */
 export const SESSION_END_REQUEST_TIMEOUT_MS: number = contract.timing.sessionEndRequestTimeoutMs;
-/** After a failed `codex queue`, the Codex wait asks again after this delay, doubled on each failure up to the maximum. */
+/**
+ * After a failed `codex queue`, the Codex wait asks again after the first
+ * delay, doubled on each failure, and gives up once it would reach the maximum
+ * (nextQueueRetry). The maximum also caps the wait's reconnect delay.
+ */
 export const WAKE_RETRY_FIRST_DELAY_MS: number = contract.timing.wakeRetryFirstDelayMs;
 export const WAKE_RETRY_MAX_DELAY_MS: number = contract.timing.wakeRetryMaxDelayMs;
 

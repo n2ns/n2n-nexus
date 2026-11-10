@@ -168,7 +168,7 @@
 | 每次工具调用后 | 只有尚未提醒过的消息、通知和会议新消息。 |
 | 本轮即将结束 | 有未读的直接消息、会话 listening 时送达的未读广播、待处理的通知，或会话以 active 方式参加的会议有新消息或之前的他人消息仍未读时，本轮带着提醒再继续一次。 |
 | 待命中 | 一有可以叫醒会话的内容到达就结束等待，对话带着它继续。 |
-| 空闲（本轮已结束） | Stop hook 启动的后台等待（`n2n-nexus hook <client> --wait`，最长一天）带着提醒开启新的一轮：Claude Code 通过 `asyncRewake` hook（退出码 2），Codex 通过 `codex queue --thread <会话 ID>`（`NEXUS_CODEX_COMMAND` 可替换 `codex` 命令）。在无人值守的 Claude 会话（`claude -p`、`CLAUDE_CODE_SESSION_ATTENDED=0`）中，该 hook 立即返回，因为 `claude -p` 会等它结束才退出。等待期间会话显示为 `listening`；对话中的任何新活动都会结束等待。Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮，且 Codex 退出时等待结束；`codex queue` 失败时这次唤醒会被撤销，等待隔一段时间（1 秒起，每次加倍，最长 5 分钟）后再次送达同样的消息。 |
+| 空闲（本轮已结束） | Stop hook 启动的后台等待（`n2n-nexus hook <client> --wait`，最长一天）带着提醒开启新的一轮：Claude Code 通过 `asyncRewake` hook（退出码 2），Codex 通过 `codex queue --thread <会话 ID>`（`NEXUS_CODEX_COMMAND` 可替换 `codex` 命令）。在无人值守的 Claude 会话（`claude -p`、`CLAUDE_CODE_SESSION_ATTENDED=0`）中，该 hook 立即返回，因为 `claude -p` 会等它结束才退出。等待期间会话显示为 `listening`；对话中的任何新活动都会结束等待。Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮，且 Codex 退出时等待结束；`codex queue` 失败时这次唤醒会被撤销，等待隔一段时间（1 秒起，每次加倍）后再次送达同样的消息；连续失败 10 次（约 8.5 分钟，说明 Codex 没有加载该对话）后等待结束，消息留到用户下次在该对话里输入时再提醒。 |
 | 自动轮次上限 | 被叫醒、待命中的 Stop，以及因私信或其通知而不结束的 Stop，各算一次自动轮次；会议新消息和会议通知不计数，也不受限制；提醒中会写 `Automatic turn n of N`。设置了 `maxAutoTurns` 时（host `settings.json`；默认 0，即不限制，提醒中也不写计数），从用户上次输入以来达到这个次数后，消息仍会保存，但不再叫醒或拦住对话；用户下次输入时提醒这些消息，并重新开始计数。叫醒后一分钟内的提示词视为被叫醒的那一轮开始，不清零计数。 |
 
 未读消息 24 小时后过期，发送方随后会收到通知。未读的广播也在 24 小时后过期，不通知任何人。通知也会报告 `notifyWhenIdle` 的结果。

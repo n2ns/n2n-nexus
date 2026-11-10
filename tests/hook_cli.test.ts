@@ -7,9 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { MAX_TITLE_CHARS } from "../src/contract.js";
+import { MAX_TITLE_CHARS, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS } from "../src/contract.js";
 import { hookClientPid } from "../src/cli/client-process.js";
-import { waitForWake } from "../src/cli/hook.js";
+import { nextQueueRetry, waitForWake } from "../src/cli/hook.js";
 import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
 import { ENTRY, REPO, runCli, type CliResult } from "./helpers/cli.js";
@@ -499,6 +499,16 @@ describe("n2n-nexus hook --wait, client gone", () => {
         const result = await runHook(["codex", "--wait", "--session", "c1", "--client-pid", codex.pid, "--endpoint", fake.endpoint], "");
         expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
         expect(inputs()).toEqual([{ hook_event_name: "BackgroundWait", session_id: "c1" }]);
+    });
+});
+
+describe("nextQueueRetry", () => {
+    it("doubles the delay after each failed codex queue and gives up before it reaches the maximum", () => {
+        const delays: number[] = [];
+        for (let delay: number | null = WAKE_RETRY_FIRST_DELAY_MS; delay !== null; delay = nextQueueRetry(delay)) delays.push(delay);
+        // 1, 2, 4, ... 256 s: ten tries in about 8.5 minutes, then the wait ends.
+        expect(delays).toEqual([1, 2, 4, 8, 16, 32, 64, 128, 256].map((s) => s * 1000));
+        expect(delays.every((d) => d < WAKE_RETRY_MAX_DELAY_MS)).toBe(true);
     });
 });
 
