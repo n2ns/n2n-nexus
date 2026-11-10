@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Upgrade the host and the client, then run `n2n-nexus install <client>` again so the background wait hook gets its new timeout. The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
+Upgrade the host and the client together (contract version 5), then run `n2n-nexus install <client>` again so the background wait hook gets its new timeout. The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
 
 ### Changed
 
@@ -17,6 +17,9 @@ Upgrade the host and the client, then run `n2n-nexus install <client>` again so 
 
 - A background wait whose client was killed or crashed (no `SessionEnd`) no longer keeps the conversation `listening`, nor takes a wake for it: before each request (at most 590 s apart) the wait checks that Claude Code (`CLAUDE_PID`) or the Codex process that ran the Stop hook still runs and ends when it does not, and a wake that arrives after that is reported as not delivered, so the host announces its messages again instead of marking them read. Before, a Claude Code conversation killed with its wait still running lost the message that woke it.
 - `n2n-nexus doctor claude` reports a background wait hook whose timeout is not this client's (left by an older install) or that is missing.
+- A tool call that names neither a conversation nor an instance (no `instanceId` in `POST /api/tools/call`, no hooks) is refused by every tool that acts as someone: `send_message`, `start_meeting`, `end_meeting`, `archive_meeting`, `reopen_meeting`, `join_meeting`, `leave_meeting` and `stance`, as `read_messages` already was. Before, all such callers acted as one shared identity `unknown`, with one membership and one read cursor. The MCP adapter always sends `instanceId`.
+- Meeting messages that a tool call's notification announced (its context may be a sub-agent's) are no longer lost to the conversation: the member is told at its next prompt how many earlier messages of others are still unread, and an active member's turn continues once for them at its end, as for an earlier direct message still unread.
+- LAN discovery amplifies nothing: the query is padded to 512 bytes (`discoveryQueryBytes`), and the host answers only that datagram and never with more bytes than it got. Before, an 18-byte query got a reply of about 70 bytes sent to an unverified source address. An older client's query gets no answer, hence contract version 5.
 
 ## [0.12.5] - 2026-11-04
 

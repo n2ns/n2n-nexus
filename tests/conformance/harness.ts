@@ -41,6 +41,8 @@ export const TOOLS_CONTRACT = readContract<{ contractVersion: number; tools: Con
 export const HOOK = readContract<{
     contractVersion: number;
     clients: string[];
+    discoveryQuery: string;
+    discoveryQueryBytes: number;
     backgroundWaitEvent: string;
     wakeResultEvent: string;
     agentStatuses: string[];
@@ -86,6 +88,10 @@ export type HostSettings = {
     allowedHosts?: string[];
     /** How long a listening hook is held open (test-only flag). */
     listenWaitMs?: number;
+    /** UDP port of LAN discovery, answered only with a non-loopback bindHost. */
+    discoveryPort?: number;
+    /** Address the host binds (--host); default 127.0.0.1. Tests still reach it on 127.0.0.1. */
+    bindHost?: string;
 };
 
 const START_TIMEOUT_MS = 20_000;
@@ -107,7 +113,7 @@ export class Host {
     /** Start the host on a fresh temporary root. */
     async start(): Promise<void> {
         this.root = await fsp.mkdtemp(path.join(os.tmpdir(), "n2n-nexus-conformance-"));
-        const { listenWaitMs: _wait, ...file } = this.settings;
+        const { listenWaitMs: _wait, bindHost: _bind, ...file } = this.settings;
         await fsp.writeFile(path.join(this.root, "settings.json"), JSON.stringify(file));
         await this.spawn();
     }
@@ -145,7 +151,7 @@ export class Host {
     private async spawn(): Promise<void> {
         const bin = process.env.NEXUS_HOST_BIN;
         if (!bin) throw new Error("NEXUS_HOST_BIN is not set: point it at the host executable (see tests/conformance/harness.ts)");
-        const args = ["serve", "--host", "127.0.0.1", "--port", "0", "--root", this.root];
+        const args = ["serve", "--host", this.settings.bindHost ?? "127.0.0.1", "--port", "0", "--root", this.root];
         if (this.settings.listenWaitMs !== undefined) args.push("--test-listen-wait-ms", String(this.settings.listenWaitMs));
 
         // The host must not pick up configuration from the developer's environment.

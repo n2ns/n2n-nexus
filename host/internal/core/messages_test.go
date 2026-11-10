@@ -30,7 +30,7 @@ func TestGlobalChatCursorsPerInstance(t *testing.T) {
 	if res["sentTo"] != "global" || res["messageId"] != 1.0 {
 		t.Fatalf("send: %v", res)
 	}
-	h.ok("send_message", map[string]any{"message": "two"}, "")
+	h.ok("send_message", map[string]any{"message": "two"}, "B")
 
 	if got := h.texts(map[string]any{}, "reader"); !slices.Equal(got, []string{"one", "two"}) {
 		t.Fatalf("first read %v", got)
@@ -56,23 +56,52 @@ func TestGlobalChatCursorsPerInstance(t *testing.T) {
 		}
 	}
 
-	// A message without a category has category null; the sender is "unknown" without an instance.
+	// A message without a category has category null.
 	r := h.call("read_messages", map[string]any{"count": 2}, "fresh")
 	var raw struct {
 		Messages []map[string]json.RawMessage `json:"messages"`
 	}
 	json.Unmarshal(r.result, &raw)
-	if string(raw.Messages[0]["category"]) != `"UPDATE"` || string(raw.Messages[1]["category"]) != "null" || string(raw.Messages[1]["from"]) != `"unknown"` {
+	if string(raw.Messages[0]["category"]) != `"UPDATE"` || string(raw.Messages[1]["category"]) != "null" || string(raw.Messages[1]["from"]) != `"B"` {
 		t.Fatalf("messages %s", r.result)
+	}
+}
+
+// A call that names no instance and no conversation could only act as one
+// identity shared by every such caller: the tools that act as someone refuse it.
+func TestIdentityToolsNeedAnInstance(t *testing.T) {
+	h := newHarness(t)
+	id := h.ok("start_meeting", map[string]any{"topic": "t"}, "A")["meetingId"]
+	msg := "%s needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to tell who calls."
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"send_message", map[string]any{"message": "x"}},
+		{"start_meeting", map[string]any{"topic": "anon"}},
+		{"join_meeting", map[string]any{"meetingId": id}},
+		{"leave_meeting", map[string]any{"meetingId": id}},
+		{"stance", map[string]any{"meetingId": id, "messageId": 1, "stance": "endorse"}},
+		{"end_meeting", map[string]any{"meetingId": id}},
+		{"archive_meeting", map[string]any{"meetingId": id}},
+		{"reopen_meeting", map[string]any{"meetingId": id}},
+	} {
+		h.fails(400, fmt.Sprintf(msg, c.tool), c.tool, c.args, "")
+	}
+	if n := h.count(`SELECT COUNT(*) FROM meetings`) + h.count(`SELECT COUNT(*) FROM global_messages`) + h.count(`SELECT COUNT(*) FROM meeting_messages`); n != 1 {
+		t.Fatalf("%d rows", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM meeting_members WHERE member_id = 'unknown'`); n != 0 {
+		t.Fatalf("%d anonymous members", n)
 	}
 }
 
 func TestReadMessagesNeedsAnInstance(t *testing.T) {
 	h := newHarness(t)
 	h.ok("send_message", map[string]any{"message": "x"}, "A")
-	h.fails(400, "read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to keep unread cursors; history reads (latest or afterId) need none.", "read_messages", map[string]any{}, "")
+	h.fails(400, "read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to tell who calls; history reads (latest or afterId) need none.", "read_messages", map[string]any{}, "")
 	id := h.ok("start_meeting", map[string]any{"topic": "t"}, "A")["meetingId"]
-	h.fails(400, "read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to keep unread cursors; history reads (latest or afterId) need none.", "read_messages", map[string]any{"meetingId": id}, "")
+	h.fails(400, "read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to tell who calls; history reads (latest or afterId) need none.", "read_messages", map[string]any{"meetingId": id}, "")
 	if n := h.count(`SELECT COUNT(*) FROM read_cursors`); n != 0 {
 		t.Fatalf("%d cursors", n)
 	}

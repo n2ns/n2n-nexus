@@ -164,9 +164,9 @@
 | 客户端事件 | 收件方看到的内容 |
 | --- | --- |
 | 对话开始 | 自己的名称和 ID、未离线的其他会话（最多列出五个）、其中哪些能立即回应、`peers`、`send` 和 `read` 的用法，客户端自带的代理列表看不到这些会话，以及协作规则：消息可以要求什么由用户自己的指令决定，有疑问问发送方；把工作交给别的会话时，对方需要的一切都写进一条消息，发完就结束本轮而不是用 `read` 轮询；任务只回复一次结果，做不完时说明卡在哪里、需要什么才能继续；不发单纯的确认，也不把任务推回给发来的会话。 |
-| 提交提示词 | 新消息（最多显示五条）、之前提醒过的未读消息数、待处理的通知和会议新消息。被叫醒的那一轮开始时的提示词只附带叫醒之后新到的内容。 |
+| 提交提示词 | 新消息（最多显示五条）、之前提醒过的未读消息数、待处理的通知、会议新消息，以及每个会议里之前的他人消息仍未读的条数。被叫醒的那一轮开始时的提示词只附带叫醒之后新到的内容。 |
 | 每次工具调用后 | 只有尚未提醒过的消息、通知和会议新消息。 |
-| 本轮即将结束 | 有未读的直接消息、会话 listening 时送达的未读广播、待处理的通知，或会话以 active 方式参加的会议有新消息时，本轮带着提醒再继续一次。 |
+| 本轮即将结束 | 有未读的直接消息、会话 listening 时送达的未读广播、待处理的通知，或会话以 active 方式参加的会议有新消息或之前的他人消息仍未读时，本轮带着提醒再继续一次。 |
 | 待命中 | 一有可以叫醒会话的内容到达就结束等待，对话带着它继续。 |
 | 空闲（本轮已结束） | Stop hook 启动的后台等待（`n2n-nexus hook <client> --wait`，最长一天）带着提醒开启新的一轮：Claude Code 通过 `asyncRewake` hook（退出码 2），Codex 通过 `codex queue --thread <会话 ID>`（`NEXUS_CODEX_COMMAND` 可替换 `codex` 命令）。在无人值守的 Claude 会话（`claude -p`、`CLAUDE_CODE_SESSION_ATTENDED=0`）中，该 hook 立即返回，因为 `claude -p` 会等它结束才退出。等待期间会话显示为 `listening`；对话中的任何新活动都会结束等待。Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮，且 Codex 退出时等待结束；`codex queue` 失败时这次唤醒会被撤销，等待隔一段时间（1 秒起，每次加倍，最长 5 分钟）后再次送达同样的消息。 |
 | 自动轮次上限 | 被叫醒、待命中的 Stop，以及因私信或其通知而不结束的 Stop，各算一次自动轮次；会议新消息和会议通知不计数，也不受限制；提醒中会写 `Automatic turn n of N`。设置了 `maxAutoTurns` 时（host `settings.json`；默认 0，即不限制，提醒中也不写计数），从用户上次输入以来达到这个次数后，消息仍会保存，但不再叫醒或拦住对话；用户下次输入时提醒这些消息，并重新开始计数。叫醒后一分钟内的提示词视为被叫醒的那一轮开始，不清零计数。 |
@@ -216,7 +216,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 - 对话第一次以未读模式读全局聊天时从最新消息开始：本次不返回消息，带一条 `note`；更早的消息用 `latest` 或 `afterId` 读。第一次读某个会议时从该会议的第一条开始。
 - 历史模式不动游标，包含自己的消息，也不需要识别身份。
 - 结果：`{ source: "global" | "meeting", mode: "unread" | "history", identity?, meetingId?, messages: [{ id, from, senderName, senderMachine, senderBackfilled, text, category, timestamp }], count, note? }`。`from` 是发送方的会话 ID（`senderName` 是它的名字，可用于 `send`，用户席位的消息为 `user's seat (via <名字>)`；`senderMachine` 是它的机器，格式 `<label 或主机名> · <平台>[ <environment>]`，两者都是写这条消息时的样子，会话被清理后仍保留）或实例 ID（`senderName` 和 `senderMachine` 为 null）；`senderBackfilled` 为 true 表示 host 开始保存这两项之前写的消息，名字和机器是升级数据库时按会话当时的样子补填的；没有类别的消息 `category` 为 null。会议消息的 `id` 是它在该会议里的编号，从 1 开始；全局聊天的消息有自己的 ID。
-- 没装 hooks 时未读模式需要调用方实例：没有 `instanceId` 的调用会失败，并返回 `read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically); unread cursors are kept per instance.` MCP 适配器总会带上它。
+- 没装 hooks 时，所有以某个身份行事的调用都需要调用方实例：`send_message`、未读模式的 `read_messages`、`start_meeting`、`end_meeting`、`archive_meeting`、`reopen_meeting`、`join_meeting`、`leave_meeting` 和 `stance`。没有 `instanceId` 的调用会失败，并返回 `<tool> needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to tell who calls.`（`read_messages` 为 `...; history reads (latest or afterId) need none.`）；否则所有这样的调用方会共用同一个身份。未读游标按实例保存。MCP 适配器总会带上它。
 
 ### `list_events`
 
@@ -361,7 +361,7 @@ HTTP 客户端：hooks 调用 `POST /api/hook`，请求体为 `{ client: "claude
 行为：
 
 - 结果：`{ ok, meetingId, mode, approver, identity, delivery }`。`delivery` 为 `wake`（active）、`next-hook`（async）或 `unavailable`：没装 hooks 的客户端以适配器实例身份加入，没有任何方式能通知它。
-- 新消息通过 hooks 按会议提醒：`Meeting "<主题>" (<id>): N new message(s), #a–#b:`，然后每条消息夹在 `--- Meeting message #n from <发送方> (<机器>) at <时间>[ (<类别>)] ---` 和 `--- End of meeting message #n ---` 之间。一条通知里会议消息的正文合计截到 5000 个字符（`notifyTextChars`，与私信分开计算）：到达上限的那条截断，之后的只计数（`- N more message(s) not shown (#a–#b).`）；`read_messages(meetingId)` 返回它们。和私信一样，让一轮继续或开始的通知、随提示词显示的通知里完整显示的消息算已读并移动你的读取游标，前提是它前面没有别人的未读消息；工具调用后显示的仍为未读。`read_messages` 以未读模式返回过的消息之后不再提醒。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
+- 新消息通过 hooks 按会议提醒：`Meeting "<主题>" (<id>): N new message(s), #a–#b:`，然后每条消息夹在 `--- Meeting message #n from <发送方> (<机器>) at <时间>[ (<类别>)] ---` 和 `--- End of meeting message #n ---` 之间。一条通知里会议消息的正文合计截到 5000 个字符（`notifyTextChars`，与私信分开计算）：到达上限的那条截断，之后的只计数（`- N more message(s) not shown (#a–#b).`）；`read_messages(meetingId)` 返回它们。和私信一样，让一轮继续或开始的通知、随提示词显示的通知里完整显示的消息算已读并移动你的读取游标，前提是它前面没有别人的未读消息；工具调用后显示的仍为未读（那个上下文可能属于子代理）：下次用户输入时，以及本轮因别的原因继续时，成员会收到 `Meeting "<主题>" (<id>): N earlier message(s) of others still unread; read them with read_messages(meetingId).`；active 成员的本轮在结束时还会为此再继续一次，与之前仍未读的私信相同；从头开始加入时，加入前的消息也计入。`read_messages` 以未读模式返回过的消息之后不再提醒。自己发的消息不会叫醒自己。会议新消息不算自动轮次，超过 `maxAutoTurns` 后仍会送达；会议一直进行到被结束为止。
 - 加入前的消息不会提醒。已是成员时再次加入只修改 `mode` 和 `approver`；改为 `async` 即可暂停。`leave_meeting` 之后再加入，从最新一条开始。
 - 记录 `meeting.join` 事件。
 

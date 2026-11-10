@@ -66,8 +66,8 @@ func TestMeetingLifecycle(t *testing.T) {
 		h.fails(400, "Meeting 'nope' not found.", tool, map[string]any{"meetingId": "nope"}, "ide-a")
 	}
 
-	// Anonymous callers act as "unknown".
-	anon := h.startMeeting("anon", "")
+	// Another instance starts one; an instance ends it.
+	anon := h.startMeeting("anon", "ide-b")
 	h.ok("end_meeting", map[string]any{"meetingId": anon}, "ide-a")
 
 	got := h.eventActions("meeting")

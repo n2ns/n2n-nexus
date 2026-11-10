@@ -1,5 +1,5 @@
 {
-  "contractVersion": 4,
+  "contractVersion": 5,
   "errorBody": {
     "type": "object",
     "properties": {
@@ -21,7 +21,7 @@
         "ok": true,
         "service": "n2n-nexus",
         "version": "<host version>",
-        "contractVersion": 4,
+        "contractVersion": 5,
         "sessions": {
           "online": "<number of agent sessions not offline>"
         }

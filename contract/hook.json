@@ -1,5 +1,5 @@
 {
-  "contractVersion": 4,
+  "contractVersion": 5,
   "clients": [
     "claude",
     "codex"
@@ -14,6 +14,7 @@
   },
   "mcpServerName": "n2n-nexus",
   "discoveryQuery": "n2n-nexus/discover",
+  "discoveryQueryBytes": 512,
   "hookInputFields": [
     "hook_event_name",
     "session_id",
@@ -87,6 +88,7 @@
     "meetingMessageHeader": "--- Meeting message #%d from %s at %s%s ---",
     "meetingMessageEnd": "--- End of meeting message #%d ---",
     "meetingNotShown": "- %d more message(s) not shown (#%d–#%d).",
+    "meetingEarlierUnread": "Meeting \"%s\" (%s): %d earlier message(s) of others still unread; read them with read_messages(meetingId).",
     "meetingReadRest": "read_messages(meetingId) returns the meeting messages that are cut or not shown here.",
     "meetingClosing": "Post with send_message(meetingId) only when you have something to add.",
     "sentWithUnread": "[n2n-nexus: sent while %s were unread by the sender.]",

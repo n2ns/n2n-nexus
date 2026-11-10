@@ -603,15 +603,18 @@ type batch struct {
 	earlier []*message
 	notices []notice
 	news    []meetingNews
+	// earlierNews: meeting messages of others announced before (or before a
+	// join that starts at the beginning) and still unread, only counted.
+	earlierNews []earlierMeeting
 }
 
 func (b batch) empty() bool {
-	return len(b.messages) == 0 && len(b.earlier) == 0 && len(b.notices) == 0 && len(b.news) == 0
+	return len(b.messages) == 0 && len(b.earlier) == 0 && len(b.notices) == 0 && len(b.news) == 0 && len(b.earlierNews) == 0
 }
 
 // wakes: the batch may wake the session or hold its Stop: a direct message, a
 // broadcast delivered while the session was listening, a notice that is not from a meeting the session takes part in
-// asynchronously, or news of a meeting it takes part in actively.
+// asynchronously, or news or earlier unread messages of a meeting it takes part in actively.
 func (b batch) wakes() bool {
 	for _, m := range append(append([]*message(nil), b.messages...), b.earlier...) {
 		if m.Wake {
@@ -619,6 +622,11 @@ func (b batch) wakes() bool {
 		}
 	}
 	for _, n := range b.news {
+		if n.active {
+			return true
+		}
+	}
+	for _, n := range b.earlierNews {
 		if n.active {
 			return true
 		}
@@ -647,7 +655,7 @@ func (b batch) counts() bool {
 
 // gather collects what to announce to a session: direct messages not announced
 // yet (with all, the earlier unread ones too, counted), pending notices and
-// meeting news. With capped (the automatic-turn limit is reached), direct
+// meeting news (with all, the earlier unread meeting messages too, counted). With capped (the automatic-turn limit is reached), direct
 // messages and their notices are left for the user's next prompt.
 func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 	var b batch
@@ -661,6 +669,11 @@ func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 	}
 	if b.news, err = a.news(sessionID); err != nil {
 		return b, err
+	}
+	if all {
+		if b.earlierNews, err = a.earlierNews(sessionID); err != nil {
+			return b, err
+		}
 	}
 	for _, n := range notices {
 		if !capped || n.MeetingID != "" {
@@ -785,6 +798,9 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			lines = append(lines, h.Texts.ReadRest)
 		}
 	}
+	for _, n := range b.earlierNews {
+		lines = append(lines, h.Texts.NoticePrefix+" "+fmt.Sprintf(h.Texts.MeetingEarlierUnread, n.topic, n.meetingID, n.count))
+	}
 	var read map[string]int64
 	if len(b.news) > 0 {
 		news, cut, whole := a.newsLines(b.news)
@@ -846,6 +862,9 @@ func (a *Agents) notifyWith(sessionID string, all bool, label, closing string, m
 func (a *Agents) continueWith(sessionID string, b batch, label, closing string) (string, []memberState, error) {
 	before, err := a.countMeetingWakes(sessionID, b.news)
 	if err != nil {
+		return "", nil, err
+	}
+	if err := a.countEarlierWakes(sessionID, b); err != nil {
 		return "", nil, err
 	}
 	text, err := a.announce(sessionID, b, label, closing, markShown)

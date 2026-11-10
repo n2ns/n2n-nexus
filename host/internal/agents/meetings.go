@@ -71,6 +71,45 @@ func (a *Agents) news(sessionID string) ([]meetingNews, error) {
 	return out, nil
 }
 
+// earlierMeeting counts the messages of others in one meeting that a member
+// was told about (or that came before a join starting at the beginning) and
+// has not read: a tool call's notification, which may reach a sub-agent only,
+// or a cut one announced them without moving the read cursor.
+type earlierMeeting struct {
+	meetingID, topic string
+	active           bool
+	count            int
+}
+
+// earlierNews lists, per active meeting the session takes part in, the
+// messages of others up to its notified_id and after its read cursor.
+func (a *Agents) earlierNews(sessionID string) ([]earlierMeeting, error) {
+	rows, err := a.db().QueryContext(bg, `
+		SELECT mm.meeting_id, m.topic, mm.mode, (SELECT COUNT(*) FROM meeting_messages mg
+			WHERE mg.meeting_id = mm.meeting_id AND mg.sender != mm.member_id AND mg.id <= mm.notified_id
+				AND mg.id > COALESCE((SELECT rc.last_read_id FROM read_cursors rc
+					WHERE rc.instance_id = mm.member_id AND rc.context_type = 'meeting' AND rc.context_id = mm.meeting_id), 0))
+		FROM meeting_members mm JOIN meetings m ON m.id = mm.meeting_id
+		WHERE mm.member_id = ? AND mm.left_at IS NULL AND m.status = 'active' ORDER BY mm.joined_at, mm.rowid`, sessionID)
+	list, err := store.Append(nil, rows, err, func(rows *sql.Rows) (earlierMeeting, error) {
+		var e earlierMeeting
+		var mode string
+		err := rows.Scan(&e.meetingID, &e.topic, &mode, &e.count)
+		e.active = mode == "active"
+		return e, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []earlierMeeting
+	for _, e := range list {
+		if e.count > 0 {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
 // newsLines shows the news of the meetings, every text whole until the texts
 // together reach the contract's notifyTextChars; the message that reaches it
 // is cut and the later ones are only counted. It returns the lines, whether
@@ -143,6 +182,23 @@ func (a *Agents) countMeetingWakes(sessionID string, news []meetingNews) ([]memb
 		before = append(before, s)
 	}
 	return before, nil
+}
+
+// countEarlierWakes counts a held Stop as a wake of each active meeting whose
+// earlier unread messages it holds for and that has no news in it (news counts
+// in countMeetingWakes) (mu held).
+func (a *Agents) countEarlierWakes(sessionID string, b batch) error {
+	now := a.iso(a.o.Clock.Now())
+	for _, e := range b.earlierNews {
+		if !e.active || slices.ContainsFunc(b.news, func(n meetingNews) bool { return n.meetingID == e.meetingID }) {
+			continue
+		}
+		if _, err := a.db().ExecContext(bg, "UPDATE meeting_members SET wakes = wakes + 1, last_woken_at = ? WHERE meeting_id = ? AND member_id = ?",
+			now, e.meetingID, sessionID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // markMeetingsNotified moves the session's watermarks past the news and, for

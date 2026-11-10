@@ -6,7 +6,7 @@
 
 ## [Unreleased]
 
-升级 host 和客户端，然后重新运行 `n2n-nexus install <client>`，让后台等待 hook 用上新的超时时间。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。
+同时升级 host 和客户端（契约版本 5），然后重新运行 `n2n-nexus install <client>`，让后台等待 hook 用上新的超时时间。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。
 
 ### 变更
 
@@ -17,6 +17,9 @@
 
 - 客户端被强制结束或崩溃（没有 `SessionEnd`）后，它的后台等待不再让对话一直显示为 `listening`，也不再替它领走唤醒：等待在每次请求前（间隔最长 590 秒）检查 Claude Code（`CLAUDE_PID`）或运行 Stop hook 的 Codex 进程是否还在，不在就结束；之后才到的唤醒回报为未送达，host 会再次提醒这些消息，而不是把它们标为已读。以前，带着后台等待被强制结束的 Claude Code 对话会丢掉叫醒它的那条消息。
 - `n2n-nexus doctor claude` 会报告超时时间与客户端不一致（旧版 install 留下的）或缺失的后台等待 hook。
+- 既没有对话身份、也没有实例的工具调用（`POST /api/tools/call` 不带 `instanceId`，也没装 hooks）会被所有以某个身份行事的工具拒绝：`send_message`、`start_meeting`、`end_meeting`、`archive_meeting`、`reopen_meeting`、`join_meeting`、`leave_meeting` 和 `stance`，与 `read_messages` 原有的做法一致。以前，所有这样的调用方共用同一个身份 `unknown`，共用一个成员记录和一个已读游标。MCP 适配器总会带上 `instanceId`。
+- 工具调用后的提醒里出现过的会议消息（那个上下文可能属于子代理）不会再被对话漏掉：成员在下次用户输入时会被告知还有几条之前的他人消息未读，active 成员的本轮在结束时还会为此再继续一次，与之前仍未读的私信相同。
+- 局域网发现不再放大流量：查询补齐到 512 字节（`discoveryQueryBytes`），host 只应答这样的数据报，回复也从不比它长。以前 18 字节的查询会换来约 70 字节的回复，发往未经验证的源地址。旧客户端的查询得不到应答，所以契约版本升为 5。
 
 ## [0.12.5] - 2026-11-04
 

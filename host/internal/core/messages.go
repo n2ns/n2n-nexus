@@ -16,14 +16,27 @@ import (
 // ---------------------------------------------------------------------------
 // identity
 
-// identity resolves who a chat or meeting call acts as; without a resolver
-// every call acts as its instance. Call it outside c.tx: the resolver uses
-// the store, which has one connection.
-func (c *Core) identity(call api.Call) (api.Identity, error) {
-	if c.d.Identities == nil {
-		return api.Identity{Kind: api.IdentityInstance, ID: call.Actor(), Instance: call.Actor()}, nil
+// identity resolves who a chat or meeting call of tool acts as; without a
+// resolver every call acts as its instance. A call that names neither a
+// conversation nor an instance is refused: every such caller would act as one
+// shared identity ("unknown"), with one membership and one read cursor. Call
+// it outside c.tx: the resolver uses the store, which has one connection.
+func (c *Core) identity(call api.Call, tool string) (api.Identity, error) {
+	id := api.Identity{Kind: api.IdentityInstance, ID: call.Actor(), Instance: call.Actor()}
+	if c.d.Identities != nil {
+		var err error
+		if id, err = c.d.Identities.Identity(call); err != nil {
+			return id, err
+		}
 	}
-	return c.d.Identities.Identity(call)
+	if id.Kind == api.IdentityInstance && call.InstanceID == "" {
+		hint := "."
+		if tool == "read_messages" {
+			hint = "; history reads (latest or afterId) need none."
+		}
+		return id, api.Errorf("%s needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to tell who calls%s", tool, hint)
+	}
+	return id, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +62,7 @@ func (c *Core) sendMessage(call api.Call, a sendMessageArgs) (any, error) {
 		}
 		a.Category = "PROPOSAL"
 	}
-	id, err := c.identity(call)
+	id, err := c.identity(call, "send_message")
 	if err != nil {
 		return nil, err
 	}
@@ -297,11 +310,8 @@ func (c *Core) readMessages(call api.Call, a readMessagesArgs) (any, error) {
 	var id api.Identity
 	if !history {
 		var err error
-		if id, err = c.identity(call); err != nil {
+		if id, err = c.identity(call, "read_messages"); err != nil {
 			return nil, err
-		}
-		if id.Kind == api.IdentityInstance && call.InstanceID == "" {
-			return nil, api.Errorf("read_messages needs the instanceId field of the POST /api/tools/call body (the n2n-nexus MCP adapter sends it automatically) to keep unread cursors; history reads (latest or afterId) need none.")
 		}
 	}
 	var messages []chatMessage

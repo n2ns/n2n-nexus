@@ -100,8 +100,12 @@ export const MAX_TITLE_CHARS: number = contract.limits.maxTitleChars;
 export const MCP_SERVER_NAME: string = contract.mcpServerName;
 export const CLAUDE_PRE_TOOL_MATCHER = `mcp__${MCP_SERVER_NAME}__.*`;
 
-/** Payload of a LAN discovery query datagram; the host answers only this. */
-export const DISCOVERY_QUERY: string = contract.discoveryQuery;
+/**
+ * Payload of a LAN discovery query datagram, the host answers only this:
+ * discoveryQuery padded with spaces to discoveryQueryBytes, so that the reply
+ * is never longer than the query (no amplification for a forged source).
+ */
+export const DISCOVERY_QUERY: string = contract.discoveryQuery.padEnd(contract.discoveryQueryBytes, " ");
 
 /** Where to get the host. */
 export const HOST_RELEASES_URL = "https://github.com/n2ns/n2n-nexus/releases";

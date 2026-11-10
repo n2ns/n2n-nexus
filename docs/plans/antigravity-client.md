@@ -75,7 +75,7 @@ All of these were observed in this session's tests, not taken from documentation
 - `meta.antigravityConversationKey`: `antigravity.google/conversation_id`.
 - `texts.waiterReminder`: `[n2n-nexus] The n2n-nexus message waiter of this conversation is not running. Start it as described in the n2n-nexus rule.`
 
-`contractVersion` stays 4. An older host answers an `antigravity` hook with 400 (the hook exits silently) and treats an `antigravity` caller as naming no session, so Claude Code and Codex are unaffected either way.
+`contractVersion` stays 5. An older host answers an `antigravity` hook with 400 (the hook exits silently) and treats an `antigravity` caller as naming no session, so Claude Code and Codex are unaffected either way.
 
 ### 4.2 Identity
 

@@ -103,7 +103,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 后台等待会在原有的 24 小时时限内重试临时连接故障；使用 `discover` 时重新查找 host。正常取消（`output: null`）仍结束等待。host 与客户端都需要包含这项恢复行为，才能在 host 正常重启后继续等待。
 
-会话处于 `working`，或者 listen 模式的 Stop hook 正在等待时，后台等待不会送达，所以同一条消息只提醒一次。`codex queue` 失败（出错或退出码非 0）时，Codex 的后台等待回报 `ok: false`，host 撤销这次唤醒：它提醒过的消息和通知重新算作未提醒，会话退出 `working`，这一轮不计入自动轮次，失败的唤醒记入 `host.log`（会话、唤醒 ID、再次送达的消息和通知各有几条）；随后等待在 1 秒后重新请求（每失败一次间隔加倍，最长 5 分钟），再次送达它们。回报到达前该会话已有其他事件，说明唤醒已送达，回报被忽略。已在 Windows 上用 Claude 桌面应用和 Codex 桌面应用实测（2026-10-23）：两个方向都能在数秒内叫醒空闲的对话。已知限制：
+会话处于 `working`，或者 listen 模式的 Stop hook 正在等待时，后台等待不会送达，所以同一条消息只提醒一次。`codex queue` 失败（出错或退出码非 0）时，Codex 的后台等待回报 `ok: false`，host 撤销这次唤醒：它提醒过的消息和通知重新算作未提醒，会话退出 `working`，这一轮不计入自动轮次，失败的唤醒记入 `host.log`（会话、唤醒 ID、再次送达的消息和通知各有几条）；随后等待在 1 秒后重新请求（每失败一次间隔加倍，最长 5 分钟），再次送达它们。回报到达前该会话已有其他事件，说明唤醒已送达，回报被忽略。已在 Windows 上用 Claude 桌面应用和 Codex 桌面应用实测（2026-10-23）：两个方向都能在数秒内叫醒空闲的对话。2026-11-10 又用 WSL 中的 Claude Code、Codex CLI 和 Windows 上的 Codex 桌面应用实测，全程无人输入：无需回复的消息在两个方向都能叫醒收件方，没有确认循环；发给正在工作的收件方的消息在它这一轮里处理，不另起一轮；host 重启后等待在 7 秒内重连；闲置超过一小时后两个方向仍能叫醒；被 `kill -9` 结束的 Claude Code 对话收到的消息保持未读，它的等待随之结束。已知限制：
 
 - Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮。Codex 重启后，用户点开对话才会加载。
 - Codex 的后台等待会随 Codex 应用退出而结束，要等该对话再结束一轮才会重新启动。这期间发来的消息留在 host 里为未读（不进入 Codex 自己的队列），直到用户下次在该对话里发消息。
@@ -195,7 +195,7 @@ Go 模块是仓库根目录的 `github.com/n2ns/n2n-nexus`，所以 host 直接�
 
 **会话状态机**：`agents.Agents` 是一个 host 的进程内协调者。它把全部内存中的对话状态——挂起的 listening Stop、后台等待、自动轮次计数、唤醒时间——放在一把互斥锁后面；每个 hook 和直接消息工具调用都在锁内执行，存下消息或通知的一方在释放锁之前就把它交给正在等待的 hook。启动时把上一个 host 留下的 `listening` 会话复位为 `idle`。关闭时先用 `{ "output": { "timeout": true } }` 答复挂起的后台等待，让客户端重连；挂起的 listening Stop 仍返回 `{ "output": null }`，然后再关闭服务器。时间来自 `Clock`：正式版本用系统时间，`testclock` 构建中由一致性测试通过 `POST /test/clock` 设置。
 
-**发现**：`host` 不是回环地址的 host 在 UDP `discoveryPort` 上应答 `n2n-nexus/discover`，回复 `{"service":"n2n-nexus","version","host","port"}`。`NEXUS_ENDPOINT=discover` 的客户端在 `NEXUS_DISCOVERY_PORT` 上广播查询，使用第一个应答并缓存在 `~/.n2n-nexus/discovered-endpoint`。
+**发现**：`host` 不是回环地址的 host 在 UDP `discoveryPort` 上应答 `n2n-nexus/discover`，回复 `{"service":"n2n-nexus","version","host","port"}`。查询用空格补齐到 `discoveryQueryBytes`（512 字节），host 只应答正好这样的数据报，回复也从不比它长：源地址未经验证，回复更长就会让伪造的查询把更多字节引向另一台机器。`NEXUS_ENDPOINT=discover` 的客户端在 `NEXUS_DISCOVERY_PORT` 上广播查询，使用第一个应答并缓存在 `~/.n2n-nexus/discovered-endpoint`。
 
 ---
 

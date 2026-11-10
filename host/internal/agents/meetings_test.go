@@ -295,3 +295,40 @@ func TestMeetingNewsTextsAndReadCursor(t *testing.T) {
 	contains(t, h.hook("codex", "Stop", "b", stopInactive)["reason"].(string), "\nfive\n")
 	eq(t, h.cursor("codex:b", "m1"), h.row("m1", 1))
 }
+
+// News shown only after a tool call (whose context may be a sub-agent's) is
+// announced but not read: like an earlier direct message still unread, it
+// holds the end of the turn of an active member once, counted, until
+// read_messages reads it. An async member is not held for it.
+func TestMeetingNewsShownAfterAToolCallHoldsTheStop(t *testing.T) {
+	h := start(t)
+	for _, s := range []string{"s", "a", "y"} {
+		h.hook("codex", "SessionStart", s)
+		h.hook("codex", "UserPromptSubmit", s)
+	}
+	h.meeting("m1", map[string]string{"codex:s": "active", "codex:a": "active", "codex:y": "async"})
+	h.postInMeeting("m1", "codex:s", "while you work")
+	for _, s := range []string{"a", "y"} {
+		contains(t, h.hook("codex", "PostToolUse", s).context(), "\nwhile you work\n")
+	}
+	// Announced, not read.
+	eq(t, h.cursor("codex:a", "m1"), 0)
+
+	earlier := fmt.Sprintf(texts.MeetingEarlierUnread, "Topic m1", "m1", 1)
+	contains(t, h.hook("codex", "Stop", "a", stopInactive).str("reason"), earlier)
+	eq(t, h.wakes("m1", "codex:a"), 1)
+	// Once per turn: the continued turn ends.
+	if out := h.hook("codex", "Stop", "a", stopActive); out != nil {
+		t.Fatalf("held again: %v", out)
+	}
+	if out := h.hook("codex", "Stop", "y", stopInactive); out != nil {
+		t.Fatalf("async member held: %v", out)
+	}
+	// The next prompt counts it too.
+	contains(t, h.hook("codex", "UserPromptSubmit", "a").context(), earlier)
+	// Read: nothing holds the turn any more.
+	h.exec(`INSERT INTO read_cursors (instance_id, context_type, context_id, last_read_id, updated_at) VALUES ('codex:a', 'meeting', 'm1', ?, 'x')`, h.row("m1", 1))
+	if out := h.hook("codex", "Stop", "a", stopInactive); out != nil {
+		t.Fatalf("held after read: %v", out)
+	}
+}

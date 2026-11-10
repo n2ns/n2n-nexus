@@ -93,7 +93,7 @@ type startMeetingArgs struct {
 func (c *Core) startMeeting(call api.Call, a startMeetingArgs) (any, error) {
 	now := c.d.Clock.Now()
 	id := meetingID(a.Topic, now)
-	who, err := c.identity(call)
+	who, err := c.identity(call, "start_meeting")
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (c *Core) endMeeting(call api.Call, a endMeetingArgs) (any, error) {
 	if a.Summary != nil {
 		summary = *a.Summary
 	}
-	who, err := c.identity(call)
+	who, err := c.identity(call, "end_meeting")
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ type meetingIDArgs struct {
 }
 
 func (c *Core) archiveMeeting(call api.Call, a meetingIDArgs) (any, error) {
-	who, err := c.identity(call)
+	who, err := c.identity(call, "archive_meeting")
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func (c *Core) archiveMeeting(call api.Call, a meetingIDArgs) (any, error) {
 }
 
 func (c *Core) reopenMeeting(call api.Call, a meetingIDArgs) (any, error) {
-	who, err := c.identity(call)
+	who, err := c.identity(call, "reopen_meeting")
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,7 @@ func (c *Core) joinMeeting(call api.Call, a joinMeetingArgs) (any, error) {
 	if a.Approver == "" {
 		a.Approver = map[string]string{"active": "required", "async": "optional"}[a.Mode]
 	}
-	who, err := c.identity(call)
+	who, err := c.identity(call, "join_meeting")
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +551,7 @@ func sinceCursor(tx *sql.Tx, meetingID string, since json.RawMessage, newest int
 }
 
 func (c *Core) leaveMeeting(call api.Call, a meetingIDArgs) (any, error) {
-	who, err := c.identity(call)
+	who, err := c.identity(call, "leave_meeting")
 	if err != nil {
 		return nil, err
 	}

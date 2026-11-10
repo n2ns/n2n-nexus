@@ -7,9 +7,8 @@ import path from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, discoverEndpoint, resolveEndpoint } from "../src/client/discovery.js";
-import { DISCOVERY_QUERY } from "../src/contract.js";
 import { NexusServer } from "../src/server/nexus.js";
-import { Host } from "./conformance/harness.js";
+import { HOOK, Host } from "./conformance/harness.js";
 import { NexusClient } from "../src/client/nexus-client.js";
 import { waitForWake } from "../src/cli/hook.js";
 import { REPO, runCli } from "./helpers/cli.js";
@@ -34,15 +33,18 @@ async function freeUdpPort(): Promise<number> {
     return port;
 }
 
+/** The discovery datagram as the contract defines it, independent of the client's own constant. */
+const DATAGRAM = HOOK.discoveryQuery.padEnd(HOOK.discoveryQueryBytes, " ");
+
 /**
  * A stand-in for the discovery responder of n2n-nexus-host bound to `host`: answers
- * DISCOVERY_QUERY on the test's UDP port with the host's reply.
+ * the contract's discovery datagram on the test's UDP port with the host's reply.
  */
 async function responder(httpPort: number, host = "0.0.0.0"): Promise<dgram.Socket> {
     const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
     const reply = Buffer.from(JSON.stringify({ service: "n2n-nexus", version: "test", host, port: httpPort }));
     socket.on("message", (msg, rinfo) => {
-        if (msg.toString("utf8") === DISCOVERY_QUERY) socket.send(reply, rinfo.port, rinfo.address, () => { });
+        if (msg.toString("utf8") === DATAGRAM) socket.send(reply, rinfo.port, rinfo.address, () => { });
     });
     await new Promise<void>((resolve) => socket.bind(udpPort, () => resolve()));
     sockets.push(socket);

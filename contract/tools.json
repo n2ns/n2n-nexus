@@ -1,5 +1,5 @@
 {
-  "contractVersion": 4,
+  "contractVersion": 5,
   "tools": [
     {
       "name": "sync_project_assets",

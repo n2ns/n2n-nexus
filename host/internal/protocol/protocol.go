@@ -88,12 +88,19 @@ type Contract struct {
 // Tool returns the named tool, or nil.
 func (c *Contract) Tool(name string) *Tool { return c.byName[name] }
 
+// DiscoveryDatagram is the LAN discovery query as sent: discoveryQuery padded
+// with spaces to discoveryQueryBytes, so that no reply is longer than it.
+func (h Hook) DiscoveryDatagram() string {
+	return h.DiscoveryQuery + strings.Repeat(" ", max(0, h.DiscoveryQueryBytes-len(h.DiscoveryQuery)))
+}
+
 // Hook mirrors contract/hook.json.
 type Hook struct {
 	ContractVersion     int      `json:"contractVersion"`
 	Clients             []string `json:"clients"`
 	MCPServerName       string   `json:"mcpServerName"`
 	DiscoveryQuery      string   `json:"discoveryQuery"`
+	DiscoveryQueryBytes int      `json:"discoveryQueryBytes"`
 	BackgroundWaitEvent string   `json:"backgroundWaitEvent"`
 	WakeResultEvent     string   `json:"wakeResultEvent"`
 	Timing              struct {
@@ -141,6 +148,7 @@ type Hook struct {
 		MeetingMessageHeader    string `json:"meetingMessageHeader"`
 		MeetingMessageEnd       string `json:"meetingMessageEnd"`
 		MeetingNotShown         string `json:"meetingNotShown"`
+		MeetingEarlierUnread    string `json:"meetingEarlierUnread"`
 		MeetingReadRest         string `json:"meetingReadRest"`
 		MeetingClosing          string `json:"meetingClosing"`
 		SentWithUnread          string `json:"sentWithUnread"`

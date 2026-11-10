@@ -343,7 +343,7 @@ func (c *Core) stance(call api.Call, a stanceArgs) (any, error) {
 	if a.Stance == "object" && note == "" {
 		return nil, api.Errorf("An objection needs a note: the reason for it.")
 	}
-	who, err := c.identity(call)
+	who, err := c.identity(call, "stance")
 	if err != nil {
 		return nil, err
 	}

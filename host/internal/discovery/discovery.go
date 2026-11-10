@@ -20,7 +20,7 @@ import (
 // Options configure the responder.
 type Options struct {
 	Host          string // the address the HTTP server listens on
-	Query         string // the datagram a client broadcasts (discoveryQuery in contract/hook.json)
+	Query         string // the datagram a client broadcasts (discoveryQuery padded to discoveryQueryBytes in contract/hook.json)
 	HTTPPort      int
 	DiscoveryPort int
 	Version       string
@@ -64,7 +64,7 @@ func Start(ctx context.Context, o Options) (stop func(), err error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		buf := make([]byte, 512)
+		buf := make([]byte, len(o.Query)+1)
 		for {
 			n, addr, err := pc.ReadFrom(buf)
 			if errors.Is(err, net.ErrClosed) {
@@ -77,7 +77,9 @@ func Start(ctx context.Context, o Options) (stop func(), err error) {
 				}
 				continue
 			}
-			if string(buf[:n]) == o.Query {
+			// Never a reply longer than the query: the source address is not
+			// verified, and a longer reply would amplify a forged one.
+			if string(buf[:n]) == o.Query && len(reply) <= n {
 				_, _ = pc.WriteTo(reply, addr)
 			}
 		}

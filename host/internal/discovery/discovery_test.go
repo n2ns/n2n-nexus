@@ -4,19 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 )
 
-// Query is the contract's discovery datagram.
+// Query is the contract's discovery datagram, as clients send it.
 var Query = func() string {
 	c, err := protocol.Load()
 	if err != nil {
 		panic(err)
 	}
-	return c.Hook.DiscoveryQuery
+	return c.Hook.DiscoveryDatagram()
 }()
 
 // freeUDPPort returns a UDP port nothing is bound to right now.
@@ -70,8 +71,10 @@ func TestAnswersQuery(t *testing.T) {
 	if err := json.Unmarshal(raw, &r); err != nil || r.Port != 5799 {
 		t.Fatalf("reply %s: %v", raw, err)
 	}
-	if got := query(t, port, "something else"); got != nil {
-		t.Fatalf("answered a foreign datagram: %s", got)
+	for _, other := range []string{"something else", strings.TrimRight(Query, " "), Query + " "} {
+		if got := query(t, port, other); got != nil {
+			t.Fatalf("answered %q: %s", other, got)
+		}
 	}
 }
 
@@ -112,5 +115,20 @@ func TestLoopbackDoesNotAnswer(t *testing.T) {
 	}
 	if !AnswersDiscovery("0.0.0.0") || !AnswersDiscovery("10.0.0.1") {
 		t.Fatal("LAN addresses must answer")
+	}
+}
+
+// A reply longer than the query would make the responder an amplifier for a
+// forged source address: a query shorter than its reply gets none.
+func TestNoReplyLongerThanTheQuery(t *testing.T) {
+	port := freeUDPPort(t)
+	short := "n2n-nexus/discover"
+	stop, err := Start(context.Background(), Options{Query: short, Host: "0.0.0.0", HTTPPort: 5799, DiscoveryPort: port, Version: "1.2.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	if got := query(t, port, short); got != nil {
+		t.Fatalf("answered %d bytes with %d: %s", len(short), len(got), got)
 	}
 }

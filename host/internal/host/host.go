@@ -151,7 +151,7 @@ func start(o Options, lock *Lock) (*Host, error) {
 		}()
 	}
 	h.stopDiscovery = func() {}
-	if stop, err := discovery.Start(ctx, discovery.Options{Query: contract.Hook.DiscoveryQuery, Host: o.Settings.Host, HTTPPort: h.Addr.Port, DiscoveryPort: o.Settings.DiscoveryPort, Version: o.Version, Logger: o.Logger}); err != nil {
+	if stop, err := discovery.Start(ctx, discovery.Options{Query: contract.Hook.DiscoveryDatagram(), Host: o.Settings.Host, HTTPPort: h.Addr.Port, DiscoveryPort: o.Settings.DiscoveryPort, Version: o.Version, Logger: o.Logger}); err != nil {
 		o.Logger.Printf("LAN discovery unavailable: %v", err)
 	} else {
 		h.stopDiscovery = stop
