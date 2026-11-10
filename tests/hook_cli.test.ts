@@ -362,10 +362,12 @@ describe("n2n-nexus hook --wait", () => {
         expect(result).toMatchObject({ code: 0, stdout: "" });
         expect(await waitFor(() => fake.requests.length === 1, 5000)).toBe(true);
         expect(fake.requests[0]).toEqual(waitRequest("c1"));
-        expect(result.ms).toBeLessThan(3000);
+        // Well within Codex's 10 s hook timeout (HOOK_TIMEOUT_SEC). On Windows the launching PowerShell
+        // also looks up the Codex process (Get-CimInstance), which takes seconds on a cold CI runner.
+        expect(result.ms).toBeLessThan(8000);
         // Let the detached process receive null and exit before teardown closes its connection.
         expect(await waitFor(() => fake.activeConnections() === 0, 5000)).toBe(true);
-    });
+    }, 15000);
 
     it.skipIf(process.platform !== "win32")("codex on Windows: the wait copy does not hold the pipes of the hook Codex runs through PowerShell", async () => {
         // The copy keeps waiting (timeout: true, answered late) while the hook's pipes must already have closed.
