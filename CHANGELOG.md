@@ -4,6 +4,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+Upgrade the host and the client, then run `n2n-nexus install <client>` again so the background wait hook gets its new timeout. The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
+
+### Changed
+
+- Every direct message wakes its recipient: `send` and `reply` no longer take `wake`, so a sender cannot keep a message from waking an idle conversation or holding a working one's turn at its end. `expectsReply: false` only says that no reply is needed. Plain acknowledgements are still not to be sent. Broadcasts are unchanged.
+- The background wait that wakes an idle conversation lasts up to a day after its last turn instead of an hour (`waitHookTimeoutSec` 86400): the timeout of the Claude Code `--wait` hook and the deadline of the Codex wait.
+
+### Fixed
+
+- A background wait whose client was killed or crashed (no `SessionEnd`) no longer keeps the conversation `listening`, nor takes a wake for it: before each request (at most 590 s apart) the wait checks that Claude Code (`CLAUDE_PID`) or the Codex process that ran the Stop hook still runs and ends when it does not, and a wake that arrives after that is reported as not delivered, so the host announces its messages again instead of marking them read. Before, a Claude Code conversation killed with its wait still running lost the message that woke it.
+- `n2n-nexus doctor claude` reports a background wait hook whose timeout is not this client's (left by an older install) or that is missing.
+
 ## [0.12.5] - 2026-11-04
 
 Upgrade the host; the client needs no update for these tools (contract version 4). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.

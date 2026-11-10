@@ -134,7 +134,7 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 7. 检查安装
 
-`n2n-nexus doctor [claude|codex]` 检查已安装的 hook 命令里的 Node 路径与入口脚本、MCP 命令里的 Node 路径与 npx 是否仍然存在、能否运行，Codex 是否信任 Codex 的 hooks（直接问 Codex），以及它们连接的 host 是否应答、协议版本是否与客户端一致，有检查失败时以退出码 1 退出。检查会同时读取 hooks 的地址和 MCP 注册中的 `env.NEXUS_ENDPOINT`，一方连接正常不会掩盖另一方的连接故障。
+`n2n-nexus doctor [claude|codex]` 检查已安装的 hook 命令里的 Node 路径与入口脚本、MCP 命令里的 Node 路径与 npx 是否仍然存在、能否运行，Claude Code 的后台等待 hook 的超时时间是否与客户端一致（旧版 install 写入的更短），Codex 是否信任 Codex 的 hooks（直接问 Codex），以及它们连接的 host 是否应答、协议版本是否与客户端一致，有检查失败时以退出码 1 退出。检查会同时读取 hooks 的地址和 MCP 注册中的 `env.NEXUS_ENDPOINT`，一方连接正常不会掩盖另一方的连接故障。
 
 ## 8. 升级
 

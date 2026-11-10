@@ -116,9 +116,9 @@ func New(o Options) (*Agents, error) {
 // Register adds the direct-message tools and the hook handler to srv.
 func (a *Agents) Register(srv *api.Server) {
 	srv.Register("peers", a.locked(api.Tool(peersArgs{}, a.toolPeers)))
-	srv.Register("send", a.locked(api.Tool(sendArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolSend)))
+	srv.Register("send", a.locked(api.Tool(sendArgs{ExpectsReply: true}, a.toolSend)))
 	srv.Register("read", a.locked(api.Tool(readArgs{Count: 10}, a.toolRead)))
-	srv.Register("reply", a.locked(api.Tool(replyArgs{kind: kind{ExpectsReply: true, Wake: true}}, a.toolReply)))
+	srv.Register("reply", a.locked(api.Tool(replyArgs{ExpectsReply: true}, a.toolReply)))
 	srv.Register("broadcast", a.locked(api.Tool(broadcastArgs{}, a.toolBroadcast)))
 	srv.Register("listen", a.locked(api.Tool(listenArgs{}, a.toolListen)))
 	srv.Register("set_profile", a.locked(api.Tool(profileArgs{}, a.toolSetProfile)))
@@ -609,8 +609,8 @@ func (b batch) empty() bool {
 	return len(b.messages) == 0 && len(b.earlier) == 0 && len(b.notices) == 0 && len(b.news) == 0
 }
 
-// wakes: the batch may wake the session or hold its Stop: a direct message
-// that wakes, a notice that is not from a meeting the session takes part in
+// wakes: the batch may wake the session or hold its Stop: a direct message, a
+// broadcast delivered while the session was listening, a notice that is not from a meeting the session takes part in
 // asynchronously, or news of a meeting it takes part in actively.
 func (b batch) wakes() bool {
 	for _, m := range append(append([]*message(nil), b.messages...), b.earlier...) {

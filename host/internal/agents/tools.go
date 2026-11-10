@@ -68,18 +68,14 @@ func (a *Agents) resolve(c api.Call) (*session, error) {
 	return getSession(a.db(), id)
 }
 
-// kind is what a message asks of its recipient: an answer, and a wake.
-type kind struct {
-	ExpectsReply bool `json:"expectsReply"`
-	Wake         bool `json:"wake"`
-}
-
-func (a *Agents) deliver(from, to *session, text string, replyTo *message, notifyWhenIdle bool, k kind) (any, error) {
+// deliver stores a direct message and wakes its recipient: every direct message
+// may wake it or hold its Stop, whether or not it expects a reply.
+func (a *Agents) deliver(from, to *session, text string, replyTo *message, notifyWhenIdle, expectsReply bool) (any, error) {
 	if to.ID == from.ID {
 		return nil, api.Errorf("You cannot send a message to yourself.")
 	}
 	now := a.o.Clock.Now()
-	id, err := a.addMessage(from.ID, to.ID, text, replyTo, k, now)
+	id, err := a.addMessage(from.ID, to.ID, text, replyTo, expectsReply, now)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +84,7 @@ func (a *Agents) deliver(from, to *session, text string, replyTo *message, notif
 			return nil, err
 		}
 	}
-	if k.Wake {
-		a.wake(to.ID)
-	}
+	a.wake(to.ID)
 	return sent{MessageID: id, To: recipient{ID: to.ID, Name: to.Name, Status: to.Status}}, nil
 }
 
@@ -120,7 +114,7 @@ type sendArgs struct {
 	To             string `json:"to"`
 	Text           string `json:"text"`
 	NotifyWhenIdle bool   `json:"notifyWhenIdle"`
-	kind
+	ExpectsReply   bool   `json:"expectsReply"`
 }
 
 func (a *Agents) toolSend(c api.Call, args sendArgs) (any, error) {
@@ -135,7 +129,7 @@ func (a *Agents) toolSend(c api.Call, args sendArgs) (any, error) {
 	if to == nil {
 		return nil, api.Errorf("Unknown recipient '%s'. Call peers for session ids and names.", args.To)
 	}
-	return a.deliver(self, to, args.Text, nil, args.NotifyWhenIdle, args.kind)
+	return a.deliver(self, to, args.Text, nil, args.NotifyWhenIdle, args.ExpectsReply)
 }
 
 type broadcastArgs struct {
@@ -185,9 +179,9 @@ func (a *Agents) toolBroadcast(c api.Call, args broadcastArgs) (any, error) {
 }
 
 type replyArgs struct {
-	MessageID string `json:"messageId"`
-	Text      string `json:"text"`
-	kind
+	MessageID    string `json:"messageId"`
+	Text         string `json:"text"`
+	ExpectsReply bool   `json:"expectsReply"`
 }
 
 func (a *Agents) toolReply(c api.Call, args replyArgs) (any, error) {
@@ -206,7 +200,7 @@ func (a *Agents) toolReply(c api.Call, args replyArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.deliver(self, sender, args.Text, original, false, args.kind)
+	out, err := a.deliver(self, sender, args.Text, original, false, args.ExpectsReply)
 	if err != nil {
 		return nil, err
 	}

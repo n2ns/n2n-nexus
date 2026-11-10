@@ -85,7 +85,8 @@ type message struct {
 	Scope                        *string
 	Status, CreatedAt, ExpiresAt string
 	NotifiedAt, ReadAt           *string
-	// ExpectsReply: the sender wants an answer; Wake: the message may wake the recipient.
+	// ExpectsReply: the sender wants an answer; Wake: the item may wake the
+	// recipient (every direct message; a broadcast delivered while it was listening).
 	ExpectsReply, Wake bool
 }
 
@@ -357,7 +358,7 @@ func (a *Agents) listPeers(selfID string, now time.Time) ([]*session, error) {
 
 // addMessage adds an unread direct message and returns its id; replyTo is
 // the inbox item it answers, nil for none.
-func (a *Agents) addMessage(fromID, toID, text string, replyTo *message, k kind, now time.Time) (string, error) {
+func (a *Agents) addMessage(fromID, toID, text string, replyTo *message, expectsReply bool, now time.Time) (string, error) {
 	var direct, broadcast *string
 	if replyTo != nil {
 		if replyTo.Kind == "broadcast" {
@@ -368,8 +369,8 @@ func (a *Agents) addMessage(fromID, toID, text string, replyTo *message, k kind,
 	}
 	id := uuid.NewString()
 	_, err := a.db().ExecContext(bg,
-		"INSERT INTO agent_messages (id, from_id, to_id, text, reply_to, reply_to_broadcast, status, created_at, expires_at, expects_reply, wake) VALUES (?, ?, ?, ?, ?, ?, 'unread', ?, ?, ?, ?)",
-		id, fromID, toID, text, direct, broadcast, a.iso(now), a.iso(now.Add(ms(a.o.Contract.Hook.Timing.MessageTtlMs))), k.ExpectsReply, k.Wake)
+		"INSERT INTO agent_messages (id, from_id, to_id, text, reply_to, reply_to_broadcast, status, created_at, expires_at, expects_reply) VALUES (?, ?, ?, ?, ?, ?, 'unread', ?, ?, ?)",
+		id, fromID, toID, text, direct, broadcast, a.iso(now), a.iso(now.Add(ms(a.o.Contract.Hook.Timing.MessageTtlMs))), expectsReply)
 	return id, err
 }
 

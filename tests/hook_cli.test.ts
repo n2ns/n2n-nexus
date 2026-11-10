@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { MAX_TITLE_CHARS } from "../src/contract.js";
+import { hookClientPid } from "../src/cli/client-process.js";
 import { waitForWake } from "../src/cli/hook.js";
 import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
@@ -437,6 +439,79 @@ describe("n2n-nexus hook --wait", () => {
         );
         expect(result).toMatchObject({ code: 0, stdout: "" });
         expect(fake.requests).toEqual([waitRequest("c1"), wakeResult(false), waitRequest("c1")]);
+    });
+});
+
+describe("n2n-nexus hook --wait, client gone", () => {
+    let fake: FakeDaemon;
+    beforeEach(async () => { fake = await startFakeDaemon(); });
+    afterEach(async () => { await fake.close(); });
+    /** The id of a process that has exited. */
+    const gonePid = () => String(spawnSync(process.execPath, ["-e", ""]).pid);
+    /** A process standing in for the client, and a way to end it. */
+    const client = () => {
+        const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+        return { pid: String(child.pid), kill: () => { child.kill(); } };
+    };
+    const stop = (sessionId: string) => JSON.stringify({ hook_event_name: "Stop", session_id: sessionId });
+    const inputs = () => fake.requests.map((r) => (r.body as { input: unknown }).input);
+
+    it("claude: does not wait once Claude Code (CLAUDE_PID) is gone", async () => {
+        const result = await runHook(["claude", "--wait", "--endpoint", fake.endpoint], stop("s1"), { CLAUDE_PID: gonePid() });
+        expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    it("claude: lets the request in progress end, then asks no more once Claude Code is gone", async () => {
+        const claude = client();
+        fake.respond = () => { claude.kill(); return { delayMs: 500, raw: JSON.stringify({ output: { timeout: true } }) }; };
+        const result = await runHook(["claude", "--wait", "--endpoint", fake.endpoint], stop("s1"), { CLAUDE_PID: claude.pid });
+        expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
+        expect(inputs()).toEqual([{ hook_event_name: "BackgroundWait", session_id: "s1" }]);
+    });
+
+    it("claude: reports a wake that arrives after Claude Code is gone as not delivered", async () => {
+        const claude = client();
+        fake.respond = (body) => {
+            if ((body.input as { hook_event_name?: string }).hook_event_name !== "BackgroundWait") return { raw: JSON.stringify({ output: null }) };
+            claude.kill();
+            return { delayMs: 500, raw: JSON.stringify({ output: { wake: "hello", dispatchId: "d9" } }) };
+        };
+        const result = await runHook(["claude", "--wait", "--endpoint", fake.endpoint], stop("s1"), { CLAUDE_PID: claude.pid });
+        expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
+        expect(inputs()).toEqual([
+            { hook_event_name: "BackgroundWait", session_id: "s1" },
+            { hook_event_name: "WakeResult", session_id: "s1", dispatch_id: "d9", ok: false }
+        ]);
+    });
+
+    it("claude: wakes while Claude Code runs", async () => {
+        let n = 0;
+        fake.respond = () => ({ raw: JSON.stringify({ output: ++n === 1 ? { timeout: true } : { wake: "still here", dispatchId: "d1" } }) });
+        const result = await runHook(["claude", "--wait", "--endpoint", fake.endpoint], stop("s1"), { CLAUDE_PID: String(process.pid) });
+        expect(result).toMatchObject({ code: 2, stderr: "still here\n" });
+        expect(fake.requests).toHaveLength(2);
+    });
+
+    it("codex: the detached wait asks no more once the Codex process (--client-pid) is gone", async () => {
+        const codex = client();
+        fake.respond = () => { codex.kill(); return { delayMs: 500, raw: JSON.stringify({ output: { timeout: true } }) }; };
+        const result = await runHook(["codex", "--wait", "--session", "c1", "--client-pid", codex.pid, "--endpoint", fake.endpoint], "");
+        expect(result).toMatchObject({ code: 0, stdout: "", stderr: "" });
+        expect(inputs()).toEqual([{ hook_event_name: "BackgroundWait", session_id: "c1" }]);
+    });
+});
+
+describe("hookClientPid", () => {
+    it("is the parent process when that is not a shell", () => {
+        expect(hookClientPid()).toBe(process.ppid);
+    });
+
+    it.skipIf(process.platform === "win32")("skips the shell a hook command runs through", () => {
+        // "; true" keeps sh from replacing itself with node, as a client's shell does.
+        const script = `import { hookClientPid } from ${JSON.stringify(pathToFileURL(path.join(REPO, "build", "cli", "client-process.js")).href)}; console.log(hookClientPid());`;
+        const out = spawnSync("sh", ["-c", `"${process.execPath}" --input-type=module -e '${script}'; true`], { encoding: "utf8" });
+        expect(out.stdout.trim()).toBe(String(process.pid));
     });
 });
 

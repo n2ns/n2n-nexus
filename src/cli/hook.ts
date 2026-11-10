@@ -108,9 +108,10 @@ const WAIT_RETRY_CODES = new Set([...UNREACHABLE_CODES, "ECONNRESET", "EPIPE", "
 
 /**
  * Ask the daemon until something arrives for the session (the wake), the
- * session becomes active again or the deadline passes (null).
+ * session becomes active again, the deadline passes or, checked before each
+ * request, `stop` says the client is gone (null).
  */
-export async function waitForWake(client: HookClient, sessionId: string, configured: string, deadlineMs = WAIT_DEADLINE_MS): Promise<Wake | null> {
+export async function waitForWake(client: HookClient, sessionId: string, configured: string, deadlineMs = WAIT_DEADLINE_MS, stop: () => boolean = () => false): Promise<Wake | null> {
     const deadline = Date.now() + deadlineMs;
     let endpoint = await resolveEndpoint(configured);
     let delay = WAKE_RETRY_FIRST_DELAY_MS;
@@ -118,7 +119,7 @@ export async function waitForWake(client: HookClient, sessionId: string, configu
     while (Date.now() < deadline) {
         if (fresh) endpoint = await resolveEndpoint(configured, { fresh: true });
         const remaining = deadline - Date.now();
-        if (remaining <= 0) return null;
+        if (remaining <= 0 || stop()) return null;
         let response: HookResponse;
         try {
             response = await new NexusClient({ endpoint }).hook({ client, input: { hook_event_name: BACKGROUND_WAIT_EVENT, session_id: sessionId } }, Math.min(HOOK_STOP_REQUEST_TIMEOUT_MS, remaining));
@@ -149,11 +150,19 @@ export async function waitForWake(client: HookClient, sessionId: string, configu
  * queue the host undoes the wake and the copy waits again after a delay that
  * doubles on each failure, so the same messages wake the session on a later
  * try without retrying a broken `codex` in a loop.
+ *
+ * The wait ends when the client it would wake is gone (Claude Code's
+ * CLAUDE_PID, or the Codex process the Stop hook passes as `--client-pid`),
+ * checked before each request, so a client that was killed is not kept
+ * listening; a wake that arrives after it is gone is reported as not delivered.
+ * A request is never cut short for it: the host may already have handed over a
+ * wake on it, which only a report can undo.
  */
 async function runWait(argv: string[]): Promise<number> {
     const { client, configured } = clientAndEndpoint(argv);
     // claude -p (unattended) waits for this hook before it exits, and nobody would see a woken turn.
     if (client === "claude" && process.env.CLAUDE_CODE_SESSION_ATTENDED === "0") return 0;
+    const { hookClientPid, parsePid, processAlive } = await import("./client-process.js");
     let sessionId = argValue(argv, "--session");
     if (!sessionId) {
         const stdin: unknown = JSON.parse(await readStdin());
@@ -161,18 +170,29 @@ async function runWait(argv: string[]): Promise<number> {
         sessionId = stdin.session_id;
         if (client === "codex") {
             const { entryScript } = await import("./entry.js");
-            const args = [entryScript(), "hook", "codex", "--wait", "--session", sessionId, ...(argValue(argv, "--endpoint") ? ["--endpoint", configured] : [])];
+            const pid = hookClientPid();
+            const args = [entryScript(), "hook", "codex", "--wait", "--session", sessionId, ...(argValue(argv, "--endpoint") ? ["--endpoint", configured] : []),
+                ...(pid !== undefined ? ["--client-pid", String(pid)] : [])];
             await startDetached(process.execPath, args);
             return 0;
         }
     }
-    // Load what a wake needs before waiting: the wait lasts up to an hour, and an
+    const clientPid = parsePid(client === "claude" ? process.env.CLAUDE_PID : argValue(argv, "--client-pid"));
+    const clientGone = () => clientPid !== undefined && !processAlive(clientPid);
+    // Load what a wake needs before waiting: the wait lasts up to a day, and an
     // upgrade or a cleared npx cache may remove the package's files meanwhile.
     const { spawnClientSync } = client === "codex" ? await import("./client-command.js") : { spawnClientSync: undefined };
+    const report = (wake: Wake, ok: boolean) => new NexusClient({ endpoint: wake.endpoint })
+        .hook({ client, input: { hook_event_name: WAKE_RESULT_EVENT, session_id: sessionId, dispatch_id: wake.dispatchId, ok } }, HOOK_REQUEST_TIMEOUT_MS)
+        .then(() => true, () => false);
     const deadline = Date.now() + WAIT_DEADLINE_MS;
     for (let delay = WAKE_RETRY_FIRST_DELAY_MS; ; delay = Math.min(delay * 2, WAKE_RETRY_MAX_DELAY_MS)) {
-        const wake = await waitForWake(client, sessionId, configured, deadline - Date.now());
+        const wake = await waitForWake(client, sessionId, configured, deadline - Date.now(), clientGone);
         if (wake === null) return 0;
+        if (clientGone()) {
+            await report(wake, false);
+            return 0;
+        }
         if (!spawnClientSync) {
             await new Promise<void>((resolve) => process.stderr.write(wake.text + "\n", () => resolve()));
             return 2;
@@ -180,8 +200,7 @@ async function runWait(argv: string[]): Promise<number> {
         // Never through cmd.exe: the text comes from another session and spans several lines.
         const queued = spawnClientSync(process.env.NEXUS_CODEX_COMMAND || "codex", ["queue", "--thread", sessionId, "--message", wake.text], { stdio: "ignore", windowsHide: true });
         const ok = !queued.error && queued.status === 0;
-        const input = { hook_event_name: WAKE_RESULT_EVENT, session_id: sessionId, dispatch_id: wake.dispatchId, ok };
-        const reported = await new NexusClient({ endpoint: wake.endpoint }).hook({ client, input }, HOOK_REQUEST_TIMEOUT_MS).then(() => true, () => false);
+        const reported = await report(wake, ok);
         // Unknown result (no report): the host keeps the wake, and waiting again would deliver nothing.
         if (ok || !reported || Date.now() + delay >= deadline) return 0;
         await new Promise((resolve) => setTimeout(resolve, delay));

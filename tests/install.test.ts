@@ -174,7 +174,7 @@ describe("install claude", () => {
             permissions: { allow: ["Bash(ls:*)"] },
             hooks: {
                 PreToolUse: [userSettings.hooks.PreToolUse[0], { matcher: "mcp__n2n-nexus__.*", hooks: [entry(10)] }],
-                Stop: [userSettings.hooks.Stop[0], { hooks: [entry(600)] }, { hooks: [{ type: "command", command: `${command("claude")} --wait`, asyncRewake: true, timeout: 3600 }] }],
+                Stop: [userSettings.hooks.Stop[0], { hooks: [entry(600)] }, { hooks: [{ type: "command", command: `${command("claude")} --wait`, asyncRewake: true, timeout: 86400 }] }],
                 Notification: userSettings.hooks.Notification,
                 SessionStart: [{ hooks: [entry(10)] }],
                 SessionEnd: [{ hooks: [entry(10)] }],

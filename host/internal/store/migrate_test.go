@@ -136,3 +136,74 @@ func TestMigrationFailureOnMigratedDatabaseSaysToReset(t *testing.T) {
 		}
 	}
 }
+
+// 0008 drops agent_messages.wake and keeps every direct message: in the
+// inbox each one may wake its recipient, whatever wake it was sent with, and a
+// broadcast delivery keeps its own wake.
+func TestMigrationMessageWake(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, FileName))+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"0001_core.sql", "0002_agents.sql", "0003_session_environment.sql", "0004_retention.sql", "0005_unread_check.sql", "0006_meeting_seat.sql", "0007_broadcast.sql"} {
+		body, err := migrations.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	for _, q := range []string{
+		`PRAGMA user_version = 7`,
+		`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, title, hostname, platform, utc_offset, label, environment)
+			VALUES ('claude:1', 'claude', 'claude@p#1', '/p', 'idle', 't', 't', '', 'box', 'wsl', 0, '', 'Ubuntu'),
+			       ('codex:2', 'codex', 'codex@p#2', '/p', 'idle', 't', 't', '', 'box', 'wsl', 0, '', 'Ubuntu')`,
+		`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply, wake)
+			VALUES ('a', 'claude:1', 'codex:2', 'quiet', 'unread', 't', 't', 0, 0), ('b', 'codex:2', 'claude:1', 'loud', 'read', 't', 't', 1, 1)`,
+		`INSERT INTO broadcasts (id, from_id, text, expects_reply, created_at, expires_at) VALUES ('c', 'claude:1', 'all', 0, 't', 't')`,
+		`INSERT INTO broadcast_deliveries (broadcast_id, to_id, status, wake) VALUES ('c', 'codex:2', 'unread', 0)`,
+		`INSERT INTO agent_messages (id, from_id, to_id, text, reply_to_broadcast, status, created_at, expires_at, expects_reply, wake)
+			VALUES ('d', 'codex:2', 'claude:1', 'answer', 'c', 'unread', 't', 't', 0, 0)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, err := s.DB.Query(`SELECT kind, id, to_id, text, reply_to, reply_kind, status, expects_reply, wake FROM agent_inbox ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var kind, id, to, text, status string
+		var replyTo, replyKind sql.NullString
+		var expects, wake int
+		if err := rows.Scan(&kind, &id, &to, &text, &replyTo, &replyKind, &status, &expects, &wake); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, strings.Join([]string{kind, id, to, text, replyTo.String, replyKind.String, status, string(rune('0' + expects)), string(rune('0' + wake))}, "|"))
+	}
+	want := []string{
+		"direct|a|codex:2|quiet|||unread|0|1",
+		"direct|b|claude:1|loud|||read|1|1",
+		"broadcast|c|codex:2|all|||unread|0|0",
+		"direct|d|claude:1|answer|c|broadcast|unread|0|1",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("inbox:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// The column is gone: a new message is written without it.
+	if _, err := s.DB.Exec(`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply) VALUES ('e', 'claude:1', 'codex:2', 'x', 'unread', 't', 't', 1)`); err != nil {
+		t.Fatal(err)
+	}
+}

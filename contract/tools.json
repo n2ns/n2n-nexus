@@ -1126,7 +1126,7 @@
     {
       "name": "send",
       "title": "Send Direct Message",
-      "description": "Send a direct message to one AI session of your own user (an id or name listed by peers); for a meeting or the global chat use send_message instead. The recipient gets the whole message in its notification; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Then end your turn rather than polling with read: the answer reaches you through the hooks after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is reached); notifyWhenIdle tells you when the recipient finishes its turn. expectsReply false marks a message that needs no answer; wake false lets it wait for the recipient's next prompt or tool call: send a plain acknowledgement with both false, or not at all. Needs the n2n-nexus hooks.",
+      "description": "Send a direct message to one AI session of your own user (an id or name listed by peers); for a meeting or the global chat use send_message instead. The recipient gets the whole message in its notification; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Then end your turn rather than polling with read: the answer reaches you through the hooks after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is reached); notifyWhenIdle tells you when the recipient finishes its turn. Every message wakes an idle recipient or continues its turn, so do not send plain acknowledgements; expectsReply false marks a message that needs no answer (a result, a notice). Needs the n2n-nexus hooks.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1156,12 +1156,7 @@
           "expectsReply": {
             "type": "boolean",
             "default": true,
-            "description": "false: tell the recipient no reply is needed (for results, notices, acknowledgements)."
-          },
-          "wake": {
-            "type": "boolean",
-            "default": true,
-            "description": "false: do not wake the recipient or hold its turn; it sees the message at its next prompt or tool call (for acknowledgements and other messages that can wait)."
+            "description": "false: tell the recipient no reply is needed (for results and notices)."
           }
         },
         "required": [
@@ -1333,7 +1328,7 @@
     {
       "name": "reply",
       "title": "Reply to Message",
-      "description": "Reply to a direct message or a broadcast you received (for a meeting or the global chat use send_message instead); it goes to the original sender as a direct message, and the message you answer counts as read. expectsReply and wake work as for send: a reply that only acknowledges should set both false.",
+      "description": "Reply to a direct message or a broadcast you received (for a meeting or the global chat use send_message instead); it goes to the original sender as a direct message, and the message you answer counts as read. expectsReply works as for send, and a reply wakes the recipient like any direct message: do not reply only to acknowledge.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1357,12 +1352,7 @@
           "expectsReply": {
             "type": "boolean",
             "default": true,
-            "description": "false: tell the recipient no reply is needed (for results, notices, acknowledgements)."
-          },
-          "wake": {
-            "type": "boolean",
-            "default": true,
-            "description": "false: do not wake the recipient or hold its turn; it sees the message at its next prompt or tool call (for acknowledgements and other messages that can wait)."
+            "description": "false: tell the recipient no reply is needed (for results and notices)."
           }
         },
         "required": [

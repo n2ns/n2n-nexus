@@ -65,8 +65,10 @@ export type HookResponse = { output: Record<string, unknown> | null };
 export const BACKGROUND_WAIT_EVENT: string = contract.backgroundWaitEvent;
 
 /**
- * Pseudo hook event with which the Codex background wait reports whether
- * `codex queue` took a wake: input `{ session_id, dispatch_id, ok }`. On
+ * Pseudo hook event with which a background wait reports whether it handed
+ * over a wake (Codex: whether `codex queue` took it; Claude Code: only a wake
+ * that arrived after Claude Code was gone, as `ok: false`): input
+ * `{ session_id, dispatch_id, ok }`. On
  * `ok: false` the host undoes the wake, so its messages and notices wake the
  * session again.
  */

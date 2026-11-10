@@ -200,25 +200,23 @@ func TestDirectMessageKinds(t *testing.T) {
 	h.hook("codex", "SessionStart", "s")
 	h.hook("codex", "SessionStart", "r")
 	h.hook("codex", "Stop", "r", stopActive)
-	// wake false: the wait is not woken and the Stop is not held.
+	// A message that needs no reply still wakes an idle recipient: the sender does not decide.
 	waiting := h.openHook("codex", texts0BackgroundWait(), "r")
 	h.untilStatus("codex:r", "listening")
-	sent := h.codex("s", "send", map[string]any{"to": "codex:r", "text": "fyi done", "expectsReply": false, "wake": false})
+	sent := h.codex("s", "send", map[string]any{"to": "codex:r", "text": "fyi done", "expectsReply": false})
 	eq(t, sent.status, 200)
-	if out := waiting.wait(t); out["timeout"] != true {
-		t.Fatalf("woken by a wake=false message: %v", out)
-	}
-	if out := h.hook("codex", "Stop", "r", stopInactive); out != nil {
-		t.Fatalf("Stop held by a wake=false message: %v", out)
-	}
-	// It is announced at the next prompt, marked, without asking for a reply.
-	ctx := h.hook("codex", "UserPromptSubmit", "r").context()
-	contains(t, ctx, "fyi done\n--- End of message ")
-	contains(t, ctx, " ---\n"+texts.NoReplyMark+"\n")
-	contains(t, ctx, texts.MessageInfoNote)
-	notContains(t, ctx, texts.MessageTrustNote)
-	// Shown whole and needing no reply, it is read: read has nothing left.
+	wake := waiting.wait(t).str("wake")
+	// Marked as needing no reply.
+	contains(t, wake, "fyi done\n--- End of message ")
+	contains(t, wake, " ---\n"+texts.NoReplyMark+"\n")
+	contains(t, wake, texts.MessageInfoNote)
+	notContains(t, wake, texts.MessageTrustNote)
+	// Shown whole by the wake, it is read: read has nothing left.
 	eq(t, len(h.codex("r", "read", nil).result["messages"].([]any)), 0)
+	// A working recipient's Stop is held for one too.
+	h.hook("codex", "UserPromptSubmit", "r")
+	eq(t, h.codex("s", "send", map[string]any{"to": "codex:r", "text": "also done", "expectsReply": false}).status, 200)
+	contains(t, h.hook("codex", "Stop", "r", stopInactive).str("reason"), "also done")
 }
 
 func TestMeetingEndNoticeSparesTheCloserAndAsyncMembers(t *testing.T) {

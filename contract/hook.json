@@ -37,7 +37,7 @@
     "hookStopRequestTimeoutMs": 595000,
     "hookRequestTimeoutMs": 5000,
     "hookStopTimeoutSec": 600,
-    "waitHookTimeoutSec": 3600,
+    "waitHookTimeoutSec": 86400,
     "hookTimeoutSec": 10,
     "codexSessionEndTimeoutSec": 3,
     "sessionEndRequestTimeoutMs": 1500,

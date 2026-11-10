@@ -51,11 +51,13 @@ function fakeHealth(health: Record<string, unknown>): Promise<{ endpoint: string
 
 const hookCommand = (client: string, node = NODE, entry = ENTRY) => `"${node}" "${entry}" hook ${client}`;
 
-function writeClaude(command: string, mcp?: { command: string; args: string[]; env?: Record<string, string> }): void {
+/** waitTimeout: the timeout of the background wait hook, null for none. */
+function writeClaude(command: string, mcp?: { command: string; args: string[]; env?: Record<string, string> }, waitTimeout: number | null = HOOK.timing.waitHookTimeoutSec): void {
     fs.mkdirSync(claudeDir, { recursive: true });
+    const wait = waitTimeout === null ? [] : [{ hooks: [{ type: "command", command: `${command} --wait`, asyncRewake: true, timeout: waitTimeout }] }];
     fs.writeFileSync(path.join(claudeDir, "settings.json"), JSON.stringify({
         hooks: {
-            Stop: [{ hooks: [{ type: "command", command: "notify-send done" }] }, { hooks: [{ type: "command", command, timeout: 600 }] }],
+            Stop: [{ hooks: [{ type: "command", command: "notify-send done" }] }, { hooks: [{ type: "command", command, timeout: 600 }] }, ...wait],
             SessionStart: [{ hooks: [{ type: "command", command, timeout: 10 }] }]
         }
     }));
@@ -168,8 +170,24 @@ describe("doctor", () => {
         expect(result.stdout).toContain(`ok   MCP npx ${NPX}: ok`);
         expect(result.stdout).not.toContain("FAIL");
         expect(result.stdout).not.toContain("fix:");
-        expect(result.stdout.match(/hook Node/g)).toHaveLength(2);
+        // Claude: the hook command and the background wait command; Codex: the hook command.
+        expect(result.stdout.match(/hook Node/g)).toHaveLength(3);
         expect(result.stdout.endsWith(hostOk())).toBe(true);
+    });
+
+    it("reports a background wait hook that an older install left with another timeout, or none", async () => {
+        writeClaude(hookCommand("claude"), { command: NODE, args: MCP_ARGS });
+        let result = await run(["claude"]);
+        expect(result.stdout).toContain(`ok   background wait hook in ${path.join(claudeDir, "settings.json")}: timeout ${HOOK.timing.waitHookTimeoutSec} s`);
+        writeClaude(hookCommand("claude"), { command: NODE, args: MCP_ARGS }, 3600);
+        result = await run(["claude"]);
+        expect(result.code).toBe(1);
+        expect(result.stdout).toContain(`FAIL background wait hook in ${path.join(claudeDir, "settings.json")}: timeout 3600 s, this client needs ${HOOK.timing.waitHookTimeoutSec} s`);
+        expect(result.stdout).toContain('fix: run "n2n-nexus install claude" again');
+        writeClaude(hookCommand("claude"), { command: NODE, args: MCP_ARGS }, null);
+        result = await run(["claude"]);
+        expect(result.code).toBe(1);
+        expect(result.stdout).toContain(`FAIL background wait hook in ${path.join(claudeDir, "settings.json")}: missing`);
     });
 
     it("reports a missing Node in the hooks and the MCP command and says how to fix it", async () => {
@@ -229,7 +247,8 @@ describe("doctor", () => {
 
     it("ignores hook groups whose hooks field is not an array", async () => {
         fs.mkdirSync(claudeDir, { recursive: true });
-        fs.writeFileSync(path.join(claudeDir, "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: "oops" }, { hooks: [{ type: "command", command: hookCommand("claude") }] }] } }));
+        fs.writeFileSync(path.join(claudeDir, "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: "oops" }, { hooks: [{ type: "command", command: hookCommand("claude") }] },
+            { hooks: [{ type: "command", command: `${hookCommand("claude")} --wait`, asyncRewake: true, timeout: HOOK.timing.waitHookTimeoutSec }] }] } }));
         fs.writeFileSync(path.join(claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { "n2n-nexus": { command: NODE, args: MCP_ARGS } } }));
         expect((await run(["claude"])).code).toBe(0);
     });

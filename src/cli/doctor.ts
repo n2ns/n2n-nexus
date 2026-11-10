@@ -11,11 +11,11 @@
  */
 import fs from "node:fs";
 
-import { CONTRACT_VERSION, HOOK_CLIENTS, MCP_SERVER_NAME, isHookClient, noDaemonHint, type HookClient } from "../contract.js";
+import { CONTRACT_VERSION, HOOK_CLIENTS, MCP_SERVER_NAME, WAIT_HOOK_TIMEOUT_SEC, isHookClient, noDaemonHint, type HookClient } from "../contract.js";
 import { NexusClient, NexusToolError } from "../client/nexus-client.js";
 import { LOCAL_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
-import { hookEndpoint, ourCommands, parseHookCommand } from "./hook-command.js";
+import { hookEndpoint, isOurs, ourCommands, parseHookCommand } from "./hook-command.js";
 import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, probeNode, readConfig } from "./install.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
 
@@ -54,6 +54,26 @@ export async function checkHost(endpoint: string): Promise<Check> {
     return ok(`n2n-nexus-host ${version}, contract version ${CONTRACT_VERSION}`);
 }
 
+/**
+ * Claude's background wait hook (the Stop hook running `hook claude --wait`)
+ * must be an asyncRewake hook with this client's timeout: the wait ends just
+ * before WAIT_HOOK_TIMEOUT_SEC, and a shorter timeout written by an older
+ * install kills it earlier, possibly while it hands over a wake.
+ */
+function checkClaudeWait(config: { hooks?: Record<string, unknown> }): Check {
+    const groups = config.hooks?.Stop;
+    for (const group of Array.isArray(groups) ? groups as Array<{ hooks?: unknown } | null> : []) {
+        for (const entry of Array.isArray(group?.hooks) ? group.hooks : []) {
+            if (!isOurs(entry, "claude") || !(entry as { command: string }).command.endsWith(" --wait")) continue;
+            const { asyncRewake, timeout } = entry as { asyncRewake?: unknown; timeout?: unknown };
+            if (asyncRewake !== true) return bad("not an asyncRewake hook");
+            if (timeout !== WAIT_HOOK_TIMEOUT_SEC) return bad(`timeout ${String(timeout)} s, this client needs ${WAIT_HOOK_TIMEOUT_SEC} s`);
+            return ok(`timeout ${WAIT_HOOK_TIMEOUT_SEC} s`);
+        }
+    }
+    return bad("missing");
+}
+
 /** Check the host at each endpoint; prints the report and returns whether all passed. */
 async function doctorHosts(endpoints: Set<string>): Promise<boolean> {
     let passed = true;
@@ -84,7 +104,8 @@ function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoin
         if (check.text.includes(VERSIONED_NOTE)) versioned = true;
     };
 
-    const commands = ourCommands(readConfig(hooksFile), client);
+    const config = readConfig(hooksFile);
+    const commands = ourCommands(config, client);
     const mcp = readMcpCommand(client, mcpFile);
     if (commands.size === 0 && !mcp) return undefined;
 
@@ -100,6 +121,7 @@ function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoin
         report(`hook Node ${parsed.node}`, checkNode(parsed.node));
         report(`hook entry ${parsed.entry}`, checkEntry(parsed.entry));
     }
+    if (client === "claude" && commands.size > 0) report(`background wait hook in ${hooksFile}`, checkClaudeWait(config));
     if (!mcp) {
         report(`MCP server ${MCP_SERVER_NAME} in ${mcpFile}`, bad("not registered"));
     } else {

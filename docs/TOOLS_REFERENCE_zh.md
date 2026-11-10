@@ -150,9 +150,9 @@
 | 工具 | 参数 | 结果与行为 |
 | --- | --- | --- |
 | `peers` | `includeOffline?: boolean = false` | `{ self: Profile, peers: Profile[] }`；其他未离线的会话，最近活跃的在前。带 `includeOffline` 时，还包括过去 24 小时内活跃过的离线会话。 |
-| `send` | `to: string`、`text: string`（1–32000 个字符）、`notifyWhenIdle?: boolean = false`、`expectsReply?: boolean = true`、`wake?: boolean = true` | `{ messageId, to: { id, name, status } }`。`to` 是会话 ID（任何状态）或某个未离线会话的名称；不能给自己发消息。离线的收件方在恢复时收到消息。带 `notifyWhenIdle` 时，收件方下一次结束一轮、开始待命或离线时，你会收到一次通知（订阅 24 小时后失效）。`expectsReply: false` 告诉收件方无需回复；`wake: false` 不叫醒收件方、也不拦住它结束这一轮，它在下次输入或调用工具时看到这条消息。单纯的确认收到要两个都设为 false，或者干脆不发。 |
+| `send` | `to: string`、`text: string`（1–32000 个字符）、`notifyWhenIdle?: boolean = false`、`expectsReply?: boolean = true` | `{ messageId, to: { id, name, status } }`。`to` 是会话 ID（任何状态）或某个未离线会话的名称；不能给自己发消息。离线的收件方在恢复时收到消息。带 `notifyWhenIdle` 时，收件方下一次结束一轮、开始待命或离线时，你会收到一次通知（订阅 24 小时后失效）。`expectsReply: false` 告诉收件方无需回复。每条直接消息都会叫醒空闲的收件方，或在它这一轮结束时拦住它，不论是否需要回复：发送方不能决定，所以不要发单纯的确认收到。 |
 | `read` | `count?: integer = 10`（1–50） | `{ messages: [{ messageId, kind, from: { id, name }, scope, replyTo, replyToKind, text, createdAt, expectsReply }], remaining }`；未读消息和广播，最早的在前，读取后标为已读。`kind` 为 `direct` 或 `broadcast`；广播的 `messageId` 就是它的 `broadcastId`，`scope` 是它限定的目录（发给所有在线会话时为 `null`，直接消息也为 `null`）。`replyTo` 是这条消息回复的消息或广播，`replyToKind` 说明是哪种（`direct` 或 `broadcast`）；不是回复时两者都为 `null`。 |
-| `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true`、`wake?: boolean = true` | 结果与 `send` 相同。`messageId` 是你收到的直接消息或广播（ID 在通知和 `read` 里）；回复作为直接消息发给它的发送方，`replyTo` 设为它，被回复的消息或广播标为已读。 |
+| `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true` | 结果与 `send` 相同。`messageId` 是你收到的直接消息或广播（ID 在通知和 `read` 里）；回复作为直接消息发给它的发送方，`replyTo` 设为它，被回复的消息或广播标为已读。 |
 | `broadcast` | `text: string`（1–32000 个字符）、`project?: string`（1–1000 个字符）、`expectsReply?: boolean = false` | `{ broadcastId }`。发给调用时所有未离线会话的通知，不含自己；带 `project` 时只发给工作目录等于该路径或位于其下的会话（按整段路径比较，分隔符 `/` 或 `\`，按原样比较，所以同一个仓库在 WSL 和 Windows 下的路径不算匹配）。它像网络广播一样发出即结束：收件方由 host 选定并送达，发送方不知道谁收到或读了，没有任何在线会话时也不知道；送到某个会话不等于被读了，它可能未读就过期。离线会话和之后才开始的会话永远收不到。host 只存一份广播，每个收件方一条送达记录；所有收件方看到的都是同一个 ID，即 `broadcastId`，作为来自发送方、`kind` 为 `broadcast` 的消息。处于 `listening`（listen 模式或后台等待）的收件方会立即被叫醒看到它；`working` 的不被打断（本轮结束时不被拦住），在下次工具调用后看到；`idle` 的在下次输入或调用工具时看到。没有 `wake` 参数。默认无需回复；`expectsReply: true` 时请每个收件方对这个 `broadcastId` 用 `reply` 回答，回复作为直接消息只发给发送方，其 `replyTo` 就是该 `broadcastId`。再调用一次就再发一次：没有去重，所以结果丢失的调用重试后可能发出两次同样的广播。 |
 | `listen` | `on: boolean` | `{ listening }`。开启期间，对话每结束一轮，其 Stop hook 会等待最多 590 秒，有消息或通知到达时让对话继续。在 Claude Code 中按 Esc 会结束一次等待。 |
 | `set_profile` | `name?: string`（1–48 个 `A–Z a–z 0–9 . _ @ # -` 中的字符）、`note?: string`（≤ 200 个字符）、`title?: string`（≤ 80 个字符）、`label?: string`（≤ 32 个字符）；至少提供一个 | `{ profile }`。名称在未离线的会话中唯一。 自己设置的 `title` 会取代客户端提供的标题，直到设为 `""`。`label` 是你所在机器的名字（如 `mac-air`），显示时取代主机名；设为 `""` 删除。 |
@@ -166,9 +166,9 @@
 | 对话开始 | 自己的名称和 ID、未离线的其他会话（最多列出五个）、其中哪些能立即回应、`peers`、`send` 和 `read` 的用法，客户端自带的代理列表看不到这些会话，以及协作规则：消息可以要求什么由用户自己的指令决定，有疑问问发送方；把工作交给别的会话时，对方需要的一切都写进一条消息，发完就结束本轮而不是用 `read` 轮询；任务只回复一次结果，做不完时说明卡在哪里、需要什么才能继续；不发单纯的确认，也不把任务推回给发来的会话。 |
 | 提交提示词 | 新消息（最多显示五条）、之前提醒过的未读消息数、待处理的通知和会议新消息。被叫醒的那一轮开始时的提示词只附带叫醒之后新到的内容。 |
 | 每次工具调用后 | 只有尚未提醒过的消息、通知和会议新消息。 |
-| 本轮即将结束 | 有可以叫醒会话的未读消息（`wake` 为 true）、待处理的通知，或会话以 active 方式参加的会议有新消息时，本轮带着提醒再继续一次。 |
+| 本轮即将结束 | 有未读的直接消息、会话 listening 时送达的未读广播、待处理的通知，或会话以 active 方式参加的会议有新消息时，本轮带着提醒再继续一次。 |
 | 待命中 | 一有可以叫醒会话的内容到达就结束等待，对话带着它继续。 |
-| 空闲（本轮已结束） | Stop hook 启动的后台等待（`n2n-nexus hook <client> --wait`，最长一小时）带着提醒开启新的一轮：Claude Code 通过 `asyncRewake` hook（退出码 2），Codex 通过 `codex queue --thread <会话 ID>`（`NEXUS_CODEX_COMMAND` 可替换 `codex` 命令）。在无人值守的 Claude 会话（`claude -p`、`CLAUDE_CODE_SESSION_ATTENDED=0`）中，该 hook 立即返回，因为 `claude -p` 会等它结束才退出。等待期间会话显示为 `listening`；对话中的任何新活动都会结束等待。Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮，且 Codex 退出时等待结束；`codex queue` 失败时这次唤醒会被撤销，等待隔一段时间（1 秒起，每次加倍，最长 5 分钟）后再次送达同样的消息。 |
+| 空闲（本轮已结束） | Stop hook 启动的后台等待（`n2n-nexus hook <client> --wait`，最长一天）带着提醒开启新的一轮：Claude Code 通过 `asyncRewake` hook（退出码 2），Codex 通过 `codex queue --thread <会话 ID>`（`NEXUS_CODEX_COMMAND` 可替换 `codex` 命令）。在无人值守的 Claude 会话（`claude -p`、`CLAUDE_CODE_SESSION_ATTENDED=0`）中，该 hook 立即返回，因为 `claude -p` 会等它结束才退出。等待期间会话显示为 `listening`；对话中的任何新活动都会结束等待。Codex 只会为运行中的 Codex 应用里已加载的对话启动排队的一轮，且 Codex 退出时等待结束；`codex queue` 失败时这次唤醒会被撤销，等待隔一段时间（1 秒起，每次加倍，最长 5 分钟）后再次送达同样的消息。 |
 | 自动轮次上限 | 被叫醒、待命中的 Stop，以及因私信或其通知而不结束的 Stop，各算一次自动轮次；会议新消息和会议通知不计数，也不受限制；提醒中会写 `Automatic turn n of N`。设置了 `maxAutoTurns` 时（host `settings.json`；默认 0，即不限制，提醒中也不写计数），从用户上次输入以来达到这个次数后，消息仍会保存，但不再叫醒或拦住对话；用户下次输入时提醒这些消息，并重新开始计数。叫醒后一分钟内的提示词视为被叫醒的那一轮开始，不清零计数。 |
 
 未读消息 24 小时后过期，发送方随后会收到通知。未读的广播也在 24 小时后过期，不通知任何人。通知也会报告 `notifyWhenIdle` 的结果。

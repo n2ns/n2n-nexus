@@ -134,7 +134,7 @@ IPv6 discovery keeps the HTTP address family: a host bound to `::` on this machi
 
 ## 7. Check the installation
 
-`n2n-nexus doctor [claude|codex]` checks that the Node path and the entry script in the installed hook commands, and the Node path and npx in the MCP command, still exist and run, that Codex trusts the Codex hooks (asking Codex itself), and that the host they talk to answers with the client's contract version; it exits with code 1 when a check fails. It checks both the hooks' endpoints and the MCP registration's `env.NEXUS_ENDPOINT`; one healthy endpoint cannot hide a failure at the other.
+`n2n-nexus doctor [claude|codex]` checks that the Node path and the entry script in the installed hook commands, and the Node path and npx in the MCP command, still exist and run, that Claude Code's background wait hook has this client's timeout (an older install wrote a shorter one), that Codex trusts the Codex hooks (asking Codex itself), and that the host they talk to answers with the client's contract version; it exits with code 1 when a check fails. It checks both the hooks' endpoints and the MCP registration's `env.NEXUS_ENDPOINT`; one healthy endpoint cannot hide a failure at the other.
 
 ## 8. Upgrading
 

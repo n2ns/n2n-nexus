@@ -88,7 +88,7 @@ An idle conversation is not running, so hooks alone can only reach it when its u
 
 ```
 turn ends ──▶ Stop hook (announces unread, or listens)
-          └─▶ Stop hook --wait ──▶ POST /api/hook {BackgroundWait}  (up to 590 s per request, repeated for up to 1 h)
+          └─▶ Stop hook --wait ──▶ POST /api/hook {BackgroundWait}  (up to 590 s per request, repeated for up to 24 h)
                                      │  session shows as "listening"
                                      ├─ new message ─▶ { wake: notification, dispatchId }
                                      │     Claude Code: asyncRewake hook exits 2, the notification starts a turn
@@ -100,14 +100,16 @@ turn ends ──▶ Stop hook (announces unread, or listens)
                                      └─ time runs out or host shuts down ─▶ { timeout: true } (ask again)
 ```
 
-The background wait retries temporary connection failures within its original one-hour deadline; with `discover`, it looks up the host again. A normal cancellation (`output: null`) still ends the wait. Host and client must both include this recovery behavior for graceful host restarts to resume waiting.
+The wait ends when the client it would wake is gone: before each request it checks the Claude Code process (`CLAUDE_PID`) or the Codex process that ran the Stop hook (its nearest ancestor that is not a shell, passed to the detached copy as `--client-pid`), so a client that was killed or crashed without a `SessionEnd` stays `listening` for at most one more request (590 s), not until the wait's deadline. A request in progress is never cut short for it, since the host may already have handed over a wake on it; a wake that arrives once the client is gone is reported with `WakeResult` `ok: false` (for Claude Code too) and undone. Without that process id (a client that sets no `CLAUDE_PID`, an ancestor that cannot be read) the wait runs without the check.
+
+The background wait retries temporary connection failures within its original 24-hour deadline; with `discover`, it looks up the host again. A normal cancellation (`output: null`) still ends the wait. Host and client must both include this recovery behavior for graceful host restarts to resume waiting.
 
 The wait never delivers while the session is `working` or while a listening Stop hook is waiting, so a message is announced once. When `codex queue` fails (an error or a non-zero exit), the Codex wait reports `ok: false` and the host undoes that wake: the messages and notices it announced count as not announced again, the session leaves `working` and the automatic turn is not counted, and the failed wake is logged in `host.log` (the session, the wake and how many messages and notices are delivered again); the wait then asks again after 1 s, doubling after each failure up to 5 minutes, and delivers them again. Any other event of the session before the report means the wake was delivered, and the report is ignored. Verified on Windows with the Claude desktop app and the Codex desktop app (2026-10-23): both directions wake an idle conversation within seconds. Known limits:
 
 - Codex starts a queued turn only for a conversation loaded in the running Codex app. After Codex restarts, a conversation is loaded once the user opens it.
 - The Codex background wait ends when the Codex app quits, and starts again only when the conversation ends a turn. Messages sent meanwhile stay unread in the host (not in Codex's own queue) until the user next prompts that conversation.
-- A Claude Code conversation is reachable for an hour after its last turn (the hook timeout).
-- Every AI reply wakes the recipient again, so sessions can work through each other's requests without anyone typing. To cap that, set `maxAutoTurns` in `settings.json` (default 0, no limit): the host then counts automatic turns (wakes, listening Stops, Stops held open for messages) since the user's last prompt and stops after that many; a prompt within a minute of a wake is the woken turn starting and keeps the count. Messages past the limit wait until the user prompts. Meeting news is not counted and is not limited: a meeting runs until it is ended, and a message with `wake: false` never wakes anyone.
+- A conversation is reachable for a day after its last turn (`waitHookTimeoutSec`: the Claude Code hook timeout, and the deadline of the Codex wait); after that, messages wait until its user prompts.
+- Every AI reply wakes the recipient again, so sessions can work through each other's requests without anyone typing. To cap that, set `maxAutoTurns` in `settings.json` (default 0, no limit): the host then counts automatic turns (wakes, listening Stops, Stops held open for messages) since the user's last prompt and stops after that many; a prompt within a minute of a wake is the woken turn starting and keeps the count. Messages past the limit wait until the user prompts. Meeting news is not counted and is not limited: a meeting runs until it is ended.
 - The automatic turn count tells the woken turn from the user by time alone. If a wake does not start a turn (a Codex conversation not loaded) and the user prompts within that minute, that prompt keeps the count; the user's next prompt resets it. If a woken turn starts more than a minute late (a Codex conversation the user opens later), its prompt resets the count. Neither loses a message or lets sessions loop without a user.
 
 ---
