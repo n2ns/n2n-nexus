@@ -3,7 +3,7 @@
 ## Backlog
 
 ### Near-term
-- [ ] winget: N2NS.n2n-nexus-host 0.12.2 is submitted (microsoft/winget-pkgs#460226, first as 0.9.0, updated on 2026-10-29); every validation check passed and the CLA is agreed, and it waits for a moderator's approval (checked 2026-11-10). Once merged, change "coming soon" in docs/INSTALL.md / docs/INSTALL_zh.md to `winget install N2NS.n2n-nexus-host`, and submit later versions (0.12.3 and up) from the `winget-manifests.zip` of each release
+- [ ] winget: N2NS.n2n-nexus-host 0.12.6 is submitted (microsoft/winget-pkgs#460226, first as 0.9.0, then 0.12.2 on 2026-10-29, 0.12.6 on 2026-11-10); the CLA is agreed, and it waits for its validation and a moderator's approval. Once merged, change "coming soon" in docs/INSTALL.md / docs/INSTALL_zh.md to `winget install N2NS.n2n-nexus-host`, and submit later versions from the `winget-manifests.zip` of each release
 - [ ] Codex messages left waiting after Codex restarts — the background wait ends with the Codex app and `codex queue` only starts a turn for a conversation loaded in the app, so messages wait until the user prompts that conversation; consider a per-machine waker that loads the conversation through the app-server
 - [ ] Hide Codex background sessions (e.g. `codex@memories`) from peers and the SessionStart introduction; they never answer
 - [ ] Tell automatic turns apart from user prompts by content instead of the one-minute window (see ARCHITECTURE known limits)
