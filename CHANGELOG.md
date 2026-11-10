@@ -4,7 +4,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.12.6] - 2026-11-10
 
 Upgrade the host and the client together (contract version 5), then run `n2n-nexus install <client>` again so the background wait hook gets its new timeout. The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
 
