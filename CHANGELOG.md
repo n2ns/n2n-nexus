@@ -4,7 +4,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.13.0] - 2026-11-15
 
 Upgrade the host and the client together for pi (the contract version stays 5: an older host answers a pi hook with 400, which the hook ignores, and Claude Code and Codex are not affected). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
 
