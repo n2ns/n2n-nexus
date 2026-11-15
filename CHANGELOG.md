@@ -162,7 +162,7 @@ Upgrade the host and the client on every machine together, and delete `nexus.db`
 - Meeting messages are numbered per meeting, from 1: `id` in `read_messages`, `messageId` from `send_message` (now returned for meetings too) and `afterId` in a meeting use that number, so a new meeting no longer continues the numbers of earlier ones.
 
 - Meetings have members. `join_meeting(meetingId, mode?, approver?, since?)` and `leave_meeting(meetingId)`; the initiator joins its meeting. News of a meeting reaches its members through the hooks as one line per meeting: active members are woken (or their turn continues), async members see it at their next prompt or tool call, and nobody is told about their own messages. Meeting news is not an automatic turn and still arrives past `maxAutoTurns`, so a meeting runs until it is ended; ending it gives each other member one notice. `list_meetings` shows the members and how many wakes the meeting caused.
-- Decisions by consensus. `send_message(..., draft: true)` publishes a meeting's current draft and fixes its required approvers (members that joined as `required` through the hooks); `stance(meetingId, messageId, endorse | object | withdraw, note?)` takes a stance on it, an objection with its reason. When at least two required approvers endorsed the current draft and nobody objects, the meeting closes by itself with the draft as a `DECISION` (`endReason: consensus`; `end_meeting` records `manual`). Ordinary proposals do not reset stances; a leaving or re-joining approver changes the list, which is posted to the meeting. Required approvers that have not taken a stance after a quiet `stanceReminderMinutes` (new `settings.json` field, default 10) are reminded once. `list_meetings` shows each meeting's `endReason` and current draft with its stances.
+- Decisions by consensus. `send_message(..., draft: true)` publishes a meeting's current draft and fixes its required approvers (members that joined as `required` through the hooks); `stance(meetingId, messageId, endorse | object | withdraw, note?)` takes a stance on it, an objection with its reason. When the current draft has at least two required approvers, every one of them endorsed it and nobody objects, the meeting closes by itself with the draft as a `DECISION` (`endReason: consensus`; `end_meeting` records `manual`). Ordinary proposals do not reset stances; a leaving or re-joining approver changes the list, which is posted to the meeting. Required approvers that have not taken a stance after a quiet `stanceReminderMinutes` (new `settings.json` field, default 10) are reminded once. `list_meetings` shows each meeting's `endReason` and current draft with its stances.
 - Direct messages say what they ask: `send` and `reply` take `expectsReply` (false: the notification says no reply is needed and does not ask for one) and `wake` (false: the message never wakes the recipient or holds its turn, and waits for its next prompt or tool call). `read` returns `expectsReply`.
 - Sessions have a readable `title`: the conversation's title as Claude Code or Codex shows it, read by the hooks and shown next to the name in `peers`, introductions, notifications and meeting members. `set_profile({ title })` sets your own (`""` returns to the client's). The name stays the handle for `send`.
 - A direct message is listed in full once; while it stays unread, later notifications only count it.
@@ -478,6 +478,23 @@ Complete architectural rewrite. The old Host/Guest election mechanism is replace
 - **Refactor**: Moved `isHost` logic from static config to dynamic `updateConfig` flow.
 
 
+## [0.3.8] - 2026-01-11
+
+### Fixed
+- **Guest Proxy Framing**: Implemented proper message framing (newline-delimited JSON buffer) in Guest-to-Host proxy. This resolves "context deadline exceeded" timeouts in IDEs where stdin pipes fragment JSON-RPC messages.
+
+## [0.3.7] - 2026-01-10
+### Fixed
+- **Guest Proxy Handshake**: Messages the IDE sends before the Guest's session with the Host is established are queued and forwarded once it is, instead of being dropped; this prevents the timeout of the initial handshake.
+- **Guest Proxy Stream Parsing**: The Host's event stream is read line by line, keeping an incomplete line for the next chunk, so a message split across chunks is no longer lost.
+- **Connect Address**: A Guest connects to `127.0.0.1` when the bind address is `0.0.0.0`.
+
+## [0.3.6] - 2026-01-10
+### Changed
+- **Modular Codebase**: Split `config.ts` into `config/cli.ts`, `config/paths.ts` and `config/index.ts`, and the network logic into `network/election.ts`, `network/host.ts` and `network/guest.ts`; `constants.ts` holds the shared settings and `index.ts` only assembles the parts.
+- **Default Storage Path**: The default data directory is `~/.n2n-nexus` on every platform (0.3.3 used the user data folder of each OS).
+- **Tests**: Added unit tests for the command line arguments, the paths and the host module.
+
 ## [0.3.5] - 2026-01-10
 ### Protocol & Stability
 - **Fix (Zombie Host)**: Implemented "Intelligent Retry" and "Re-Election" logic. If a Guest repeatedly connects to a Zombie Host (handshake OK, SSE broken), it will now automatically trigger a re-election process, blacklist the bad port, and promote itself to Host on a new port if necessary.
@@ -501,12 +518,7 @@ Complete architectural rewrite. The old Host/Guest election mechanism is replace
 - **Bind Address**: Changed default listener to `0.0.0.0` to support WSL Mirror Mode networking.
 - **Identity Safety**: Default "Assistant" ID now appends a random suffix (e.g., `Assistant-x9a2`) to prevent conflicts when multiple empty IDEs connect.
 
-## [0.3.8] - 2026-01-11
-
-### Fixed
-- **Guest Proxy Framing**: Implemented proper message framing (newline-delimited JSON buffer) in Guest-to-Host proxy. This resolves "context deadline exceeded" timeouts in IDEs where stdin pipes fragment JSON-RPC messages.
-
-## [0.3.7] - 2026-01-08
+## [0.3.2] - 2026-01-08
 ### Security & Stability
 - **Security**: Fixed potential URL parameter injection in Guest proxy connection URL.
 - **Stability**: Refactored host election fallback loop from async recursion to `while(true)` to prevent long-term stack overflow.
@@ -519,7 +531,7 @@ Complete architectural rewrite. The old Host/Guest election mechanism is replace
 - **Performance**: Optimized port scanning with batch concurrency (56s -> 3s scan time).
 - **Config**: Expanded port range to 5688-5800 (113 ports).
 
-## [v0.3.0] - 2026-01-08
+## [0.3.0] - 2026-01-08
 
 ### 🌐 Global Hub Architecture (Zero-Config Multi-IDE Collaboration)
 
@@ -563,7 +575,7 @@ This release introduces a fully automatic Host election and Global Hub architect
 - New `election.test.ts` with 9 test cases covering probe, bind, and race scenarios.
 - All 55 tests passing.
 
-## [v0.2.1] - 2026-01-01
+## [0.2.1] - 2026-01-01
 
 ### 🚀 Token Economy Deep Optimization
 
@@ -607,7 +619,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 - Updated `ASSISTANT_GUIDE.md` to v0.2.1 with "渐进式发现，增量读取" principle.
 - Reorganized Resources section with Core Resources + Resource Templates structure.
 
-## [v0.2.0] - 2025-12-31
+## [0.2.0] - 2025-12-31
 
 ### 🚀 Task Primitive System (Phase 2 & 3)
 - **Async Deepening**: Critical blocking operations (`rename_project`, `moderator_delete_project`) migrated to the Task primitive with background cascading updates.
@@ -625,7 +637,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 - **The Great Purge**: Removed 6 redundant tools (`list_projects`, `read_project`, `list_global_docs`, `read_global_doc`, `list_meetings`, `read_meeting`) in favor of Resource URIs.
 - **Native Zod 4 Schemas**: Removed `zod-to-json-schema` dependency; now using native Zod 4 `toJSONSchema()` generation.
 
-## [v0.1.9] - 2025-12-30
+## [0.1.9] - 2025-12-30
 
 ### 🛡️ Collaboration & Security
 - **Initiator-only Permissions**: Implemented restricted access for `end_meeting` and `archive_meeting`.
@@ -636,7 +648,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 - **Unified Authority**: All core resource URIs migrated to `mcp://nexus/`.
 - **New Resources**: Added `mcp://nexus/status` and `mcp://nexus/active-meeting`.
 
-## [v0.1.8] - 2025-12-30
+## [0.1.8] - 2025-12-30
 
 ### 🎯 Meeting Architecture (Phase 1 & 2)
 - **Hybrid Storage Backend**: Automatic selection between **SQLite** (preferred) and **JSON Fallback**.
@@ -670,7 +682,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 - **Improved Tooling UX**: Documented return value structures and administrative requirements in tool definitions.
 - **Manuals**: Updated `ASSISTANT_GUIDE.md` and both README versions with new admin tool documentation and Phase 2 best practices.
 
-## [v0.1.7] - 2025-12-30
+## [0.1.7] - 2025-12-30
 
 ### ⚙️ CLI Simplification
 - **Moderator flag**: Replaced `--moderator-id <id>` with simple `--moderator` boolean flag.
@@ -681,7 +693,7 @@ This release focuses on reducing context window consumption when AI loads the MC
 - Added session resource tests for role verification (Moderator/Regular).
 - All 17 unit tests passing.
 
-## [v0.1.6] - 2025-12-29
+## [0.1.6] - 2025-12-29
 
 ### 🔒 Concurrency Safety
 - **AsyncMutex Lock**: Implemented mutex-based concurrency control to prevent race conditions during simultaneous file writes.
@@ -696,7 +708,7 @@ This release focuses on reducing context window consumption when AI loads the MC
   - `api_versions`: Feature-level API versions
   - `feature_tier`: Capability category declaration for interoperability
 
-## [v0.1.5] - 2025-12-29
+## [0.1.5] - 2025-12-29
 
 ### 🚀 Major Features
 - **Project ID Naming Convention**: Enforced `[prefix]_[technical-name]` standard with 13 type prefixes (web_, api_, chrome_, vscode_, mcp_, android_, ios_, flutter_, desktop_, lib_, bot_, infra_, doc_).
@@ -715,19 +727,19 @@ This release focuses on reducing context window consumption when AI loads the MC
 - Added "Project ID Conventions" section to README.md.
 - Updated tool descriptions with Prefix Dictionary guidance.
 
-## [v0.1.4] - 2025-12-29
+## [0.1.4] - 2025-12-29
 
 ### 🐛 Bug Fix
 - Added shebang (`#!/usr/bin/env node`) to fix npx execution on Windows.
 
-## [v0.1.3] - 2025-12-29
+## [0.1.3] - 2025-12-29
 
 ### 🔧 CI/CD
 - Switched to npm Trusted Publishing (OIDC) - no more NPM_TOKEN needed.
 - Upgraded to Node.js 22 for npm 11.5.1+ support.
 - Added `--provenance` flag for supply chain security.
 
-## [v0.1.2] - 2025-12-29
+## [0.1.2] - 2025-12-29
 
 ### 🔧 Refactoring
 - Modularized codebase into `tools/`, `resources/`, and `storage/` modules.
@@ -741,14 +753,14 @@ This release focuses on reducing context window consumption when AI loads the MC
 - Added npm downloads badge.
 - Fixed repository URLs to `n2n-nexus`.
 
-## [v0.1.1] - 2025-12-29
+## [0.1.1] - 2025-12-29
 
 ### 📦 npm Release
 - Published to npm as `n2n-nexus`.
 - Updated README with `npx` configuration for easy MCP integration.
 - Added CLI arguments documentation table.
 
-## [v0.1.0] - 2025-12-29
+## [0.1.0] - 2025-12-29
 
 ### 🚀 Major Features
 - **Project Asset Hub**: Centralized storage for Project Manifests, Internal Docs, and Assets (Images/Files).

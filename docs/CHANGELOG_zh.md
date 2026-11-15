@@ -89,7 +89,7 @@
 
 ### 变更
 
-- 新的托盘图标，README 的 logo 同步更换：炭黑圆角底加灰边，上面是一张小网络，中间一个红色节点，用浅蓝连线连到四个白色节点。取代托盘里原来的青色圆形和六边形 logo；`assets` 里旧的图标和横幅文件已删除。macOS 菜单栏只显示这张网络图形，用模板图，系统按菜单栏明暗显示成黑色或白色。
+- 新的托盘图标，README 的 logo 同步更换：炭黑底加灰边，上面是一张小网络，中间一个红色节点，用浅蓝连线连到四个白色节点。取代托盘里原来的青色圆形和六边形 logo；`assets` 里旧的图标和横幅文件已删除。macOS 菜单栏只显示这张网络图形，用模板图，系统按菜单栏明暗显示成黑色或白色。
 
 ### 修复
 
@@ -104,7 +104,7 @@
 ### 新增
 
 - 有用户席位的会议：用户所在终端的对话用 `start_meeting` 或 `join_meeting` 带 `seat: "user"` 坐上席位；后坐的会话接管席位。席位 `endorse` 当前稿时 host 发出 `DECISION`（附仍未解决的反对），会议接着进行下一个点；席位 `object` 即否决草案。其他人的共识此时不做决定，只在成立或失去时通报。只有席位能结束这类会议，且要写总结；其他人的 `end_meeting` 变成一条提议结束的消息。`list_meetings` 返回 `seat`，`approvals` 带席位的表态。
-- 按时间清理，启动时一次、之后每小时一次，`settings.json` 两个字段：`meetingRetentionDays`（默认 30）和 `retentionDays`（默认 7）。已读或已过期的直接消息、已发出的通知、事件、结束的任务、没有活动的会话（仍被直接消息引用的除外）和没再出现的适配器实例在 `retentionDays` 后删除；连续 `meetingRetentionDays` 没有发言的进行中会议以 `endReason: expired` 关闭，关闭或归档满 `meetingRetentionDays` 的会议删除。有改动的清理记一条 `maintenance.cleanup` 事件。
+- 按时间清理，启动时一次、之后每小时一次，`settings.json` 两个字段：`meetingRetentionDays`（默认 30）和 `retentionDays`（默认 7）。已读或已过期的直接消息、已发出的通知、事件、结束的任务、没有活动的会话（仍被直接消息引用的除外）和没再出现的适配器实例在 `retentionDays` 后删除；连续 `meetingRetentionDays` 没有发言的进行中会议以 `endReason: expired` 关闭，关闭或归档的会议在结束满 `meetingRetentionDays` 后删除。有改动的清理记一条 `maintenance.cleanup` 事件。
 - `host_maintenance` 新增 `cleanup`（加 `dryRun` 先看会删什么）和 `export`（把会议导出为 markdown）。
 
 ### 变更
@@ -127,7 +127,7 @@
 ### 变更
 
 - 契约版本 3：host 和客户端必须一起升级（`n2n-nexus doctor` 会报告不匹配）。
-- 数据库表结构改为每个模块一个文件，不再支持从旧数据库升级：启动这个 host 前删除 `nexus.db`（留着旧文件时 host 会提示）。
+- 数据库表结构改为两个文件，每个模块一个，不再支持从旧数据库升级：启动这个 host 前删除 `nexus.db`（留着旧文件时 host 会提示）。
 - 通知、协作规则、工具描述和 MCP 说明只陈述事实（发送方、正文、要不要回复、怎么回复），不再声明消息是已批准的指令；授权只保留在 `install claude` 写进 `CLAUDE.md` 的那段里。Claude Code 收件方会看到回复工具的全名。
 - `send` / `read` / `reply` 和 `send_message` / `read_messages` 的描述第一句互相指引；介绍、`peers` 和 MCP 说明写明客户端自带的代理列表看不到 nexus 会话；`send` 提示发送方结束本轮，不要用 `read` 轮询。
 
@@ -425,10 +425,10 @@
 
 架构全面重写。旧的 Host/Guest 选举机制被独立 HTTP daemon 取代，daemon 成为唯一的真相来源。
 
-**原因**：选举模型假设所有 AI 实例共享同一个 `localhost`。这在 Windows/WSL/VM 跨环境场景下完全失效（各自处于不同的 localhost 命名空间），且在"Host" IDE 关闭时会导致其他实例无法访问数据。Split-brain 风险不可接受。
+**原因**：选举模型假设所有 AI 实例共享同一个 `localhost`。这在 Windows/WSL/VM 跨环境场景下完全失效（各自处于不同的 localhost 命名空间），且在"Host" IDE 关闭时同样失效。Split-brain 风险不可接受。
 
 #### 新架构
-- **`n2n-nexus daemon`** — 独立 HTTP 服务器；用户手动启动，持续运行；持有所有数据、工具定义和业务逻辑；不随 IDE 关闭而消亡
+- **`n2n-nexus daemon`** — 独立 HTTP 服务器；用户手动启动；持有所有数据、工具定义和业务逻辑；不随 IDE 关闭而消亡
 - **`n2n-nexus mcp`** — 无状态 MCP 代理；由 IDE 通过 `npx` 启动；从 daemon 拉取工具列表（`GET /api/tools`），转发每个工具调用（`POST /api/tools/call`）
 - **跨环境支持**：通过配置 `NEXUS_ENDPOINT` 桥接 Windows/WSL/VM 或远程机器
 
@@ -436,7 +436,7 @@
 - 启动时工具列表为空；后台重试循环（每 3 秒）直到 daemon 可达
 - 连接成功后：发送 `notifications/tools/list_changed` → IDE 自动重新加载工具列表
 - daemon 断开后：清空工具列表，通知 IDE，重新进入重试循环
-- MCP 内不含任何 hardcode 工具名——daemon 升级新工具后所有 MCP 实例无需更新即可获得新能力
+- MCP 内不含任何 hardcode 工具名——daemon 升级对 MCP 透明
 
 #### 已删除（新架构不再需要）
 - `src/network/` — 选举、Host、Guest 逻辑
@@ -446,7 +446,7 @@
 - `src/server/resources.ts`、`src/server/tools.ts`
 
 #### 存储层不变
-`src/storage/` 保持原样。SQLite WAL 模式是安全的，因为只有 daemon 进程直接写入；MCP 进程通过 HTTP 间接访问，天然串行，无并发冲突。
+`src/storage/` 保持原样。SQLite WAL 模式是安全的，因为只有 daemon 进程直接写入；MCP 进程通过 HTTP 间接访问，所有写入天然串行。
 
 ---
 
@@ -460,14 +460,14 @@
 ## [0.4.1] - 2026-01-14
 ### ✨ 开发者体验与可观测性 (Developer Experience & Observability)
 - **MCP Logging Protocol**: 实现了标准的 `notifications/message` 协议支持。调试日志现在直接显示在 IDE 的 "Model Context Protocol" 输出频道中。
-- **Improved Stdio Handling**: 严格验证并确保了 `stdout` 流的 JSON-RPC 合规性，防止 IDE 插件加载失败。
+- **Improved Stdio Handling**: 严格验证并确保了 `stdout` 流的 JSON-RPC 合规性，防止 IDE 集成出问题。
 - **Better Error Reporting**: 启动失败时会在 `stderr` 中提供更具描述性的上下文信息。
 
 ## [0.4.0] - 2026-01-14
 ### 🚀 高可用与高扩展 (High Availability & Scalability)
-- **Failover Mechanism**: 实现了自动的 Guest-to-Host 故障转移。如果 Host 进程意外退出，Guest 会检测到端口/锁释放并立即接管 Host 角色，同时保证数据持久性。
-- **Progressive Discovery**: 新增 `search_projects` 工具。允许 AI 根据意图搜索相关项目，而无需读取包含 1000+ 项目的完整注册表，大幅节省 Token。
-- **Immediate Handshake**: 实现了请求缓冲机制 (Request Buffering)，允许 Server 在 Host 选举 (~300ms) 完成前就立即接受 (<10ms) IDE 的请求，彻底解决了启动时的竞态条件。
+- **Failover Mechanism**: 实现了自动的 Guest-to-Host 故障转移。如果 Host 进程意外退出，Guest 会检测端口/锁的占用情况并立即接管 Host 角色，同时保证数据持久性。
+- **Progressive Discovery**: 新增 `search_projects` 工具。允许 AI 按查询搜索相关项目，而无需读取包含 1000+ 项目的完整注册表，减少上下文占用。
+- **Immediate Handshake**: 实现了请求缓冲机制 (Request Buffering)，允许 Server 在 Host 选举 (~300ms) 完成前就立即接受 (<10ms) IDE 的请求，解决了启动时的竞态条件。
 - **Stability**: 增加了针对进程故障转移 (`tests/failover.test.ts`) 和请求缓冲 (`tests/buffered_requests.test.ts`) 的端到端测试。
 
 ## [0.3.9] - 2026-01-11
@@ -477,16 +477,33 @@
 - **竞态修复**: 从 Local 模式切换到 Guest 模式前先显式关闭服务端，防止 Stdio 流冲突。
 - **重构**: 将 `isHost` 逻辑从静态配置移到动态的 `updateConfig` 流程。
 
+## [0.3.8] - 2026-01-11
+
+### 修复
+- **Guest 代理分帧**: 在 Guest 到 Host 的代理中实现了正确的消息分帧（按换行分隔的 JSON 缓冲区），解决了 IDE 的 stdin 管道把 JSON-RPC 消息拆成碎片时出现的 "context deadline exceeded" 超时。
+
+## [0.3.7] - 2026-01-10
+### 修复
+- **Guest 代理握手**: Guest 与 Host 的会话建立之前 IDE 发来的消息现在先排队，会话建立后再转发，不再被丢弃；这避免了初始握手超时。
+- **Guest 代理流解析**: Host 的事件流改为逐行读取，不完整的行留到下一个数据块，被拆到两个数据块里的消息不再丢失。
+- **连接地址**: 监听地址为 `0.0.0.0` 时，Guest 连接 `127.0.0.1`。
+
+## [0.3.6] - 2026-01-10
+### 变更
+- **代码模块化**: 把 `config.ts` 拆成 `config/cli.ts`、`config/paths.ts` 和 `config/index.ts`，把网络逻辑拆成 `network/election.ts`、`network/host.ts` 和 `network/guest.ts`；`constants.ts` 存放共用的设置，`index.ts` 只负责组装。
+- **默认存储路径**: 默认数据目录在所有平台上都是 `~/.n2n-nexus`（0.3.3 用的是各系统的用户数据目录）。
+- **测试**: 新增命令行参数、路径和 host 模块的单元测试。
+
 ## [0.3.5] - 2026-01-10
 ### 协议与稳定性
-- **修复 (僵尸 Host)**: 实现了“智能重试”和“重新选举”逻辑。如果 Guest 反复连接到僵尸 Host（握手成功但 SSE 断开），现在会自动触发重新选举流程，将坏端口加入黑名单，并在必要时在从端口上将自身提升为 Host。
+- **修复 (僵尸 Host)**: 实现了“智能重试”和“重新选举”逻辑。如果 Guest 反复连接到僵尸 Host（握手成功但 SSE 断开），现在会自动触发重新选举流程，将坏端口加入黑名单，并在必要时在新端口上将自身提升为 Host。
 - **重构**: 启用了动态角色切换 (Guest -> Host)，无需重启进程。
 
 ## [0.3.4] - 2026-01-10
 ### 协议与稳定性
 - **新握手协议**: 引入 `POST /nexus/handshake` 替代旧版 `/hello`。支持严格的客户端/服务端版本校验和稳健的 Host 探测。
 - **全局错误安全网**: 增加了 `uncaughtException` 和 `unhandledRejection` 处理器，防止后台任务错误导致进程退出，确保 Hub 的高可用性。
-- **修复 (EOF 错误)**: 解决了由于 SQLite 非幂等初始化导致的“连接关闭：EOF”崩溃问题。
+- **修复 (EOF 错误)**: 解决了由于重复调用工具时 SQLite 非幂等初始化导致的“连接关闭：EOF”崩溃问题。
 - **修复 (僵尸 Host)**: 改进了 Guest 的 Host检测逻辑，消除了死循环重试。
 - **测试覆盖**: 新增 `guest_connection.test.ts` 验证 Guest-Host SSE 集成。
 
@@ -500,12 +517,7 @@
 - **监听地址**: 默认监听地址更改为 `0.0.0.0` 以支持 WSL 镜像模式网络。
 - **身份安全**: 默认的 "Assistant" ID 现在会自动追加随机后缀（例如 `Assistant-x9a2`），以防止多个空 IDE 连接时发生冲突。
 
-## [0.3.8] - 2026-01-11
-
-### 修复
-- **Guest 代理分帧**: 在 Guest 到 Host 的代理中实现了正确的消息分帧（按换行分隔的 JSON 缓冲区），解决了 IDE 的 stdin 管道把 JSON-RPC 消息拆成碎片时出现的 "context deadline exceeded" 超时。
-
-## [0.3.7] - 2026-01-08
+## [0.3.2] - 2026-01-08
 ### 安全与稳定性
 - **安全**: 修复了 Guest 代理连接 URL 中潜在的 URL 参数注入。
 - **稳定性**: 将 Host 选举的回退循环从异步递归改为 `while(true)`，防止长时间运行后栈溢出。
@@ -518,7 +530,7 @@
 - **性能**: 用批量并发优化端口扫描（扫描时间 56 秒 -> 3 秒）。
 - **配置**: 端口范围扩大到 5688-5800（113 个端口）。
 
-## [v0.3.0] - 2026-01-08
+## [0.3.0] - 2026-01-08
 
 ### 🌐 全局 Hub 架构 (零配置多 IDE 协作)
 
@@ -532,7 +544,7 @@
 
 #### 全局 Hub (基于 SSE 通讯)
 - **单一 Hub 架构**: 所有 IDE（不论哪个项目）都连接到同一个 Host，实现跨项目协作。
-- **Stdio-to-SSE 代理**: Guest 透明地将 IDE 流量转发到 Host。
+- **Stdio-to-SSE 代理**: Guest 透明地将 IDE 流量通过 SSE 转发到 Host。
 - **多会话路由**: Host 维护会话映射，支持多个 Guest 并发连接。
 - **存储路径继承**: Host 广播 `rootStorage` 路径；Guest 继承它以实现无缝故障转移。
 
@@ -562,7 +574,7 @@
 - 新增 `election.test.ts`，包含 9 个覆盖探测、绑定和竞争场景的测试用例。
 - 全部 55 个测试通过。
 
-## [v0.2.1] - 2026-01-01
+## [0.2.1] - 2026-01-01
 
 ### 🚀 Token 经济深度优化
 
@@ -602,16 +614,16 @@
 | 50 个项目 | 58 资源 | 8 资源 + 4 模板 (固定) |
 
 #### 文档
-- 更新了 `README.md`，包含新的工具行为描述。
+- 更新了 `README.md`，包含新的工具行为描述（`[Incremental]`、`[Progressive]`）。
 - 将 `ASSISTANT_GUIDE.md` 升级至 v0.2.1，引入“渐进式发现，增量读取”原则。
 - 重新组织了 Resources 章节，采用“核心资源 + 资源模板”结构。
 
-## [v0.2.0] - 2025-12-31
+## [0.2.0] - 2025-12-31
 
 ### 🚀 任务原语系统 (Phase 2 & 3)
 - **异步深耕**: 关键阻塞操作 (`rename_project`, `moderator_delete_project`) 迁移至 Task 原语，支持背景级联更新。
 - **可追溯性**: 所有任务现在都支持 `source_meeting_id`，将执行结果与会议决策关联。
-- **进度展示**: 增加了进度追踪 (0.0-1.0) 和 `result_uri` 结构化输出。
+- **进度展示**: 增加了 `progress` 进度追踪 (0.0-1.0) 和 `result_uri` 结构化输出。
 - **生命周期工具**: 新增 `create_task`、`get_task`、`list_tasks`、`update_task` 和 `cancel_task`。
 
 ### 🛡️ 类型安全与安全性
@@ -624,7 +636,7 @@
 - **大清理**: 删除了 6 个冗余工具（`list_projects`、`read_project`、`list_global_docs`、`read_global_doc`、`list_meetings`、`read_meeting`），改用 Resource URI。
 - **原生 Zod 4 Schema**: 移除 `zod-to-json-schema` 依赖，改用 Zod 4 原生的 `toJSONSchema()` 生成。
 
-## [v0.1.9] - 2025-12-30
+## [0.1.9] - 2025-12-30
 
 ### 🛡️ 协作与安全
 - **仅发起者可操作**: `end_meeting` 和 `archive_meeting` 改为受限访问。
@@ -635,7 +647,7 @@
 - **统一的 authority**: 所有核心资源 URI 迁移到 `mcp://nexus/`。
 - **新资源**: 新增 `mcp://nexus/status` 和 `mcp://nexus/active-meeting`。
 
-## [v0.1.8] - 2025-12-30
+## [0.1.8] - 2025-12-30
 
 ### 🎯 会议架构 (Phase 1 & 2)
 - **混合存储后端**: 在 **SQLite**（优先）和 **JSON 回退**之间自动选择。
@@ -669,7 +681,7 @@
 - **改进工具体验**: 在工具定义中写明返回值结构和管理权限要求。
 - **手册**: 更新 `ASSISTANT_GUIDE.md` 和中英文 README，加入新的管理工具文档和 Phase 2 最佳实践。
 
-## [v0.1.7] - 2025-12-30
+## [0.1.7] - 2025-12-30
 
 ### ⚙️ CLI 简化
 - **Moderator 参数**: 用简单的布尔参数 `--moderator` 取代 `--moderator-id <id>`。
@@ -680,7 +692,7 @@
 - 新增会话资源测试，验证角色（Moderator/普通）。
 - 全部 17 个单元测试通过。
 
-## [v0.1.6] - 2025-12-29
+## [0.1.6] - 2025-12-29
 
 ### 🔒 并发安全
 - **AsyncMutex 锁**: 实现基于互斥锁的并发控制，防止同时写文件时的竞态条件。
@@ -695,7 +707,7 @@
   - `api_versions`: 功能级 API 版本
   - `feature_tier`: 能力类别声明，用于互操作
 
-## [v0.1.5] - 2025-12-29
+## [0.1.5] - 2025-12-29
 
 ### 🚀 主要功能
 - **项目 ID 命名规范**: 强制采用 `[prefix]_[technical-name]` 标准，共 13 种类型前缀（web_、api_、chrome_、vscode_、mcp_、android_、ios_、flutter_、desktop_、lib_、bot_、infra_、doc_）。
@@ -714,19 +726,19 @@
 - 在 README.md 中新增 "Project ID Conventions" 章节。
 - 工具说明中加入前缀字典指引。
 
-## [v0.1.4] - 2025-12-29
+## [0.1.4] - 2025-12-29
 
 ### 🐛 缺陷修复
 - 添加 shebang（`#!/usr/bin/env node`），修复 Windows 上 npx 无法执行的问题。
 
-## [v0.1.3] - 2025-12-29
+## [0.1.3] - 2025-12-29
 
 ### 🔧 CI/CD
 - 改用 npm Trusted Publishing（OIDC），不再需要 NPM_TOKEN。
 - 升级到 Node.js 22，以支持 npm 11.5.1+。
 - 添加 `--provenance` 参数，提升供应链安全。
 
-## [v0.1.2] - 2025-12-29
+## [0.1.2] - 2025-12-29
 
 ### 🔧 重构
 - 把代码库拆分为 `tools/`、`resources/` 和 `storage/` 模块。
@@ -740,14 +752,14 @@
 - 新增 npm 下载量徽章。
 - 仓库 URL 修正为 `n2n-nexus`。
 
-## [v0.1.1] - 2025-12-29
+## [0.1.1] - 2025-12-29
 
 ### 📦 npm 发布
 - 以 `n2n-nexus` 发布到 npm。
 - README 增加 `npx` 配置，便于接入 MCP。
 - 新增 CLI 参数说明表。
 
-## [v0.1.0] - 2025-12-29
+## [0.1.0] - 2025-12-29
 
 ### 🚀 主要功能
 - **项目资产中心**: 集中存储项目 Manifest、内部文档和资产（图片/文件）。
