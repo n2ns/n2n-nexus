@@ -4,6 +4,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.1] - 2026-11-15
+
+Upgrade the host; the client needs nothing (contract version 5). Start new conversations afterwards: one started before keeps the old `peers` definition, whose `includeOffline` the host now ignores.
+
+### Removed
+
+- `peers` no longer takes `includeOffline` and never lists offline sessions: AI work starts new conversations far more often than it resumes old ones, so listing the ones that ended in the last 24 hours to leave them a message was little used. A message sent to an offline session by its session ID still waits for it (a reply to a sender that ended its conversation, a session that only looked offline after 30 minutes without activity). The contract's `timing.peerWindowMs` is gone with it.
+
 ## [0.13.0] - 2026-11-15
 
 Upgrade the host and the client together for pi (the contract version stays 5: an older host answers a pi hook with 400, which the hook ignores). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database. After upgrading the host, start new Claude Code and Codex conversations: one started before keeps the old tool definitions, in which a session's client is only claude or codex, so its `peers` fails as soon as a pi session is listed (with `includeOffline`, also an offline one).

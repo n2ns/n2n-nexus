@@ -55,7 +55,7 @@ describe("tool results", () => {
         await call("read_messages", { count: 5 });
         await call("read_messages", { latest: true, count: 5 });
         await call("peers");
-        await call("peers", { includeOffline: true });
+        await call("peers", {});
         await call("set_profile", { name: "contract-test", note: "checking contracts", title: "Contract test" });
         await call("listen", { on: false });
         await call("send", { to: "codex:peer", text: "direct hi", notifyWhenIdle: true });

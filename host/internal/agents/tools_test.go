@@ -64,8 +64,7 @@ func peerIDs(r toolReply) [][2]string {
 
 func TestPeers(t *testing.T) {
 	h := start(t)
-	window := ms(timing.PeerWindowMs)
-	h.at(-window - time.Minute)
+	h.at(-25 * time.Hour)
 	h.hook("codex", "SessionStart", "gone", map[string]any{"cwd": "/work/old"})
 	h.hook("codex", "SessionEnd", "gone")
 	h.hook("codex", "SessionStart", "stale", map[string]any{"cwd": "/work/stale"}) // never ended, but stale: offline and too old to list
@@ -85,8 +84,9 @@ func TestPeers(t *testing.T) {
 	if got := peerIDs(r); !reflect.DeepEqual(got, [][2]string{{"codex:busy", "working"}}) {
 		t.Fatalf("peers = %v", got)
 	}
+	// includeOffline is gone: an offline session is never listed, however recent.
 	all := h.claude("me", "peers", map[string]any{"includeOffline": true})
-	if got := peerIDs(all); !reflect.DeepEqual(got, [][2]string{{"codex:busy", "working"}, {"claude:recent-offline", "offline"}}) {
+	if got := peerIDs(all); !reflect.DeepEqual(got, [][2]string{{"codex:busy", "working"}}) {
 		t.Fatalf("peers = %v", got)
 	}
 	eq(t, h.status("codex:stale"), "offline")

@@ -94,18 +94,19 @@ export function agentKit(host: Host) {
         return res.payload.result!.messageId;
     }
 
-    /** Every session the host lists (offline ones active within the peer window included), read by the observer. */
+    /** Every session the host lists (those that are not offline), read by the observer. */
     async function sessions(): Promise<Profile[]> {
         // SessionEnd creates the observer offline (or ends it again after the previous read).
         expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer", machine: TEST_MACHINE } })).status).toBe(200);
-        const res = await host.callTool<{ peers: Profile[] }>("peers", { includeOffline: true }, "observer", { client: "codex", sessionId: OBSERVER });
+        const res = await host.callTool<{ peers: Profile[] }>("peers", {}, "observer", { client: "codex", sessionId: OBSERVER });
         expect(res.status, res.body).toBe(200);
         expect((await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionEnd", session_id: OBSERVER, cwd: "/observer", machine: TEST_MACHINE } })).status).toBe(200);
         return res.payload.result!.peers;
     }
 
     const profile = async (id: string) => (await sessions()).find((p) => p.id === id);
-    const status = async (id: string) => (await profile(id))?.status;
+    /** A session peers does not list is offline (peers lists no offline sessions). */
+    const status = async (id: string) => (await profile(id))?.status ?? "offline";
 
     /** End every session the current test touched. */
     async function endSessions() {

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost, type Caller } from "./harness.js";
 import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, NO_AGENT_SESSION_ERROR, agentKit, context, ids, nameOf, type Profile } from "./agents.js";
 
-const { staleSessionMs: STALE_SESSION_MS, peerWindowMs: PEER_WINDOW_MS, idleSubscriptionTtlMs: IDLE_SUBSCRIPTION_TTL_MS,
+const { staleSessionMs: STALE_SESSION_MS, idleSubscriptionTtlMs: IDLE_SUBSCRIPTION_TTL_MS,
     messageTtlMs: MESSAGE_TTL_MS, toolUseBindingTtlMs: TOOL_USE_BINDING_TTL_MS } = HOOK.timing;
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -145,10 +145,10 @@ describe("agent sessions over time", () => {
         expect(expired.payload).toEqual({ ok: false, error: NO_AGENT_SESSION_ERROR });
     });
 
-    it("peers returns self and the sessions not offline; includeOffline adds those active within PEER_WINDOW_MS; most recent first", async () => {
+    it("peers returns self and the sessions not offline, most recent first, and never an offline one", async () => {
         const s = ids();
         const t0 = nextBase();
-        await host.setClock(t0 - PEER_WINDOW_MS - 60_000);
+        await host.setClock(t0 - DAY - 60_000);
         await hook("codex", "SessionStart", s("gone"), { cwd: "/work/old" });
         await hook("codex", "SessionEnd", s("gone"));
         await hook("codex", "SessionStart", s("stale"), { cwd: "/work/stale" }); // never ended, but stale: offline and too old to list
@@ -167,10 +167,9 @@ describe("agent sessions over time", () => {
         });
         expect(payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
 
+        // includeOffline is gone (undeclared arguments are dropped): a recently ended session is not listed either.
         const all = await claudeTool<{ self: Profile; peers: Profile[] }>(s("me"), "peers", { includeOffline: true });
-        expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual([
-            [`codex:${s("busy")}`, "working"], [`claude:${s("recent-offline")}`, "offline"]
-        ]);
+        expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
         expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "environment", "hostname", "id", "label", "lastActiveAt", "name", "note", "platform", "status", "title", "utcOffset"]);
         expect((await sessions()).map((p) => p.id)).not.toContain(`codex:${s("stale")}`);
     });

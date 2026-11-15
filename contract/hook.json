@@ -50,7 +50,6 @@
     "toolUseBindingTtlMs": 300000,
     "messageTtlMs": 86400000,
     "idleSubscriptionTtlMs": 86400000,
-    "peerWindowMs": 86400000,
     "staleSessionMs": 1800000
   },
   "limits": {

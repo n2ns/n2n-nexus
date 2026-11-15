@@ -46,7 +46,7 @@ export const HOOK = readContract<{
     backgroundWaitEvent: string;
     wakeResultEvent: string;
     agentStatuses: string[];
-    timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "peerWindowMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
+    timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
     limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number; maxHostnameChars: number };
     texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "replyTool" | "noAgentSessionError"
         | "meetingReadRest" | "seatSender" | "seatTaken" | "seatMoved" | "seatVeto" | "aiConsensus" | "aiConsensusLost", string>;

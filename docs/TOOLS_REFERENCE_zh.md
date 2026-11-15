@@ -149,7 +149,7 @@
 
 | 工具 | 参数 | 结果与行为 |
 | --- | --- | --- |
-| `peers` | `includeOffline?: boolean = false` | `{ self: Profile, peers: Profile[] }`；其他未离线的会话，最近活跃的在前。带 `includeOffline` 时，还包括过去 24 小时内活跃过的离线会话。 |
+| `peers` | — | `{ self: Profile, peers: Profile[] }`；其他未离线的会话，最近活跃的在前。离线会话一律不列出；按会话 ID 发给离线会话的消息仍会存着等它回来。 |
 | `send` | `to: string`、`text: string`（1–32000 个字符）、`notifyWhenIdle?: boolean = false`、`expectsReply?: boolean = true` | `{ messageId, to: { id, name, status } }`。`to` 是会话 ID（任何状态）或某个未离线会话的名称；不能给自己发消息。离线的收件方在恢复时收到消息。带 `notifyWhenIdle` 时，收件方下一次结束一轮、开始待命或离线时，你会收到一次通知（订阅 24 小时后失效）。`expectsReply: false` 告诉收件方无需回复。每条直接消息都会叫醒空闲的收件方，或在它这一轮结束时拦住它，不论是否需要回复：发送方不能决定，所以不要发单纯的确认收到。 |
 | `read` | `count?: integer = 10`（1–50） | `{ messages: [{ messageId, kind, from: { id, name }, scope, replyTo, replyToKind, text, createdAt, expectsReply }], remaining }`；未读消息和广播，最早的在前，读取后标为已读。`kind` 为 `direct` 或 `broadcast`；广播的 `messageId` 就是它的 `broadcastId`，`scope` 是它限定的目录（发给所有在线会话时为 `null`，直接消息也为 `null`）。`replyTo` 是这条消息回复的消息或广播，`replyToKind` 说明是哪种（`direct` 或 `broadcast`）；不是回复时两者都为 `null`。 |
 | `reply` | `messageId: string`、`text: string`（1–32000 个字符）、`expectsReply?: boolean = true` | 结果与 `send` 相同。`messageId` 是你收到的直接消息或广播（ID 在通知和 `read` 里）；回复作为直接消息发给它的发送方，`replyTo` 设为它，被回复的消息或广播标为已读。 |

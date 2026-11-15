@@ -884,15 +884,9 @@ func (a *Agents) introduce(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	peers, err := a.listPeers(sessionID, a.o.Clock.Now())
+	online, err := a.listPeers(sessionID)
 	if err != nil {
 		return "", err
-	}
-	var online []*session
-	for _, p := range peers {
-		if p.Status != "offline" {
-			online = append(online, p)
-		}
 	}
 	lines := []string{fmt.Sprintf("%s This conversation is %s (%s) on n2n-nexus, where AI sessions can message each other.", h.Texts.NoticePrefix, self.Name, self.ID)}
 	if n := len(online); n == 0 {

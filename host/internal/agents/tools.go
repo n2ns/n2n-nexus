@@ -88,24 +88,20 @@ func (a *Agents) deliver(from, to *session, text string, replyTo *message, notif
 	return sent{MessageID: id, To: recipient{ID: to.ID, Name: to.Name, Status: to.Status}}, nil
 }
 
-type peersArgs struct {
-	IncludeOffline bool `json:"includeOffline"`
-}
+type peersArgs struct{}
 
 func (a *Agents) toolPeers(c api.Call, args peersArgs) (any, error) {
 	self, err := a.resolve(c)
 	if err != nil {
 		return nil, err
 	}
-	list, err := a.listPeers(self.ID, a.o.Clock.Now())
+	list, err := a.listPeers(self.ID)
 	if err != nil {
 		return nil, err
 	}
 	peers := []profile{}
 	for _, p := range list {
-		if args.IncludeOffline || p.Status != "offline" {
-			peers = append(peers, profileOf(p))
-		}
+		peers = append(peers, profileOf(p))
 	}
 	return map[string]any{"self": profileOf(self), "peers": peers}, nil
 }

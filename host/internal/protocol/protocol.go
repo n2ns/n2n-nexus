@@ -109,7 +109,6 @@ type Hook struct {
 		ToolUseBindingTtlMs   int64 `json:"toolUseBindingTtlMs"`
 		MessageTtlMs          int64 `json:"messageTtlMs"`
 		IdleSubscriptionTtlMs int64 `json:"idleSubscriptionTtlMs"`
-		PeerWindowMs          int64 `json:"peerWindowMs"`
 		StaleSessionMs        int64 `json:"staleSessionMs"`
 	} `json:"timing"`
 	Limits struct {

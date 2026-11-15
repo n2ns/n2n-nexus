@@ -350,10 +350,9 @@ func (a *Agents) expireStale(before time.Time) ([]string, error) {
 	return ids, err
 }
 
-// listPeers: other sessions that are not offline or were active within the peer window, most recent first.
-func (a *Agents) listPeers(selfID string, now time.Time) ([]*session, error) {
-	since := now.Add(-ms(a.o.Contract.Hook.Timing.PeerWindowMs))
-	return querySessions(a.db(), "SELECT "+sessionColumns+" FROM agent_sessions WHERE id != ? AND (status != 'offline' OR last_active_at > ?) ORDER BY last_active_at DESC", selfID, a.iso(since))
+// listPeers: other sessions that are not offline, most recent first.
+func (a *Agents) listPeers(selfID string) ([]*session, error) {
+	return querySessions(a.db(), "SELECT "+sessionColumns+" FROM agent_sessions WHERE id != ? AND status != 'offline' ORDER BY last_active_at DESC", selfID)
 }
 
 // addMessage adds an unread direct message and returns its id; replyTo is
