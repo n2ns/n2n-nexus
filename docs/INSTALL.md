@@ -39,7 +39,7 @@ Good to know:
 Start it in one of two ways:
 
 - **Tray app**: run `n2n-nexus-host` without arguments. The first time the tray runs it turns **Start at login** on; after that it stays as you set it. What the tray menu does: [User guide](USER_GUIDE.md#1-the-tray).
-- **Background service** (starts at boot, no login needed, no tray): `n2n-nexus-host service install` from an elevated terminal (Windows) or with `sudo` (macOS, Linux). The service runs as the user who installed it. Quit the tray first: `service install` refuses while the tray runs the host. While the service runs, a tray started later only controls it.
+- **Background service** (starts at boot, no login needed, no tray): `n2n-nexus-host service install` from an elevated terminal (Windows) or with `sudo` (macOS, Linux). The service runs as the user who installed it. On Linux the service is a systemd unit: `service install` refuses where systemd is not running (a container, or WSL without systemd). Quit the tray first: `service install` refuses while the tray runs the host. While the service runs, a tray started later only controls it.
 
 On Linux the tray needs a desktop with StatusNotifierItem (AppIndicator) support; on a server, use `service install`. Where the service and the start-at-login entry are registered on each OS: [Architecture](ARCHITECTURE.md#tray-and-service-per-os).
 
@@ -59,7 +59,7 @@ n2n-nexus doctor             # checks everything, including that the host answer
 
 The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package, which you update yourself (step 8).
 
-- Pass `--endpoint <url>` to both commands when the host is not at `http://127.0.0.1:5688`, or `--endpoint discover` to find a host on the LAN (step 6).
+- Pass `--endpoint <url>` to each install command when the host is not at `http://127.0.0.1:5688`, or `--endpoint discover` to find a host on the LAN (step 6).
 - On Windows, run `npm i -g` and `install` from a regular terminal, not from the terminal of a packaged app such as Codex: that terminal installs into the app's private copy of `%APPDATA%`, which hides the global install from the app.
 - The hooks and the MCP server command use an absolute Node path, because GUI clients started from the Dock (such as Claude Desktop) do not read your shell's `PATH`. The MCP server command is `"<node>" "<npx>" -y n2n-nexus@latest mcp`, with npm's npx found next to that Node (or next to the Node a version manager's shim runs); it also sets `PATH` to a folder whose `node` is that Node, followed by the system folders (`/usr/bin` and `/bin`; on Windows `System32` and the Windows folder), so the package npx starts finds Node. By default `install` writes the `node` found on `PATH` when it is the same file as the Node running `install` (for example `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `~/.local/bin/node` or a version manager's stable entry point), and otherwise the real path of the running Node. `install` prints the path it wrote as `Node: <path>`.
 - macOS with the Claude desktop app: `n2n-nexus install claude` is all the app's Code tab needs; it reads the same `~/.claude.json` and hooks as the `claude` CLI. Do not also add n2n-nexus to the app's `claude_desktop_config.json`: the app then bridges that server into every Code tab in place of the one Claude Code starts, and the bridge drops the conversation identity, so direct messages fail with "This call carries no agent session". If the entry is there, remove it, restart the desktop app and start a new Code tab conversation ([User guide, section 2](USER_GUIDE.md#2-claude-desktop-app)).
@@ -109,7 +109,7 @@ Other MCP clients can use every tool except direct messages:
 }
 ```
 
-The adapter can start before the host. It loads the host's tool list once the host becomes reachable. The adapter and the hooks never start a host themselves: when none answers, tool calls fail with a message saying how to start it (or, for a remote endpoint, that it must be started on that machine), and the hooks skip silently. A call the host does not answer in time fails on its own; the host may still complete it.
+The adapter can start before the host. It loads the host's tool list once the host becomes reachable. The adapter and the hooks never start a host themselves: when none answers, tool calls fail with a message saying to install and start it (or, for a remote endpoint, that it must be started on that machine), and the hooks skip: they exit with code 0, print nothing on stdout and write the same message as one line on stderr. A call the host does not answer in time fails on its own; the host may still complete it.
 
 ## 6. Several machines and environments
 

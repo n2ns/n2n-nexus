@@ -24,7 +24,7 @@ Claude 桌面版里有两种对话：
 
 ## 3. 对话之间的直接消息
 
-每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文），收件方可以为它做什么由你自己的指令决定：对 Claude Code，`n2n-nexus install claude` 写进用户级 `CLAUDE.md` 的那段说明让它当作你的指令照要求执行、不找你确认、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
+每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文），收件方可以为它做什么由你自己的指令决定：对 Claude Code，`n2n-nexus install claude` 写进用户级 `CLAUDE.md` 的那段说明让它当作你的指令照要求执行、不找你确认、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`，pi 通过它的 n2n-nexus 扩展，把通知作为下一条用户消息发给 pi），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
 
 ## 4. 检查是否正常
 
@@ -99,7 +99,7 @@ n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
 | --- | --- | --- |
 | `NEXUS_ENDPOINT` | MCP 适配器、hooks 和 `doctor` 连接的 host 地址，设为 `discover` 时在局域网里查找 | `http://127.0.0.1:5688` |
 | `NEXUS_DISCOVERY_PORT` | 客户端用 `discover` 查询时使用的 UDP 端口 | `5688` |
-| `NEXUS_INSTANCE_ID` | 覆盖 MCP 实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份） | `mcp-<主机名>-<工作目录哈希>-<IDE 名>` |
+| `NEXUS_INSTANCE_ID` | 覆盖 MCP 实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份） | `mcp-<主机名>-<工作目录哈希>-<IDE 名>`（macOS 上是电脑名，其他系统是去掉 `.local` 的主机名） |
 | `NEXUS_CODEX_COMMAND` | Codex 后台等待以 `<命令> queue ...` 方式运行的命令，`install codex` 和 `doctor` 也用它查询 hook 信任 | `codex`（Windows 上查询信任时默认用 Codex 桌面应用自带的那份） |
 
 host（`n2n-nexus-host`）：只读取 `NEXUS_ROOT`，即数据目录（`--root` 优先）。其余 host 设置都在 `settings.json` 里，托盘、服务和命令行共用。
@@ -118,7 +118,7 @@ host 启动时读取；命令行参数优先。文件或字段缺失时使用默
 | `rateBurst` | 每个对话（没装 hooks 时每个实例）可一次性突发的调用数（最小为 1） | `60` |
 | `maxAutoTurns` | 两次用户输入之间，一个对话最多可以自动继续的轮数（包括被叫醒、listen 等待、因消息被拦下不结束）；超过后私信只排队，等用户下次输入。会议新消息不计数也不受限制。`0` 表示不限制 | `0` |
 | `stanceReminderMinutes` | 会议当前稿还有必需认可人没表态时，会议可以安静多少分钟；超过后每个没表态的人被提醒一次，草案作者收到一份缺谁的汇总。提醒从不结束会议。`0` 关闭提醒 | `10` |
-| `meetingRetentionDays` | 会议关闭或归档后保留的天数（之后连同消息和决议一起删除；可先用 `host_maintenance` 的 `export` 存为 markdown），也是进行中会议连续没有发言、被以 `endReason: expired` 关闭的天数。至少 `1` | `30` |
+| `meetingRetentionDays` | 已关闭或已归档的会议保留的天数，从会议结束时算起（归档不重新计时；之后连同消息和决议一起删除；可先用 `host_maintenance` 的 `export` 存为 markdown），也是进行中会议连续没有发言、被以 `endReason: expired` 关闭的天数。至少 `1` | `30` |
 | `retentionDays` | 以下内容保留的天数：已读或已过期的直接消息和广播送达记录、已发出的通知、事件、结束的任务、没有活动的会话（仍被直接消息、广播或广播送达记录引用的不删）和没再出现的适配器实例。至少 `1` | `7` |
 
 改完文件后重启 host（托盘 **重启**，或重启 `serve` / 服务）。
@@ -144,4 +144,4 @@ host 把全部协作数据保存在数据目录里的一个 SQLite 数据库中�
 
 后台服务，以及自己运行 host 时的托盘，把日志写到日志目录的 `host.log`（单个 10 MB，保留 3 个旧文件）；托盘自己的日志写到同一目录的 `tray.log`；`n2n-nexus-host serve` 输出到标准错误。host 删除哪些数据、什么时候删，见[架构说明](ARCHITECTURE_zh.md#清理与保留期)。
 
-n2n-nexus 0.x 的数据（`~/.n2n-nexus`）不会导入：host 不读取它，也不动它。
+n2n-nexus 0.9.0 之前的数据（`~/.n2n-nexus`）不会导入：host 不读取它，也不动它。客户端在这个文件夹里仍保留一个文件 `discovered-endpoint`，即 `discover` 的缓存结果。

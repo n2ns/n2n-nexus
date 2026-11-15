@@ -1,10 +1,10 @@
-# Plan: Google Antigravity as a third client
+# Plan: Google Antigravity as a fourth client
 
 Status: proposed, not implemented　|　Source: tests on Antigravity IDE 1.107.0 and the Antigravity CLI `agy` 1.4.10 (Windows and Linux/WSL), 2026-10-29; the design points in §3 were decided by the user.
 
 ## 1. Goal
 
-Conversations in Google Antigravity, the IDE and the `agy` CLI, take part in n2n-nexus like Claude Code and Codex conversations do. Antigravity runs any model the user picks (Gemini and others), so n2n-nexus supports the client, not a model. The IDE is a user interface over `agy`: the IDE starts `agy --hub`, and that process runs the agent, the hooks and the MCP servers. One client, `antigravity`, therefore covers both.
+Conversations in Google Antigravity, the IDE and the `agy` CLI, take part in n2n-nexus like Claude Code, Codex and pi conversations do. Antigravity runs any model the user picks (Gemini and others), so n2n-nexus supports the client, not a model. The IDE is a user interface over `agy`: the IDE starts `agy --hub`, and that process runs the agent, the hooks and the MCP servers. One client, `antigravity`, therefore covers both.
 
 Completion criteria:
 
@@ -75,7 +75,7 @@ All of these were observed in this session's tests, not taken from documentation
 - `meta.antigravityConversationKey`: `antigravity.google/conversation_id`.
 - `texts.waiterReminder`: `[n2n-nexus] The n2n-nexus message waiter of this conversation is not running. Start it as described in the n2n-nexus rule.`
 
-`contractVersion` stays 5. An older host answers an `antigravity` hook with 400 (the hook exits silently) and treats an `antigravity` caller as naming no session, so Claude Code and Codex are unaffected either way.
+`contractVersion` stays 5. An older host answers an `antigravity` hook with 400 (the hook exits with code 0, nothing on stdout and one line on stderr) and treats an `antigravity` caller as naming no session, so Claude Code, Codex and pi are unaffected either way.
 
 ### 4.2 Identity
 
@@ -164,7 +164,7 @@ New helpers go next to the existing ones. `src/cli/client-dirs.ts` gets `geminiD
 | Contract | `contract/hook.json` (§4.1); `src/contract.ts` exports |
 | Host | `host/internal/api/api.go` (`parseCaller`, `serveHook`); `host/internal/agents/identity.go`; `host/internal/agents/hooks.go`, `agents.go` (output per client, reminder, no cancel) |
 | Client | `src/server/nexus.ts` (`callerOf`); `src/cli/hook.ts` (mapping, `--wait` loop for antigravity); `src/cli/hook-command.ts` (PowerShell form, recognition by hook name); `src/cli/install.ts`, `src/cli/doctor.ts`, `src/cli/client-dirs.ts`, `src/cli/mcp-config.ts` |
-| Docs | `docs/TOOLS_REFERENCE.md` (direct messages between conversations), `docs/ARCHITECTURE.md` / `_zh`, `docs/INSTALL.md` / `_zh`, `docs/USER_GUIDE.md` / `_zh`, `README.md` / `docs/README_zh.md` client lists, `CLAUDE.md` (Architecture: three clients) |
+| Docs | `docs/TOOLS_REFERENCE.md` (direct messages between conversations), `docs/ARCHITECTURE.md` / `_zh`, `docs/INSTALL.md` / `_zh`, `docs/USER_GUIDE.md` / `_zh`, `README.md` / `docs/README_zh.md` client lists, `CLAUDE.md` (Architecture: four clients) |
 
 ## 7. Tests
 

@@ -19,7 +19,7 @@
   - A revised draft records which draft it replaces and shows the changed paragraphs; endorsements of unchanged parts carry over.
   - Messages addressed to members (`to` or @name): only those named are woken, the others see them at their next tool call.
   - At the end of a meeting, a markdown document of the topics, positions, decisions and open questions for the user, merged with the manual meeting export.
-  - Show what a meeting cost: messages, reads, wakes and duration, so the user can tell what is worth a meeting.
+  - Show what a meeting cost, so the user can tell what is worth a meeting: `list_meetings` already shows the messages (`messageCount`), the wakes (per meeting and per member) and `startTime` / `endTime`; the reads and the duration as one figure are still missing.
 
 ### Future
 - [ ] Code signing for the Go host binaries — the first releases ship unsigned (Windows SmartScreen / Defender warnings; macOS avoided with a Homebrew formula built from source). Windows: apply for free open-source signing at SignPath.io (n2n-nexus is Apache-2.0), or buy a Certum open-source code signing certificate; macOS notarization needs the Apple Developer Program ($99/year). Signing adds one release step and changes nothing else

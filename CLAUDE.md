@@ -10,7 +10,7 @@ npm run dev              # tsc -w (watch mode)
 npm run lint             # eslint src tests
 npm test                 # vitest run: client tests (globalSetup builds the client and the Go test host first)
 npm run host:build-test  # go build -tags testclock → host/bin/test/n2n-nexus-host
-npm run test:conformance # black-box tests in tests/conformance/ against NEXUS_HOST_BIN (default: the test build)
+npm run test:conformance # black-box tests in tests/conformance/ against NEXUS_HOST_BIN (default: the test build, which it builds first)
 npm run check            # lint, test, build, audit, pack dry run (prepublishOnly)
 
 go vet ./...
@@ -28,7 +28,7 @@ NEXUS_ENDPOINT=http://127.0.0.1:5799 node build/index.js mcp
 
 Hooks (lefthook): pre-commit runs `npm run lint`; pre-push runs `go vet ./... && go test ./host/... && npm run build && npm test && npm run host:build-test && npm run test:conformance`.
 
-CI (`.github/workflows/host.yml`) runs `go vet`, `go test ./host/...`, lint, build, `npm test`, the test-host build and the conformance tests on ubuntu, windows and macos for every push to main and every pull request. Releases: `v*` tags publish the npm client (`publish.yml`); `host-v*` tags build and release the host (`host-release.yml`, see `host/README.md`).
+CI (`.github/workflows/host.yml`) runs `go vet`, `go test ./host/...`, lint, build, `npm test`, the test-host build and the conformance tests on ubuntu, windows and macos for every push to main and every pull request. Releases: `v*` tags publish the npm client (`publish.yml`, only when the tag is `v` + the `package.json` version); `host-v*` tags test, build and release the host (`host-release.yml`, see `host/README.md`).
 
 ## Architecture
 
@@ -47,14 +47,14 @@ The single source of the protocol: `tools.json` (every tool's name, title, descr
 - `internal/cursors` — read cursors and meeting notification watermarks (`read_cursors`, `meeting_members.notified_id`), shared by core and agents.
 - `internal/agents` — conversations: the hook handler, the direct-message tools, their tables (`0002_agents.sql`). `agents.Agents` is the in-process coordinator holding all wait state behind one mutex.
 - `internal/api` — HTTP server: `GET /health`, `GET /api/tools`, `POST /api/tools/call`, `POST /api/hook`; Host / Origin guard, 16 MB body limit, rate limits per conversation (per instance when none is identified), per address and per hook session.
-- `internal/discovery` — UDP LAN discovery responder. `internal/host` — assembles one host (single-instance `host.lock`, database, tools, server, discovery, hourly cleanup, `host.log` / `tray.log` rotation). `internal/tray` — tray menu and texts. `internal/service` — boot service and autostart files per OS, `serve --supervise`, Windows firewall script. `internal/clock`, `internal/testhooks` — the settable clock and `POST /test/clock` / `--test-listen-wait-ms`, compiled only with `-tags testclock`.
+- `internal/discovery` — UDP LAN discovery responder. `internal/host` — assembles one host (single-instance `host.lock`, database, tools, server, discovery, hourly cleanup, `host.log` / `tray.log` rotation). `internal/tray` — tray menu and texts. `internal/service` — boot service and autostart files per OS, `serve --supervise`, Windows firewall script. `internal/clock`, `internal/testhooks` — the settable clock and `POST /test/clock` / `POST /test/shutdown` / `--test-listen-wait-ms`, compiled only with `-tags testclock`.
 
 ### Client (`src/`, npm package `n2n-nexus`)
-`src/index.ts` routes to `NexusServer().run()` (`src/server/nexus.ts`, default `mcp`) or the `hook` / `install` / `uninstall` / `doctor` commands (`src/cli/`). The hook path is imported dynamically and must stay free of the MCP SDK: it runs on every client tool call. The client has no storage and never starts a host; when none answers, tool calls fail with `noDaemonHint(endpoint)` (`src/contract.ts`) and the hooks skip silently.
+`src/index.ts` routes to `NexusServer().run()` (`src/server/nexus.ts`, default `mcp`) or the `hook` / `install` / `uninstall` / `doctor` commands (`src/cli/`). The hook path is imported dynamically and must stay free of the MCP SDK: it runs on every client tool call. The client has no storage and never starts a host; when none answers, tool calls fail with `noDaemonHint(endpoint)` (`src/contract.ts`) and the hooks skip: exit code 0, nothing on stdout, one line on stderr.
 
-`src/server/nexus.ts` is a stateless proxy on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`): it serves stdio through `serveStdio(() => buildServer())`, fetches `GET /api/tools` in the background (the first `tools/list` waits up to 1 s), retries every 3 s while the host is unreachable and calls `sendToolListChanged()` on connect. `tools/call` → `POST /api/tools/call` with the instance ID (`src/server/instance-id.ts`) and a `caller` read from the request `_meta` (Claude Code `claudecode/toolUseId`, Codex `sessionId`), never from model-supplied arguments. A call the host does not answer within the request timeout fails alone. `src/client/nexus-client.ts` is the HTTP client, `src/client/discovery.ts` the `discover` query side.
+`src/server/nexus.ts` is a stateless proxy on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`): it serves stdio through `serveStdio(() => buildServer())`, fetches `GET /api/tools` in the background (the first `tools/list` waits up to 1 s), retries every 3 s while the host is unreachable and calls `sendToolListChanged()` on connect. `tools/call` → `POST /api/tools/call` with the instance ID (`src/server/instance-id.ts`) and a `caller` read from the request `_meta` (Claude Code `claudecode/toolUseId`, Codex `sessionId`; pi sends neither, so the adapter names the processes above it, `clientPids`, and its `machine`), never from model-supplied arguments. A call the host does not answer within the request timeout fails alone. `src/client/nexus-client.ts` is the HTTP client, `src/client/discovery.ts` the `discover` query side.
 
-`n2n-nexus hook <client>` forwards the hook stdin's `HOOK_INPUT_FIELDS` to `POST /api/hook` and prints `output`; on any error it exits 0 silently. See docs/TOOLS_REFERENCE.md#direct-messages-between-conversations.
+`n2n-nexus hook <client>` forwards the hook stdin's `HOOK_INPUT_FIELDS` to `POST /api/hook` and prints `output`; on any error it exits 0 with nothing on stdout and one line on stderr (`[n2n-nexus] hook: …`). See docs/TOOLS_REFERENCE.md#direct-messages-between-conversations.
 
 ### Adding a tool
 1. Add it to `contract/tools.json`: name, title, description, annotations, `inputSchema`, `outputSchema`, `publishOutputSchema`.
@@ -76,7 +76,7 @@ server.sendToolListChanged();
 ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY] ?? server.getClientVersion()
 ```
 
-Tests in `tests/mcp_proxy.test.ts` run every proxy case against both a 2025-era client and a client pinned to 2026-07-28 (`@modelcontextprotocol/client`).
+Tests in `tests/mcp_proxy.test.ts` run the request and response cases and the tool list change notifications against both a 2025-era client and a client pinned to 2026-07-28 (`@modelcontextprotocol/client`); the lifecycle, hung-daemon, dropped-tool and reconnect cases each run against one of them.
 
 ## TypeScript / Module Notes
 

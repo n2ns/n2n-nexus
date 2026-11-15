@@ -63,11 +63,11 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
   └─ stdin 关闭 → 停止重试、关闭、退出
 ```
 
-适配器的实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份）取自该连接上第一次见到的客户端名，来源是请求 `_meta` 中的 `io.modelcontextprotocol/clientInfo`（2026-07-28）或 `initialize`（2025 代），`NEXUS_INSTANCE_ID` / `--id` 可固定。每次工具调用都以 `instanceId` 带上它。装了 hooks 时，聊天和会议调用改为按对话识别（`caller`，经 hook 的 toolUseId 绑定或 Codex 会话 ID 解析），所以共用一个实例的多个对话各有自己的未读游标。
+适配器的实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份）取自该连接上第一次见到的客户端名，来源是请求 `_meta` 中的 `io.modelcontextprotocol/clientInfo`（2026-07-28）或 `initialize`（2025 代），`NEXUS_INSTANCE_ID` / `--id` 可固定。每次工具调用都以 `instanceId` 带上它。装了 hooks 时，聊天和会议调用改为按对话识别（`caller`，经 hook 的 toolUseId 绑定、Codex 会话 ID，或 pi 适配器上面各级进程的 ID 和所在机器解析），所以共用一个实例的多个对话各有自己的未读游标。
 
 ### 对话与 hooks
 
-每个 Claude Code、Codex 或 pi 对话是一个会话，ID 为 `claude:<会话 ID>`、`codex:<会话 ID>` 或 `pi:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。pi 没有 hook 配置：`n2n-nexus install pi` 写入一个 pi 扩展，在 pi 的 `session_start`（SessionStart）、`before_agent_start`（UserPromptSubmit）、`tool_result`（PostToolUse）、`agent_settled`（Stop）和 `session_shutdown`（SessionEnd）时运行 `n2n-nexus hook pi --client-pid <pi 进程>`；host 按机器记下每个 pi 进程最近报告的会话（`pi_client_pids`），因为 pi 调用 MCP 工具时不带自己的会话：适配器按由近到远报上它上面的各级进程和所在机器，其中最近的一个登记过的就是它的 pi 进程。被 Stop 接着跑的一轮不发 UserPromptSubmit（同一轮，和 Claude Code 一样），用户中断的一轮不发 Stop，`/reload` 不发 SessionEnd。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（`hostname`：macOS 上取 `scutil --get ComputerName` 的电脑名，它由用户设置、不随网络变化，其他系统取去掉 `.local` 的主机名；`platform`：用 `/proc/version` 区分 `wsl` 和 `linux`；`environment`：WSL 发行版名，取自 `WSL_DISTRO_NAME`，因为同一台 Windows 上的发行版共用它的主机名；以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器或 WSL 发行版上的会话常常工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题；出任何错误都以退出码 0 退出、不输出，所以 host 不在也不会卡住客户端。
+每个 Claude Code、Codex 或 pi 对话是一个会话，ID 为 `claude:<会话 ID>`、`codex:<会话 ID>` 或 `pi:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。pi 没有 hook 配置：`n2n-nexus install pi` 写入一个 pi 扩展，在 pi 的 `session_start`（SessionStart）、`before_agent_start`（UserPromptSubmit）、`tool_result`（PostToolUse）、`agent_settled`（Stop）和 `session_shutdown`（SessionEnd）时运行 `n2n-nexus hook pi --client-pid <pi 进程>`；host 按机器记下每个 pi 进程最近报告的会话（`pi_client_pids`），因为 pi 调用 MCP 工具时不带自己的会话：适配器按由近到远报上它上面的各级进程和所在机器，其中最近的一个登记过的就是它的 pi 进程。被 Stop 接着跑的一轮不发 UserPromptSubmit（同一轮，和 Claude Code 一样），用户中断的一轮不发 Stop，`/reload` 不发 SessionEnd。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（`hostname`：macOS 上取 `scutil --get ComputerName` 的电脑名，它由用户设置、不随网络变化，其他系统取去掉 `.local` 的主机名；`platform`：用 `/proc/version` 区分 `wsl` 和 `linux`；`environment`：WSL 发行版名，取自 `WSL_DISTRO_NAME`，因为同一台 Windows 上的发行版共用它的主机名；以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器或 WSL 发行版上的会话常常工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题（Claude Code 和 Codex；pi 没有可读的标题）；出任何错误都以退出码 0 退出，stdout 不输出，stderr 写一行（`[n2n-nexus] hook: …`），所以 host 不在也不会卡住客户端。
 
 ```
 客户端事件 ──▶ n2n-nexus hook ──▶ POST /api/hook ──▶ 会话状态、通知
@@ -76,9 +76,9 @@ UserPromptSubmit / PostToolUse ◀── additionalContext ◀─┤  "2 unread 
 Stop                           ◀── decision: block   ◀─┘  每次结束前一次，或待命时消息一到就返回
 ```
 
-工具调用的对话身份不经过模型参数。适配器从请求的 `_meta` 里读取：Claude Code 带 `claudecode/toolUseId`，由调用前刚运行的 PreToolUse hook 绑定到对话（已实测：调用会等 hook 结束）；Codex 带 `sessionId`。适配器把它作为 `caller` 放进 `POST /api/tools/call`。身份是对话而不是适配器进程，所以适配器重启、恢复对话、子代理都沿用同一身份，一个适配器也能同时服务多个 Codex 对话。
+工具调用的对话身份不经过模型参数。适配器从请求的 `_meta` 里读取：Claude Code 带 `claudecode/toolUseId`，由调用前刚运行的 PreToolUse hook 绑定到对话（已实测：调用会等 hook 结束）；Codex 带 `sessionId`；pi 两者都不带，所以适配器按由近到远报上它上面的各级进程和所在机器（`clientPids`、`machine`）。适配器把它作为 `caller` 放进 `POST /api/tools/call`。身份是对话而不是适配器进程，所以适配器重启、恢复对话、子代理都沿用同一身份，一个适配器也能同时服务多个 Codex 对话。
 
-通知带上每条消息的完整正文（一条通知里的正文合计截到 `notifyTextChars`，即 5000 个字符；被截断的消息用 `read` 读全文），请求随 hook 注入的上下文或 Stop 的理由送到模型面前，Claude Code 把它当作 hook 反馈来看待，而不只是工具结果。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名）；不声明任何授权，因为客户端自己的提示把 hook 输出说成"不是用户输入"，hook 文本里的授权声明只会和它打架。Claude Code 只在用户自己的指令要求时才照其他会话的消息去做，所以 `install claude` 会在用户级 `CLAUDE.md` 里加一段写明这一点的标记内容，授权只来自那里。完整显示的消息在提醒驱动这一轮时（Stop、待命、后台唤醒；唤醒失败会恢复为未读，但消息到达的同时用户按下 Esc、客户端没读到的 Stop 文本会连同消息一起丢失）标为已读，无需回复的消息随提示词显示时也标为已读。随提示词显示、需要回复的消息，以及工具调用后显示的所有消息（那段上下文可能是子代理的，对话本身看不到），仍为未读，直到 `reply` 回复它或 `read` 读取它，本轮结束时 Stop 照样为它拦住一次。待命中的 Stop hook 最长挂起 590 秒，消息一到立即返回；客户端杀掉 hook（用户按 Esc）或 host 关闭时结束等待。系统仍采用可信本地 host 边界，这不是身份认证机制：同一系统用户下的所有进程都被视为可信，可以冒充任何对话；需要互相隔离的代理应以不同的系统用户运行，各自使用自己的 host（见[安全文档](SECURITY_zh.md#安全模型)中的本地信任模型）。精确契约见[工具参考](TOOLS_REFERENCE_zh.md#对话之间的直接消息)。
+通知带上每条消息的完整正文（一条通知里的正文合计截到 `notifyTextChars`，即 5000 个字符；被截断的消息用 `read` 读全文），请求随 hook 注入的上下文或 Stop 的理由送到模型面前，Claude Code 把它当作 hook 反馈来看待，而不只是工具结果。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名）；不声明任何授权，因为客户端自己的提示把 hook 输出说成"不是用户输入"，hook 文本里的授权声明只会和它打架。Claude Code 只在用户自己的指令要求时才照其他会话的消息去做，所以 `install claude` 会在用户级 `CLAUDE.md` 里加一段写明这一点的标记内容，授权只来自那里。完整显示的消息在提醒驱动这一轮时（Stop、待命、后台唤醒；唤醒失败会恢复为未读，但消息到达的同时用户按下 Esc、客户端没读到的 Stop 文本会连同消息一起丢失）标为已读，无需回复的消息随提示词显示时也标为已读。随提示词显示、需要回复的消息，以及工具调用后显示的所有消息（那段上下文可能是子代理的，对话本身看不到），仍为未读，直到 `reply` 回复它或 `read` 读取它，本轮结束时 Stop 照样为它拦住一次；被 Stop 续上的一轮，它的 Stop 什么也不拦，所以只在工具调用后显示过、此时仍未读的消息在这里重新算作未提醒，由待命等待或后台等待送达一次。待命中的 Stop hook 最长挂起 590 秒，消息一到立即返回；客户端杀掉 hook（用户按 Esc）或 host 关闭时结束等待。系统仍采用可信本地 host 边界，这不是身份认证机制：同一系统用户下的所有进程都被视为可信，可以冒充任何对话；需要互相隔离的代理应以不同的系统用户运行，各自使用自己的 host（见[安全文档](SECURITY_zh.md#安全模型)中的本地信任模型）。精确契约见[工具参考](TOOLS_REFERENCE_zh.md#对话之间的直接消息)。
 
 ### 会话、在线状态与唤醒空闲对话
 
@@ -101,7 +101,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 要叫醒的客户端不在了，等待就结束：每次请求前检查 Claude Code 进程（`CLAUDE_PID`），或运行 Stop hook 的 Codex 进程（最近一个不是 shell 的祖先进程，以 `--client-pid` 传给独立后台进程），所以客户端被强制结束或崩溃、没有发出 `SessionEnd` 时，会话最多再显示一次请求的时间（590 秒）为 `listening`，而不是一直到等待期限。进行中的请求不会因此被中断，因为 host 可能已经在这次请求上交出了唤醒；客户端不在后才到的唤醒，用 `WakeResult` `ok: false` 回报（Claude Code 也一样）并被撤销。拿不到这个进程 ID 时（客户端没有设置 `CLAUDE_PID`、读不到祖先进程），等待照常进行，不做这项检查。
 
-后台等待会在原有的 24 小时时限内重试临时连接故障；使用 `discover` 时重新查找 host。正常取消（`output: null`）仍结束等待。host 与客户端都需要包含这项恢复行为，才能在 host 正常重启后继续等待。
+后台等待会在原有的 24 小时时限内重试临时连接故障；使用 `discover` 时重新查找 host。正常取消（`output: null`）仍结束等待。host 与客户端都需要包含这项恢复行为，才能在 host 正常重启后继续等待。host 没有运行的时间不算无活动：启动时所有未离线的会话都从启动那一刻起算活动时间，所以停机超过 30 分钟的失活时限也不会把等待中的会话置为离线。
 
 会话处于 `working`，或者 listen 模式的 Stop hook 正在等待时，后台等待不会送达，所以同一条消息只提醒一次。`codex queue` 失败（出错或退出码非 0）时，Codex 的后台等待回报 `ok: false`，host 撤销这次唤醒：它提醒过的消息和通知重新算作未提醒，会话退出 `working`，这一轮不计入自动轮次，失败的唤醒记入 `host.log`（会话、唤醒 ID、再次送达的消息和通知各有几条）；随后等待在 1 秒后重新请求（每失败一次间隔加倍），再次送达它们。连续失败 10 次（间隔 1 秒到 256 秒，共约 8.5 分钟）后等待结束：Codex 没有加载该对话（终端没发出 `SessionEnd` 就被关闭时，它的 app-server，也就是 hook 的客户端进程，仍在运行），消息保持未读，留到用户下次在该对话里输入时再提醒。回报到达前该会话已有其他事件，说明唤醒已送达，回报被忽略。已在 Windows 上用 Claude 桌面应用和 Codex 桌面应用实测（2026-10-23）：两个方向都能在数秒内叫醒空闲的对话。2026-11-10 又用 WSL 中的 Claude Code、Codex CLI 和 Windows 上的 Codex 桌面应用实测，全程无人输入：无需回复的消息在两个方向都能叫醒收件方，没有确认循环；发给正在工作的收件方的消息在它这一轮里处理，不另起一轮；host 重启后等待在 7 秒内重连；闲置超过一小时后两个方向仍能叫醒；被 `kill -9` 结束的 Claude Code 对话收到的消息保持未读，它的等待随之结束。已知限制：
 
@@ -117,8 +117,8 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 全部数据都在 host 数据目录里的一个 SQLite 文件 `nexus.db` 中，同一目录下还有 `settings.json` 和 `host.lock`（各系统的位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）。
 
-- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql`、`0002_agents.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。每个文件包含一个模块当前的完整表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；以后改表结构时新增编号文件。
-- **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`broadcasts` 和 `broadcast_deliveries`（每次广播一行、每个收件方一行；`agent_inbox` 视图把直接消息和送达记录合成一个收件箱）、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`，以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
+- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql` 到 `0009_pi_client.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。前两个文件各包含一个模块的初始表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；之后每次改表结构都新增一个编号文件（目前是 `0003` 到 `0009`），当前表结构是它们合在一起的结果。
+- **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`meeting_approvers`（会议当前稿的必需认可人）、`meeting_stances`（每个成员对提案的表态）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`broadcasts` 和 `broadcast_deliveries`（每次广播一行、每个收件方一行；`agent_inbox` 视图把直接消息和送达记录合成一个收件箱）、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`、`pi_client_pids`（每台机器上每个 pi 进程最近报告的会话），以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
 - **事务**：每个写操作一个事务，多行修改（会议消息，开始 / 结束 / 重开会议，项目改名）要么全部生效，要么都不生效。数据库使用 WAL 模式，开启 `foreign_keys`，忙等超时 5 秒，只用一个连接。
 - **只有 host 打开数据库**。MCP 适配器和 hooks 都走 HTTP。
 - **活动日志**：通过工具产生的状态变更（项目同步 / 更新 / 改名 / 删除 / 资产、文档同步、策略更新、会议开始 / 结束 / 归档 / 重开、维护）记录为结构化事件，用 `list_events` 读取，不混入聊天流。
@@ -133,7 +133,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 - 让超过 24 小时有效期的未读直接消息和广播送达记录过期（直接消息通知发送方），删除 `retentionDays` 天前已读或已过期的直接消息、广播送达记录和已发出的通知，广播随最后一条送达记录删除；
 - 删除 `retentionDays` 天没有活动的会话，连同它的通知、空闲订阅、工具调用绑定和读取游标；仍被直接消息、广播或广播送达记录引用，或正挂着等待的会话不删；`retentionDays` 天没出现的适配器实例不再记录；
 - 连续 `meetingRetentionDays` 天没有发言（从最后一条消息、开始或重新开启算起）的进行中会议以 `endReason: expired` 关闭并通知成员，不产生决议；
-- 删除关闭或归档 `meetingRetentionDays` 天的会议，连同消息、决议、表态、成员、认可人和读取游标；
+- 删除结束已满 `meetingRetentionDays` 天的已关闭和已归档会议（归档不重新计时），连同消息、决议、表态、成员、认可人和读取游标；
 - 删除已过期（5 分钟）的工具调用绑定。
 
 每一部分的筛选和删除在同一个事务里完成。有改动的清理记一条 `maintenance.cleanup` 事件，带各项数量和删掉的会议、会话。`host_maintenance` 可以立即执行清理（`cleanup`，加 `dryRun` 先看会删什么），也可以在会议被删前把它导出为 markdown（`export`）。
@@ -174,7 +174,7 @@ host 在打开数据库之前对 `<数据目录>/host.lock` 加独占锁，并�
 
 ```
 host/
-├── cmd/n2n-nexus-host/   命令行：托盘（默认）、serve、service、autostart、version
+├── cmd/n2n-nexus-host/   命令行：托盘（默认）、serve、service、autostart、install（Windows）、version
 └── internal/
     ├── config/           数据和日志目录、settings.json
     ├── protocol/         加载嵌入的协议（contract/contract.go），编译 JSON Schema，
@@ -188,7 +188,7 @@ host/
     ├── tray/             托盘菜单及中英文文本
     ├── service/          开机服务、托盘自启、`serve --supervise` 监督进程、防火墙脚本
     ├── clock/            系统时钟和测试用可设置时钟
-    └── testhooks/        只在测试构建（`-tags testclock`）中存在：POST /test/clock、--test-listen-wait-ms
+    └── testhooks/        只在测试构建（`-tags testclock`）中存在：POST /test/clock、POST /test/shutdown、--test-listen-wait-ms
 ```
 
 Go 模块是仓库根目录的 `github.com/n2ns/n2n-nexus`，所以 host 直接嵌入 `contract/`。工具只有出现在 `contract/tools.json` 里才存在；host 为每个工具注册一个处理函数，启动时记录缺少处理函数的工具。
@@ -218,7 +218,7 @@ host 没有身份认证，所以要挡住网页：拒绝浏览器发起的请求
 
 限流使用令牌桶（每秒 `rateLimit`，可突发 `rateBurst`；`rateLimit: 0` 关闭），超限返回 429 和 `Retry-After`：
 
-- 工具调用按对话计（hooks 根据调用方的 Claude `toolUseId` 或 Codex `sessionId` 识别出的会话），识别不出时按 `instanceId` 计，另外因为这些 ID 是自报的，再按客户端地址以 5 倍额度计；
+- 工具调用按对话计（hooks 根据调用方的 Claude `toolUseId`、Codex `sessionId` 或 pi 的 `clientPids` 和 `machine` 识别出的会话），识别不出时按 `instanceId` 计，另外因为这些 ID 是自报的，再按客户端地址以 5 倍额度计；
 - hooks 按对话（`<client>:<session_id>`）计，并按客户端地址以 5 倍额度计，都是独立的桶，忙碌对话的 hooks 不会占用该地址的工具调用额度；
 - `GET /health` 和 `GET /api/tools` 不限流。
 

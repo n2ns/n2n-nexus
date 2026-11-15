@@ -43,22 +43,23 @@ go test ./host/...
 
 # 一致性测试：tests/conformance/ 里的黑盒 HTTP 测试，针对测试构建运行
 npm run host:build-test       # go build -tags testclock -o host/bin/test/ ./host/cmd/n2n-nexus-host
-npm run test:conformance      # 运行 NEXUS_HOST_BIN，默认 host/bin/test/n2n-nexus-host[.exe]
+npm run test:conformance      # 运行 NEXUS_HOST_BIN，默认 host/bin/test/n2n-nexus-host[.exe]，运行前会先构建它
 ```
 
-`testclock` 构建标签会加上 `POST /test/clock {"now": <ms> | null}`（固定或放开 host 的时钟）和 `serve --test-listen-wait-ms <ms>`（缩短 listening 等待时间）；正式版本两者都没有。测试框架（`tests/conformance/harness.ts`）为每个测试文件启动一个 host，使用全新的 `--root`、`--port 0` 和该文件的 `settings.json`。`npm test`（客户端测试）也会先构建测试 host。
+`testclock` 构建标签会加上 `POST /test/clock {"now": <ms> | null}`（固定或放开 host 的时钟）、`POST /test/shutdown`（像 SIGTERM 一样让 host 正常停止；测试框架在 Windows 上用它）和 `serve --test-listen-wait-ms <ms>`（缩短 listening 等待时间）；正式版本这三样都没有。测试框架（`tests/conformance/harness.ts`）为每个测试文件启动一个 host，使用全新的 `--root`、`--port 0` 和该文件的 `settings.json`。`npm test`（客户端测试）也会先构建测试 host。
 
 lefthook 的 pre-push hook 和 CI（`.github/workflows/host.yml`，在 ubuntu、windows 和 macos 上）会运行以上全部内容。
 
 ## 发布
 
 1. 给提交打上 `host-vX.Y.Z` 标签并推送该标签。随后 `.github/workflows/host-release.yml` 会：
+   - 在 linux、windows 和 macOS 上运行 `go vet ./...` 和 `go test ./host/...`，失败时什么也不发布；
    - 为 linux、windows（`.zip`）和 darwin（`.tar.gz`，在 macOS 上用 cgo 构建）构建 `n2n-nexus-host_<version>_<os>_<arch>`，每个平台都有 amd64 和 arm64，带 `-X main.version=<version>`；
    - 写出 `SHA256SUMS`，并为每个压缩包生成构建证明；
    - 用 `host/release/render.mjs` 生成各包管理器的 manifest（Homebrew formula 从该标签的源码压缩包构建）；
-   - 创建 GitHub release `host-vX.Y.Z`，附上压缩包、`SHA256SUMS` 和 `winget-manifests.zip`（带 `-` 的标签，例如 `host-v0.9.0-rc.1`，会成为预发布版本）；
+   - 创建 GitHub release `host-vX.Y.Z`，附上压缩包、`SHA256SUMS` 和 `winget-manifests.zip`（带 `-` 的标签，例如 `host-v0.9.0-rc.1`，会成为预发布版本）；重跑时如果 release 已经发布，不动它的文件，只有这次构建出的压缩包相同（`SHA256SUMS` 一致）才继续，被中断的运行留下的草稿则会被替换；
    - 对不带 `-` 的标签，把 formula 推送到 `n2ns/homebrew-tap`（`Formula/n2n-nexus-host.rb`），把 manifest 推送到 `n2ns/scoop-bucket`（`bucket/n2n-nexus-host.json`）。
 2. 仓库 secrets：`HOMEBREW_TAP_DEPLOY_KEY` 和 `SCOOP_BUCKET_DEPLOY_KEY`，即对这两个仓库有写权限的 SSH 部署密钥。
 3. winget：解压 release 里的 `winget-manifests.zip`，手动把其中 `winget/` 下的 manifest（`N2NS.n2n-nexus-host`）提交到 [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)。
 
-npm 客户端用 `v*` 标签单独发布（`.github/workflows/publish.yml`）。当某个改动会破坏旧版客户端或 host 时，把 `contract/` 中三个文件的 `contractVersion` 加一。
+npm 客户端用 `v*` 标签单独发布（`.github/workflows/publish.yml`）；标签必须是 `v` 加 `package.json` 里的版本号，在其他引用上手动运行什么也不发布。当某个改动会破坏旧版客户端或 host 时，把 `contract/` 中三个文件的 `contractVersion` 加一。

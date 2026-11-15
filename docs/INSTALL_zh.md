@@ -39,7 +39,7 @@ gh attestation verify n2n-nexus-host_<版本>_<os>_<arch>.tar.gz --repo n2ns/n2n
 用下面两种方式之一启动：
 
 - **托盘程序**：不带参数运行 `n2n-nexus-host`。托盘第一次运行时会自动打开 **登录后自启**，之后保持你的设置。托盘菜单的用法见[使用手册](USER_GUIDE_zh.md#1-托盘)。
-- **后台服务**（开机即启动，不用登录，不带托盘）：在管理员终端（Windows）或用 `sudo`（macOS、Linux）执行 `n2n-nexus-host service install`。服务以安装它的用户身份运行。先退出托盘：托盘正在运行 host 时 `service install` 会拒绝执行。服务在运行时，之后启动的托盘只做控制界面。
+- **后台服务**（开机即启动，不用登录，不带托盘）：在管理员终端（Windows）或用 `sudo`（macOS、Linux）执行 `n2n-nexus-host service install`。服务以安装它的用户身份运行。Linux 上的服务是一个 systemd unit：systemd 没有运行时（容器，或没有启用 systemd 的 WSL）`service install` 会拒绝执行。先退出托盘：托盘正在运行 host 时 `service install` 会拒绝执行。服务在运行时，之后启动的托盘只做控制界面。
 
 Linux 上的托盘需要桌面环境支持 StatusNotifierItem（AppIndicator）；没有桌面的服务器请用 `service install`。各系统上服务和登录后自启注册在哪里，见[架构说明](ARCHITECTURE_zh.md#各平台的托盘与服务)。
 
@@ -59,7 +59,7 @@ n2n-nexus doctor             # 全面检查，包括 host 是否应答
 
 MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 用的是全局安装的包，需要你自己升级（第 8 步）。
 
-- host 不在 `http://127.0.0.1:5688` 时，两条命令都加上 `--endpoint <url>`；要在局域网里自动查找 host，就用 `--endpoint discover`（第 6 步）。
+- host 不在 `http://127.0.0.1:5688` 时，每条 install 命令都加上 `--endpoint <url>`；要在局域网里自动查找 host，就用 `--endpoint discover`（第 6 步）。
 - 在 Windows 上，`npm i -g` 和 `install` 要在普通终端里执行，不要在 Codex 这类打包应用自带的终端里执行：那里会装进该应用私有的 `%APPDATA%` 副本，并让应用看不到全局安装。
 - hooks 和 MCP 服务的命令里写的是 Node 的绝对路径，因为从 Dock 启动的 GUI 客户端（如 Claude 桌面版）不读取 shell 的 `PATH`。MCP 服务的命令是 `"<node>" "<npx>" -y n2n-nexus@latest mcp`，npx 取这个 Node 旁边的 npm 自带的那个（版本管理工具的 shim 则取它实际运行的 Node 旁边的）；同时把 `PATH` 设为一个其中 `node` 就是这个 Node 的目录，后面跟系统目录（`/usr/bin` 和 `/bin`；Windows 上是 `System32` 和 Windows 目录），让 npx 启动的包能找到 Node。默认情况下，`PATH` 上的 `node` 与运行 `install` 的 Node 是同一个文件时，`install` 写入 `PATH` 上的路径（例如 `/usr/local/bin/node`、`/opt/homebrew/bin/node`、`~/.local/bin/node` 或版本管理工具的稳定入口），否则写入当前运行的 Node 的真实路径。`install` 会打印一行 `Node: <path>` 显示实际写入的路径。
 - macOS 上用 Claude 桌面版：Code 标签页只需要 `n2n-nexus install claude`，它和 `claude` 命令行读同一份 `~/.claude.json` 和 hooks。不要再把 n2n-nexus 加进桌面版的 `claude_desktop_config.json`：桌面版会把那个服务器桥接进每个 Code 标签页、顶替 Claude Code 自己启动的那份，桥接会丢掉对话身份，直接消息全部报 "This call carries no agent session"。如果已经加了，删掉这一项、重启桌面版、再新开 Code 标签页对话（[用户手册第 2 节](USER_GUIDE_zh.md#2-claude-桌面版)）。
@@ -109,7 +109,7 @@ Claude Code 不需要这一步：`install claude` 写入 `settings.json` 后，h
 }
 ```
 
-适配器可以先于 host 启动。host 可访问后，适配器会加载工具列表。适配器和 hooks 从不自己启动 host：连不上时，工具调用会报错并说明如何启动（远程地址则提示需在那台机器上启动），hooks 则静默跳过。host 没有及时应答的调用只让这一次失败，host 可能仍会执行完。
+适配器可以先于 host 启动。host 可访问后，适配器会加载工具列表。适配器和 hooks 从不自己启动 host：连不上时，工具调用会报错并提示安装并启动它（远程地址则提示需在那台机器上启动），hooks 则跳过：以退出码 0 退出，stdout 不输出，把同样的提示作为一行写到 stderr。host 没有及时应答的调用只让这一次失败，host 可能仍会执行完。
 
 ## 6. 多台机器和多个环境
 

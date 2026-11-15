@@ -100,7 +100,7 @@ Other MCP clients and several machines: see the [Installation guide](docs/INSTAL
 
 ## 🛠️ Toolset
 
-The host exposes 36 tools, grouped by purpose:
+The host exposes 37 tools, grouped by purpose:
 
 | Group | Tools | Purpose |
 | --- | --- | --- |

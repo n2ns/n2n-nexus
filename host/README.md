@@ -43,22 +43,23 @@ go test ./host/...
 
 # Conformance: the black-box HTTP tests in tests/conformance/ against the test build
 npm run host:build-test       # go build -tags testclock -o host/bin/test/ ./host/cmd/n2n-nexus-host
-npm run test:conformance      # runs NEXUS_HOST_BIN, default host/bin/test/n2n-nexus-host[.exe]
+npm run test:conformance      # runs NEXUS_HOST_BIN, default host/bin/test/n2n-nexus-host[.exe], which it builds first
 ```
 
-The `testclock` build tag adds `POST /test/clock {"now": <ms> | null}` (pin or release the host's clock) and `serve --test-listen-wait-ms <ms>` (shorter listening wait); release builds have neither. The harness (`tests/conformance/harness.ts`) starts one host per test file with a fresh `--root`, `--port 0` and the file's `settings.json`. `npm test` (client tests) also builds the test host first.
+The `testclock` build tag adds `POST /test/clock {"now": <ms> | null}` (pin or release the host's clock), `POST /test/shutdown` (stop the host gracefully, as SIGTERM does; the harness uses it on Windows) and `serve --test-listen-wait-ms <ms>` (shorter listening wait); release builds have none of them. The harness (`tests/conformance/harness.ts`) starts one host per test file with a fresh `--root`, `--port 0` and the file's `settings.json`. `npm test` (client tests) also builds the test host first.
 
 The lefthook pre-push hook and CI (`.github/workflows/host.yml`, on ubuntu, windows and macos) run all of the above.
 
 ## Release
 
 1. Tag the commit `host-vX.Y.Z` and push the tag. `.github/workflows/host-release.yml` then:
+   - runs `go vet ./...` and `go test ./host/...` on linux, windows and macOS, and releases nothing when they fail;
    - builds `n2n-nexus-host_<version>_<os>_<arch>` for linux, windows (`.zip`) and darwin (`.tar.gz`, built on macOS with cgo), each amd64 and arm64, with `-X main.version=<version>`;
    - writes `SHA256SUMS` and attests build provenance for every archive;
    - renders the package manifests with `host/release/render.mjs` (the Homebrew formula builds the tagged source tarball);
-   - creates the GitHub release `host-vX.Y.Z` with the archives, `SHA256SUMS` and `winget-manifests.zip` (a tag with `-`, such as `host-v0.9.0-rc.1`, becomes a prerelease);
+   - creates the GitHub release `host-vX.Y.Z` with the archives, `SHA256SUMS` and `winget-manifests.zip` (a tag with `-`, such as `host-v0.9.0-rc.1`, becomes a prerelease); when a rerun finds the release published, it leaves its files alone and goes on only if this run built the same archives (`SHA256SUMS` equal), and it replaces a draft that an interrupted run left;
    - for tags without `-`, pushes the formula to `n2ns/homebrew-tap` (`Formula/n2n-nexus-host.rb`) and the manifest to `n2ns/scoop-bucket` (`bucket/n2n-nexus-host.json`).
 2. Repository secrets: `HOMEBREW_TAP_DEPLOY_KEY` and `SCOOP_BUCKET_DEPLOY_KEY`, SSH deploy keys with write access to those two repositories.
 3. winget: unpack `winget-manifests.zip` from the release and submit its `winget/` manifests (`N2NS.n2n-nexus-host`) to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) by hand.
 
-The npm client is released separately with `v*` tags (`.github/workflows/publish.yml`). When a change breaks an older client or host, bump `contractVersion` in the three `contract/` files.
+The npm client is released separately with `v*` tags (`.github/workflows/publish.yml`); the tag must be `v` followed by the version in `package.json`, and a manual run on anything else publishes nothing. When a change breaks an older client or host, bump `contractVersion` in the three `contract/` files.

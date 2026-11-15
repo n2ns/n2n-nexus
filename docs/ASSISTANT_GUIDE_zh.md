@@ -100,13 +100,13 @@ list_meetings(status?, limit?)    → 列出会议：状态、参与者、消息
 start_meeting(topic)              → 开启新会议（你以 active 成员加入），返回 meetingId
 join_meeting(meetingId, mode?)    → 参加会议：active（新消息会叫醒你）或 async（下次输入时看到）
 leave_meeting(meetingId)          → 退出会议
-send_message("...", "PROPOSAL")   → 在会议中发言
+send_message("...", "PROPOSAL")   → 在会议中发布提案
 send_message("...", "PROPOSAL", meetingId, draft: true) → 发布待认可的当前稿
 stance(meetingId, messageId, "endorse" | "object" | "withdraw", note?) → 对草案表态
 send_message("...", "DECISION")   → 记录决策
 end_meeting(meetingId?, summary?) → 关闭并锁定会议
 archive_meeting(meetingId)        → 存档（只读）
-reopen_meeting(meetingId)         → 重新开启
+reopen_meeting(meetingId)         → 重新开启已关闭或已存档的会议
 ```
 
 开启（或重新开启）会议后，它成为所有人的默认会议：不传 `meetingId` 的 `send_message` 和 `end_meeting` 都作用于它，直到它结束。任何会话都能结束、存档或重新开启会议，不只是开启它的那个。
@@ -115,7 +115,7 @@ reopen_meeting(meetingId)         → 重新开启
 
 要形成决议，把需要大家同意的文本用 `draft: true` 发布；之后每个必需成员用 `stance` 回应：`endorse`，或带理由 `object`（然后修改文本，作为新的草案发布）。普通提案不会重置任何人的表态。反对，以及改变你上一次立场的表态，必须指出依据：消息 `#n`、文件路径、URL，或以 实测：/文档：/数据：（Measured:/Docs:/Data:）开头的一句；同一份草案最多改变立场两次。当前稿至少有两名必需认可人全部认可且没人反对时，会议自动结束，草案即为决议。认可本身就是答复：不要再另发“同意”之类的消息。
 
-用户参会时，由一个对话坐在用户席位上（在用户所在终端的对话里，`start_meeting` 或 `join_meeting` 带 `seat: "user"`）。此时只有席位能做决定：席位 `endorse` 当前稿，host 就发出 DECISION；席位 `object` 即否决草案；会议接着进行下一个点；其他人的共识只作通报。只有席位能结束会议，且要写总结；其他人的 `end_meeting` 变成提议结束。坐在席位上时，转达用户的原话，只按用户的话行事。
+用户参会时，由一个对话坐在用户席位上（在用户所在终端的对话里，`start_meeting` 或 `join_meeting` 带 `seat: "user"`）。此时只有席位能做决定：席位 `endorse` 当前稿，host 就发出 DECISION；席位 `object` 即否决草案；会议接着进行下一个点；其他人的共识只作通报。只有席位能结束会议，且要写总结；其他人的 `end_meeting` 变成提议结束（连续 `meetingRetentionDays` 天没有发言的会议仍会被 host 的清理以 `expired` 关闭）。坐在席位上时，转达用户的原话，只按用户的话行事。
 
 #### 起草规则
 
@@ -144,11 +144,11 @@ reopen_meeting(meetingId)         → 重新开启
 ### 6. 任务跟踪
 
 ```
-create_task(source_meeting_id?, metadata?)  → 创建由你自己管理的任务，返回 taskId
+create_task(source_meeting_id?, metadata?)  → 创建由你自己管理的任务，返回 task_id
 update_task(taskId, status?, progress?, result_uri?, error_message?, metadata?) → 更新任务，返回更新后的任务
 get_task(taskId)                            → 查询状态和进度
 list_tasks(status?)                         → 列出所有任务
-cancel_task(taskId)                         → 取消任务
+cancel_task(taskId)                         → 取消待处理或运行中的任务
 ```
 
 ### 7. 维护工具
@@ -167,7 +167,7 @@ host_delete_project(projectId)    → 永久删除项目（不可逆）
 ### 首次接入系统
 ```
 1. get_global_topology()           ← 了解有哪些项目
-2. read_messages(20)               ← 了解最近的讨论
+2. read_messages({ latest: true, count: 20 }) ← 了解最近的讨论
 3. get_project(projectId)          ← 读取所负责项目的 Manifest 与文档
 ```
 

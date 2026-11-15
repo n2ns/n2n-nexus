@@ -34,7 +34,7 @@ n2n-nexus is a local-first Model Context Protocol (MCP) coordination hub from N2
 
 ## Install and configure
 
-- [Installation guide](docs/INSTALL.md): installing the host and the client, connecting Claude Code, Codex and other MCP clients, several machines ([Chinese](docs/INSTALL_zh.md)).
+- [Installation guide](docs/INSTALL.md): installing the host and the client, connecting Claude Code, Codex, pi and other MCP clients, several machines ([Chinese](docs/INSTALL_zh.md)).
 - [User guide](docs/USER_GUIDE.md): using it, troubleshooting, commands, environment variables, `settings.json`, data and logs ([Chinese](docs/USER_GUIDE_zh.md)).
 
 ## Brand
