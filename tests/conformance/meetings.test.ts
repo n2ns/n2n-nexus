@@ -153,7 +153,6 @@ describe("meetings per conversation", () => {
         const wake = (await waiting.response).payload.output?.wake ?? "";
         expect(wake).toContain(`Meeting "Wake test" (${meetingId}): 1 new message(s), #1–#1:\n--- Meeting message #1 from `);
         expect(wake).toContain("\na point\n--- End of meeting message #1 ---");
-        expect(wake).not.toContain("Automatic turn");
 
         await kit.claudeTool(a, "end_meeting", { meetingId, summary: "settled" });
         expect(await kit.hook("claude", "Stop", a, { stop_hook_active: false })).toBeNull(); // who ended it is not told

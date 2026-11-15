@@ -232,7 +232,20 @@ describe("direct-message tools: broadcast", () => {
         expect((await codex(s("s"), "end_meeting", { meetingId: meeting })).status).toBe(200);
     });
 
-    it("does not hold an idle or working session's Stop, and a reply goes to the sender naming the broadcast", async () => {
+    it("does not interrupt a working session: its Stop is not held, and it sees the broadcast at its next prompt or tool call", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"), "/work/bk");
+        await hook("codex", "UserPromptSubmit", s("r"), "/work/bk");                // r is in a turn
+        const first = (await codex<Broadcast>(s("s"), "broadcast", { text: "mid-turn" })).payload.result!.broadcastId;
+        expect(await kit.hook("codex", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
+        expect(context(await hook("codex", "UserPromptSubmit", s("r"), "/work/bk"))).toContain(`\nmid-turn\n--- End of message ${first} ---\n`);
+
+        const second = (await codex<Broadcast>(s("s"), "broadcast", { text: "mid-turn again" })).payload.result!.broadcastId;
+        expect(context(await hook("codex", "PostToolUse", s("r"), "/work/bk"))).toContain(`\nmid-turn again\n--- End of message ${second} ---\n`);
+        expect(await kit.hook("codex", "Stop", s("r"), { stop_hook_active: false })).toBeNull();
+    });
+
+    it("does not hold an idle session's Stop, and a reply goes to the sender naming the broadcast", async () => {
         const s = ids();
         await hook("codex", "SessionStart", s("s"), "/work/bw");
         await hook("codex", "SessionStart", s("r"), "/work/bw");

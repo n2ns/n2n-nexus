@@ -49,7 +49,7 @@ describe("rate limiting", () => {
         expect((await send("busy")).status).toBe(429);                          // instance exhausted: hooks still run
         for (let i = 0; i < BURST; i++) expect((await hook("a")).status).toBe(200);
         const limited = await hook("a");
-        expect(limited.status).toBe(429);                                       // session claude:a exhausted (8 of 15 address tokens)
+        expect(limited.status).toBe(429);                                       // session claude:a exhausted (4 of the address's 15 hook tokens, a bucket apart from tool calls)
         expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
         expect((await hook("b")).status).toBe(200);                              // another session is not affected
     });

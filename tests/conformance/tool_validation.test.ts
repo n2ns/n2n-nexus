@@ -7,7 +7,7 @@ type Definition = {
     inputSchema: JsonSchema & { properties: Record<string, JsonSchema>; required?: string[] }; outputSchema?: JsonSchema;
 };
 
-const host = useHost();
+const host = useHost({ rateLimit: 0 });
 const definitions = async () => {
     const res = await host.request<{ tools: Definition[] }>("GET", "/api/tools");
     expect(res.status).toBe(200);
@@ -112,6 +112,25 @@ describe("POST /api/tools/call: arguments", () => {
         expect(search.payload.result).toEqual({ query: "x", count: 0, results: [] });
         const noArgs = await host.request<{ ok: boolean }>("POST", "/api/tools/call", { tool: "list_meetings", instanceId: "r" });
         expect(noArgs.status).toBe(200);
+
+        // search_projects lists 10 without limit; get_project returns the docs without includeDocs.
+        for (let i = 0; i < 11; i++) {
+            const id = `dflt_${i}`;
+            const manifest = { id, name: id, description: "", techStack: [], relations: [], repositoryUrl: "", localPath: "/tmp/x", endpoints: [], apiSpec: [] };
+            expect((await host.callTool("sync_project_assets", { manifest, internalDocs: "# docs" })).status).toBe(200);
+        }
+        const found = (limit?: number) => host.callTool<{ results: unknown[] }>("search_projects", { query: "dflt_", ...(limit ? { limit } : {}) });
+        expect((await found()).payload.result?.results).toHaveLength(10);
+        expect((await found(11)).payload.result?.results).toHaveLength(11);
+        expect((await host.callTool<{ internalDocs?: string }>("get_project", { projectId: "dflt_0" })).payload.result?.internalDocs).toBe("# docs");
+
+        // list_meetings lists 20 without limit.
+        const meetings: string[] = [];
+        for (let i = 0; i < 21; i++) meetings.push((await host.callTool<{ meetingId: string }>("start_meeting", { topic: `default ${i}` })).payload.result!.meetingId);
+        const listed = (limit?: number) => host.callTool<{ meetings: unknown[] }>("list_meetings", limit ? { limit } : {});
+        expect((await listed()).payload.result?.meetings).toHaveLength(20);
+        expect((await listed(21)).payload.result?.meetings).toHaveLength(21);
+        for (const meetingId of meetings) expect((await host.callTool("end_meeting", { meetingId })).status).toBe(200);
     });
 
     it("refuses tools that advance a read cursor without an instanceId", async () => {

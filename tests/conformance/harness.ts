@@ -11,7 +11,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { promises as fsp, readFileSync } from "node:fs";
+import { promises as fsp, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,7 +49,7 @@ export const HOOK = readContract<{
     timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
     limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number; maxHostnameChars: number };
     texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "replyTool" | "noAgentSessionError"
-        | "meetingReadRest" | "seatSender" | "seatTaken" | "seatMoved" | "seatVeto" | "aiConsensus" | "aiConsensusLost", string>;
+        | "meetingReadRest" | "seatSender" | "seatTaken" | "seatMoved" | "seatVeto" | "aiConsensus" | "aiConsensusLost" | "proposedEnd", string>;
 }>("hook.json");
 export const ERRORS = readContract<{ contractVersion: number; maxBodyBytes: number }>("errors.json");
 
@@ -97,6 +97,21 @@ export type HostSettings = {
 const START_TIMEOUT_MS = 20_000;
 const STOP_TIMEOUT_MS = 5_000;
 
+/**
+ * Hosts started and not disposed yet. A test process that ends without running
+ * afterAll (the run was interrupted or its worker terminated) kills them by PID
+ * and removes their roots; a host does not exit because its parent is gone.
+ */
+const live = new Set<Host>();
+const abandonAll = () => { for (const host of live) host.abandon(); };
+process.once("exit", abandonAll);
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(signal, () => {
+        abandonAll();
+        process.exit(1);
+    });
+}
+
 export class Host {
     port = 0;
     root = "";
@@ -113,6 +128,7 @@ export class Host {
     /** Start the host on a fresh temporary root. */
     async start(): Promise<void> {
         this.root = await fsp.mkdtemp(path.join(os.tmpdir(), "n2n-nexus-conformance-"));
+        live.add(this);
         const { listenWaitMs: _wait, bindHost: _bind, ...file } = this.settings;
         await fsp.writeFile(path.join(this.root, "settings.json"), JSON.stringify(file));
         await this.spawn();
@@ -146,6 +162,14 @@ export class Host {
     async dispose(): Promise<void> {
         await this.stop();
         if (this.root) await fsp.rm(this.root, { recursive: true, force: true });
+        live.delete(this);
+    }
+
+    /** Kill the host and remove its root without waiting, as the test process exits. */
+    abandon(): void {
+        const pid = this.proc?.pid;
+        if (pid !== undefined) try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+        try { rmSync(this.root, { recursive: true, force: true }); } catch { /* still held by the dying host */ }
     }
 
     private async spawn(): Promise<void> {

@@ -120,7 +120,10 @@ describe("agent sessions over time", () => {
         await host.setClock(t0);
         await hook("codex", "SessionStart", s("s"));
         await hook("claude", "SessionStart", s("r"));
+        await hook("claude", "SessionStart", s("reads"));
         expect((await codexTool(s("s"), "broadcast", { text: "stale notice" })).status).toBe(200);
+        // It was delivered: another recipient reads it while it lasts.
+        expect((await claudeTool<{ messages: { text: string }[] }>(s("reads"), "read")).payload.result?.messages.map((m) => m.text)).toEqual(["stale notice"]);
         await host.setClock(t0 + MESSAGE_TTL_MS + 1000);
 
         await hook("codex", "SessionStart", s("other"));                        // any hook runs the expiry check
@@ -158,18 +161,21 @@ describe("agent sessions over time", () => {
         await host.setClock(t0 - 1000);
         await hook("claude", "SessionStart", s("me"), { cwd: "/work/mine" });
         await hook("codex", "UserPromptSubmit", s("busy"));
+        await host.setClock(t0 - 500);
+        await hook("codex", "SessionStart", s("later"));                         // created after busy and active after it
         await host.setClock(t0);
+        const others = [[`codex:${s("later")}`, "idle"], [`codex:${s("busy")}`, "working"]];
 
         const { payload } = await claudeTool<{ self: Profile; peers: Profile[] }>(s("me"), "peers");
         expect(payload.result?.self).toEqual({
             id: `claude:${s("me")}`, name: nameOf("claude", "mine", s("me")), title: "", client: "claude", cwd: "/work/mine", hostname: "box", platform: "linux", environment: "", utcOffset: 0, label: "",
             note: "", status: "idle", lastActiveAt: iso(t0)
         });
-        expect(payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
+        expect(payload.result?.peers.map((p) => [p.id, p.status])).toEqual(others);
 
         // includeOffline is gone (undeclared arguments are dropped): a recently ended session is not listed either.
         const all = await claudeTool<{ self: Profile; peers: Profile[] }>(s("me"), "peers", { includeOffline: true });
-        expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual([[`codex:${s("busy")}`, "working"]]);
+        expect(all.payload.result?.peers.map((p) => [p.id, p.status])).toEqual(others);
         expect(Object.keys(payload.result!.peers[0]).sort()).toEqual(["client", "cwd", "environment", "hostname", "id", "label", "lastActiveAt", "name", "note", "platform", "status", "title", "utcOffset"]);
         expect((await sessions()).map((p) => p.id)).not.toContain(`codex:${s("stale")}`);
     });

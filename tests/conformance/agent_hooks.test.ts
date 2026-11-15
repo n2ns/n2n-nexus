@@ -146,7 +146,7 @@ describe("POST /api/hook: SessionStart introduction", () => {
 
     it("refuses a hook event without a valid machine and creates no session for it", async () => {
         const s = ids();
-        for (const machine of [undefined, { hostname: "box", platform: "plan9", environment: "", utcOffset: 0 }, { hostname: "box", platform: "linux", environment: "", utcOffset: 5000 }, { hostname: "box", platform: "linux", utcOffset: 0 }, { hostname: "", platform: "linux", utcOffset: 0 }]) {
+        for (const machine of [undefined, { hostname: "box", platform: "plan9", environment: "", utcOffset: 0 }, { hostname: "box", platform: "linux", environment: "", utcOffset: 5000 }, { hostname: "box", platform: "linux", utcOffset: 0 }, { hostname: "", platform: "linux", environment: "", utcOffset: 0 }]) {
             const res = await host.request<{ error?: string }>("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: s("x"), cwd: "/w", machine } });
             expect(res.status, res.body).toBe(400);
             expect(res.payload.error).toContain("input.machine");
@@ -183,7 +183,7 @@ describe("POST /api/hook: notifications", () => {
         // The next prompt only counts them while they are unread: each was announced in full once.
         const again = context(await hook("claude", "UserPromptSubmit", s("rcv")));
         expect(again).toContain("7 earlier direct message(s) still unread");
-        expect(again).not.toContain("\nmessage 1\n");
+        expect(again).not.toContain("\nmessage 2\n");
     });
 
     it("lists notices alone without the message note", async () => {
@@ -327,6 +327,7 @@ describe("POST /api/hook: background wait", () => {
         await hook("codex", "UserPromptSubmit", s("r"));
         await codexTool(s("r"), "listen", { on: true });
         const background = openHook("codex", BACKGROUND_WAIT_EVENT, s("r"));   // registered first
+        expect(await status(r)).toBe("working");                                // a working session shows no sign of its wait: these requests give it time to arrive
         const listening = openHook("codex", "Stop", s("r"), { stop_hook_active: false });
         await until(async () => (await status(r)) === "listening");
         await send(s("s"), r, "for the listening stop");

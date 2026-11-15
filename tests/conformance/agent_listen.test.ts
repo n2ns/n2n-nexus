@@ -2,7 +2,7 @@
 // wait here is the event under test, never the timeout. The last test stops the host.
 import { afterEach, describe, expect, it } from "vitest";
 import { until, useHost } from "./harness.js";
-import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, WAKE_RESULT_EVENT, agentKit, ids, nameOf } from "./agents.js";
+import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, WAKE_RESULT_EVENT, agentKit, context, ids, nameOf } from "./agents.js";
 
 const host = useHost({ listenWaitMs: 60_000, rateLimit: 0 });
 const { hook, openHook, claudeTool, codexTool, send, status, endSessions } = agentKit(host);
@@ -75,6 +75,18 @@ describe("POST /api/hook: background wait", () => {
         expect(await hook("codex", WAKE_RESULT_EVENT, s("r"), { dispatch_id: again?.dispatchId, ok: false })).toBeNull();
         expect(await status(r)).toBe("working");
     });
+
+    it("leaves listening when the waiting client disconnects", async () => {
+        const s = ids();
+        const r = `claude:${s("r")}`;
+        await hook("claude", "SessionStart", s("r"));
+        await hook("claude", "Stop", s("r"), { stop_hook_active: false });
+        const waiting = openHook("claude", BACKGROUND_WAIT_EVENT, s("r"));
+        waiting.response.catch(() => undefined);
+        await until(async () => (await status(r)) === "listening");
+        waiting.cancel();
+        await until(async () => (await status(r)) === "idle");
+    });
 });
 
 describe("POST /api/hook: listen mode", () => {
@@ -111,6 +123,23 @@ describe("POST /api/hook: listen mode", () => {
         const { payload } = await waiting.response;
         expect(payload.output?.decision).toBe("block");
         expect(payload.output?.reason).toBe(`${NOTICE_PREFIX} Notices:\n- ${nameOf("codex", "proj", s("target"))} (codex:${s("target")}) finished its turn.`);
+    });
+
+    it("tells a notifyWhenIdle subscriber when the target starts listening, while its Stop still waits", async () => {
+        const s = ids();
+        const t = `codex:${s("listener")}`;
+        await hook("codex", "SessionStart", s("subscriber"));
+        await hook("codex", "SessionStart", s("listener"));
+        await send(s("subscriber"), t, "do it", true);
+        await codexTool(s("listener"), "read");
+        await codexTool(s("listener"), "listen", { on: true });
+        const waiting = openHook("codex", "Stop", s("listener"));
+        waiting.response.catch(() => undefined);
+        await until(async () => (await status(t)) === "listening");
+        expect(context(await hook("codex", "UserPromptSubmit", s("subscriber")))).toBe(`${NOTICE_PREFIX} Notices:\n- ${nameOf("codex", "proj", s("listener"))} (${t}) finished its turn.`);
+        expect(await status(t)).toBe("listening");                              // the wait has not ended
+        waiting.cancel();
+        await until(async () => (await status(t)) === "idle");
     });
 
     it("listen sets the flag: Stop then waits instead of ending the turn", async () => {

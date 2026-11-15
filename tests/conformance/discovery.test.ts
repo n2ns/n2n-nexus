@@ -3,10 +3,10 @@ import dgram from "node:dgram";
 
 import { HOOK, useHost } from "./harness.js";
 
-/** A UDP port nothing listens on right now. */
+/** A UDP port nothing listens on right now, on any address: the host binds it on all of them. */
 async function freeUdpPort(): Promise<number> {
     const socket = dgram.createSocket("udp4");
-    await new Promise<void>((resolve) => socket.bind(0, "127.0.0.1", () => resolve()));
+    await new Promise<void>((resolve) => socket.bind(0, "0.0.0.0", () => resolve()));
     const { port } = socket.address();
     await new Promise<void>((resolve) => socket.close(() => resolve()));
     return port;
@@ -42,5 +42,6 @@ describe("LAN discovery", () => {
         for (const other of [HOOK.discoveryQuery, datagram.slice(0, -1), datagram + " ", "something else"]) {
             expect(await ask(other)).toBeNull();
         }
+        expect(await ask(datagram)).not.toBeNull();     // the responder is up: its silence above was a refusal
     });
 });

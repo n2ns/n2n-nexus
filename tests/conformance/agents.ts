@@ -57,9 +57,13 @@ export function agentKit(host: Host) {
         return { machine: machines.get(key) ?? TEST_MACHINE, ...extra };
     };
 
+    /** The background wait and its wake report come from the waiting client, which sends the event and the session only: no cwd, no machine. */
+    const fromWait = (event: string) => event === BACKGROUND_WAIT_EVENT || event === WAKE_RESULT_EVENT;
+
     /** POST /api/hook with cwd /work/proj and TEST_MACHINE unless `extra` says otherwise. */
     const hookRaw = (client: HookClient, event: string, sessionId: string, extra: Record<string, unknown> = {}) => {
-        const input = { hook_event_name: event, session_id: sessionId, cwd: "/work/proj", ...withMachine(client, sessionId, extra) };
+        const input = fromWait(event) ? { hook_event_name: event, session_id: sessionId, ...extra }
+            : { hook_event_name: event, session_id: sessionId, cwd: "/work/proj", ...withMachine(client, sessionId, extra) };
         track(client, input);
         return host.request<{ output?: HookOutput; ok?: boolean; error?: string }>("POST", "/api/hook", { client, input });
     };
@@ -72,7 +76,7 @@ export function agentKit(host: Host) {
 
     /** A hook request held open (listening Stop, background wait); `cancel` kills it as the client does. No cwd, like the waiting hooks. */
     function openHook(client: HookClient, event: string, sessionId: string, extra: Record<string, unknown> = {}) {
-        const input = { hook_event_name: event, session_id: sessionId, ...withMachine(client, sessionId, extra) };
+        const input = { hook_event_name: event, session_id: sessionId, ...(fromWait(event) ? extra : withMachine(client, sessionId, extra)) };
         track(client, input);
         const { response, cancel } = host.openRequest<{ output: HookOutput }>("POST", "/api/hook", { client, input });
         return { response, cancel };

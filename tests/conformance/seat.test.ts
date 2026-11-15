@@ -152,10 +152,9 @@ describe("meetings with the user's seat", () => {
         const told = context(await kit.hook("claude", "PostToolUse", reader, { tool_use_id: "t-x", tool_name: "Bash" }));
         expect(told).toContain("--- Meeting message #2 from ");
         expect(told).toContain("\nshort\n--- End of meeting message #2 ---");
-        const stillUnread = await kit.claudeTool<{ messages: Message[] }>(reader, "read_messages", { meetingId, latest: true, count: 1 });
-        expect(stillUnread.payload.result!.messages[0].id).toBe(2);
+        const stillUnread = await kit.claudeTool<{ messages: Message[] }>(reader, "read_messages", { meetingId });
+        expect(stillUnread.payload.result!.messages.map((m) => m.id)).toEqual([2]);
         // Read, then told the next one at Stop: that one counts as read (nothing before it is unread).
-        await kit.claudeTool(reader, "read_messages", { meetingId });
         await kit.claudeTool(writer, "send_message", { meetingId, message: "third" });
         const stop = await kit.hook("claude", "Stop", reader, { stop_hook_active: false });
         expect(stop?.decision).toBe("block");
@@ -173,12 +172,15 @@ describe("meetings with the user's seat", () => {
         const draft = await draftOf(s("b"), meetingId, "Decision point 1/1: plan");
         await kit.hook("codex", "SessionEnd", s("a"));
         await host.setClock(t0 + DAY + 1);
+        await kit.hook("codex", "UserPromptSubmit", s("b"));                     // b is still in use: only the seat's session is old enough to go
         const cleaned = await host.callTool<{ cleanup: { sessions: { id: string }[] } }>("host_maintenance", { action: "cleanup" }, "admin");
         expect(cleaned.payload.result!.cleanup.sessions.map((x) => x.id)).toContain(`codex:${s("a")}`);
+        expect(cleaned.payload.result!.cleanup.sessions.map((x) => x.id)).not.toContain(`codex:${s("b")}`);
 
         expect((await listed(meetingId)).seat).toBe(`codex:${s("a")}`);
         const refused = await kit.codexTool<Result>(s("b"), "end_meeting", { meetingId, summary: "done" });
         expect(refused.payload.result).toMatchObject({ ok: false, refused: true, status: "active" });
+        expect(await last(meetingId)).toMatchObject({ from: `codex:${s("b")}`, text: fmt(HOOK.texts.proposedEnd, "done") });
 
         await kit.hook("codex", "SessionStart", s("d"));
         await ok(s("d"), "join_meeting", { meetingId, seat: "user", since: "beginning" });
