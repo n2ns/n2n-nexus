@@ -257,7 +257,10 @@ func (c *Core) reopenMeeting(call api.Call, a meetingIDArgs) (any, error) {
 			return api.Errorf("Meeting '%s' is already active.", a.MeetingID)
 		}
 		// The draft was settled or abandoned when the meeting ended: a reopened meeting needs a new one.
+		// The meeting goes on, so the summary of its last end stays until the next one; only the text
+		// the host wrote when it closed an expired meeting goes, as it describes a meeting nobody wrote in.
 		if _, err := tx.Exec(`UPDATE meetings SET status = 'active', closed_at = NULL, end_reason = NULL, current_proposal_id = NULL,
+			summary = CASE WHEN end_reason = 'expired' THEN NULL ELSE summary END,
 			active_order = (SELECT MAX(active_order) + 1 FROM meetings), reopened_at = ? WHERE id = ?`, c.now(), a.MeetingID); err != nil {
 			return err
 		}
@@ -329,12 +332,15 @@ type meetingMember struct {
 }
 
 // loadMembers lists the members of a meeting that have not left, in the order they joined.
-func loadMembers(tx *sql.Tx, meetingID string) ([]meetingMember, error) {
+// An idle or working session without activity since staleBefore is listed as offline,
+// as the next hook would mark it.
+func loadMembers(tx *sql.Tx, meetingID, staleBefore string) ([]meetingMember, error) {
 	rows, err := tx.Query(`
-		SELECT mm.member_id, mm.name, mm.title, mm.machine, mm.snapshot_backfilled, mm.mode, mm.approver, s.status, mm.joined_at, mm.wakes, mm.last_woken_at
+		SELECT mm.member_id, mm.name, mm.title, mm.machine, mm.snapshot_backfilled, mm.mode, mm.approver,
+			CASE WHEN s.status IN ('idle', 'working') AND s.last_active_at < ? THEN 'offline' ELSE s.status END, mm.joined_at, mm.wakes, mm.last_woken_at
 		FROM meeting_members mm LEFT JOIN agent_sessions s ON s.id = mm.member_id
 		WHERE mm.meeting_id = ? AND mm.left_at IS NULL
-		ORDER BY mm.joined_at, mm.rowid`, meetingID)
+		ORDER BY mm.joined_at, mm.rowid`, staleBefore, meetingID)
 	return store.Append([]meetingMember{}, rows, err, func(rows *sql.Rows) (meetingMember, error) {
 		var m meetingMember
 		var name, title, machine, status, woken sql.NullString
@@ -370,8 +376,9 @@ func (c *Core) listMeetings(call api.Call, a listMeetingsArgs) (any, error) {
 		if err != nil {
 			return err
 		}
+		staleBefore := store.ISO(c.d.Clock.Now().Add(-time.Duration(c.d.Contract.Hook.Timing.StaleSessionMs) * time.Millisecond))
 		for i := range meetings {
-			if meetings[i].Members, err = loadMembers(tx, meetings[i].ID); err != nil {
+			if meetings[i].Members, err = loadMembers(tx, meetings[i].ID, staleBefore); err != nil {
 				return err
 			}
 			d, ok, err := currentDraft(tx, meetings[i].ID)

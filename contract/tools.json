@@ -2243,7 +2243,7 @@
     {
       "name": "list_meetings",
       "title": "List Meetings",
-      "description": "List meetings, newest first: id, topic, status, initiator, participants (everyone who has posted), members (who has joined and not left: name, conversation title and machine as they were when it joined, mode, approver, session status, wakes the meeting caused), message/decision counts, summary, endReason (manual: end_meeting; consensus: every required approver endorsed the current draft; expired: the host closed it after meetingRetentionDays without a message) and proposal: the current draft (messageId, author), the version of its required approver list and its approvals (required, endorsed, waiting: required approvers without a stance, objections), null when no draft was published. Initiator, participants and members are conversation session ids (claude:<id> / codex:<id> / pi:<id>) when the n2n-nexus hooks are installed, else MCP adapter instance ids. Read messages with read_messages(meetingId).",
+      "description": "List meetings, newest first: id, topic, status, initiator, participants (the initiator and everyone who has posted), members (who has joined and not left: name, conversation title and machine as they were when it joined, mode, approver, session status, wakes the meeting caused), message/decision counts, summary, endReason (manual: end_meeting; consensus: every required approver endorsed the current draft; expired: the host closed it after meetingRetentionDays without a message) and proposal: the current draft (messageId, author), the version of its required approver list and its approvals (required, endorsed, waiting: required approvers without a stance, objections), null when no draft was published. Initiator, participants and members are conversation session ids (claude:<id> / codex:<id> / pi:<id>) when the n2n-nexus hooks are installed, else MCP adapter instance ids. Read messages with read_messages(meetingId).",
       "annotations": {
         "readOnlyHint": true,
         "openWorldHint": false
@@ -2835,7 +2835,7 @@
                 "maximum": 9007199254740991
               }
             ],
-            "description": "Where read_messages starts for this meeting: beginning, latest, or after this message number (0: the beginning). Default on the first join: latest; on a later join the cursor stays."
+            "description": "Where read_messages starts for this meeting: beginning, latest, or after this message number (0: the beginning). Default on the first join and on a join after leaving: latest; joining again while a member keeps the cursor."
           },
           "seat": {
             "type": "string",
@@ -3199,7 +3199,7 @@
     {
       "name": "create_task",
       "title": "Create Task",
-      "description": "Create a task you track yourself. Returns taskId; update it with update_task, read it with get_task/list_tasks, cancel it with cancel_task.",
+      "description": "Create a task you track yourself. Returns task_id; update it with update_task, read it with get_task/list_tasks, cancel it with cancel_task.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,

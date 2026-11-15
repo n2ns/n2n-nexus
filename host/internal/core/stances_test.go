@@ -379,6 +379,31 @@ func TestConsensusSummarySaysHowItEnded(t *testing.T) {
 	}
 }
 
+// The host's own messages (a consensus DECISION) do not make it a participant.
+func TestHostIsNotAParticipant(t *testing.T) {
+	h := newHarnessWith(t, fakeIdentities{})
+	id := h.as("a", "start_meeting", map[string]any{"topic": "t"})["meetingId"].(string)
+	h.as("b", "join_meeting", map[string]any{"meetingId": id})
+	h.as("a", "send_message", map[string]any{"meetingId": id, "message": "p", "draft": true})
+	h.stanceAs("a", id, 1, "endorse", "")
+	h.stanceAs("b", id, 1, "endorse", "")
+	if from, category, _ := h.lastMessage(id); from != consensusSender || category != "DECISION" {
+		t.Fatalf("last message from %s (%s)", from, category)
+	}
+	var listed struct {
+		Meetings []struct {
+			ID           string   `json:"id"`
+			Participants []string `json:"participants"`
+		} `json:"meetings"`
+	}
+	json.Unmarshal(h.call("list_meetings", map[string]any{}, "").result, &listed)
+	for _, m := range listed.Meetings {
+		if m.ID == id && !slices.Equal(m.Participants, []string{"codex:a"}) {
+			t.Fatalf("participants %v", m.Participants)
+		}
+	}
+}
+
 func TestReopenedMeetingNeedsANewDraft(t *testing.T) {
 	h := newHarnessWith(t, fakeIdentities{})
 	id := h.as("a", "start_meeting", map[string]any{"topic": "t"})["meetingId"].(string)

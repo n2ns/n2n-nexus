@@ -172,7 +172,9 @@ func TestStanceGroundsAndChanges(t *testing.T) {
 	h.as("c", "stance", stance("endorse", ""))
 	// The seat is not reminded of its stance.
 	h.exec(`UPDATE meeting_messages SET timestamp = '2000-01-01T00:00:00.000Z' WHERE meeting_id = ?`, id)
-	h.core.RemindStances(t.Context(), 0)
+	if _, err := h.core.RemindStances(t.Context(), 0); err != nil {
+		t.Fatal(err)
+	}
 	if n := h.count(`SELECT COUNT(*) FROM meeting_approvers WHERE member_id = 'codex:a' AND reminded_at IS NOT NULL`); n != 0 {
 		t.Fatal("the seat was reminded")
 	}

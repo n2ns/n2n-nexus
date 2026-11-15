@@ -3,10 +3,14 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/n2ns/n2n-nexus/host/internal/store"
 )
 
 func (h *harness) startMeeting(topic, instance string) string {
@@ -438,6 +442,30 @@ func TestListMeetingsMembers(t *testing.T) {
 		if m := m.(map[string]any); m["id"] == id && m["wakes"] != 3.0 {
 			t.Fatalf("meeting wakes %v", m["wakes"])
 		}
+	}
+}
+
+// A member's session that is idle or working without activity past the stale
+// limit is listed as offline, as /health counts it; a listening one is not.
+func TestListMeetingsMemberStatusGoesStale(t *testing.T) {
+	h := newHarnessWith(t, fakeIdentities{})
+	limit := time.Duration(h.core.d.Contract.Hook.Timing.StaleSessionMs) * time.Millisecond
+	stale, fresh := store.ISO(start.Add(-limit-time.Second)), store.ISO(start.Add(-limit+time.Second))
+	for _, s := range [][3]string{{"a", "idle", stale}, {"b", "working", stale}, {"c", "listening", stale}, {"d", "idle", fresh}, {"e", "working", fresh}} {
+		h.exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset) VALUES (?, 'codex', ?, '/w', ?, 'x', ?, 'box', 'linux', 0)`,
+			"codex:"+s[0], s[0], s[1], s[2])
+	}
+	id := h.as("a", "start_meeting", map[string]any{"topic": "t"})["meetingId"].(string)
+	for _, s := range []string{"b", "c", "d", "e"} {
+		h.as(s, "join_meeting", map[string]any{"meetingId": id})
+	}
+	got := map[string]any{}
+	for _, m := range h.members(id) {
+		got[m["id"].(string)] = m["status"]
+	}
+	want := map[string]any{"codex:a": "offline", "codex:b": "offline", "codex:c": "listening", "codex:d": "idle", "codex:e": "working"}
+	if !maps.Equal(got, want) {
+		t.Fatalf("statuses %v, want %v", got, want)
 	}
 }
 

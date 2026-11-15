@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"slices"
 	"testing"
@@ -211,7 +213,16 @@ func TestConcurrentRenameHasOneWinner(t *testing.T) {
 	statuses := make(chan int, 2)
 	for _, id := range []string{"target_a", "target_b"} {
 		go func() {
-			statuses <- h.call("rename_project", map[string]any{"oldId": "original", "newId": id}, "").status
+			// Not h.call: its t.Fatal would end only this goroutine and leave the test waiting.
+			raw, _ := json.Marshal(map[string]any{"tool": "rename_project", "args": map[string]any{"oldId": "original", "newId": id}})
+			res, err := http.Post(h.http.URL+"/api/tools/call", "application/json", bytes.NewReader(raw))
+			if err != nil {
+				t.Error(err)
+				statuses <- 0
+				return
+			}
+			res.Body.Close()
+			statuses <- res.StatusCode
 		}()
 	}
 	got := []int{<-statuses, <-statuses}

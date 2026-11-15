@@ -208,8 +208,8 @@ func TestMaintainExpiresAndPurges(t *testing.T) {
 	noTTL := h.ok("create_task", map[string]any{}, "")["task_id"].(string)
 	for _, elapsed := range []time.Duration{200, 999, 1000} {
 		h.clock.Set(start.Add(900*time.Millisecond + elapsed*time.Millisecond))
-		if line, _ := h.core.Maintain(ctx); line != "" {
-			t.Fatalf("expired at +%d ms: %s", elapsed, line)
+		if line, err := h.core.Maintain(ctx); err != nil || line != "" {
+			t.Fatalf("expired at +%d ms: %q %v", elapsed, line, err)
 		}
 	}
 	h.clock.Set(start.Add(1901 * time.Millisecond))
@@ -235,21 +235,21 @@ func TestMaintainExpiresAndPurges(t *testing.T) {
 	h.clock.Set(start.Add(3 * 24 * time.Hour))
 	h.ok("sync_global_doc", map[string]any{"docId": "d", "title": "t", "content": "c"}, "a")
 	h.clock.Set(start.Add(7*24*time.Hour + 1901*time.Millisecond))
-	if line, _ := h.core.Maintain(ctx); line != "" {
-		t.Fatalf("at the boundary: %q", line)
+	if line, err := h.core.Maintain(ctx); err != nil || line != "" {
+		t.Fatalf("at the boundary: %q %v", line, err)
 	}
 	h.clock.Set(start.Add(7*24*time.Hour + 1902*time.Millisecond))
 	// The event is the cleanup that expired the task.
-	if line, _ := h.core.Maintain(ctx); line != "cleanup: 1 tasks, 1 events" {
-		t.Fatalf("got %q", line)
+	if line, err := h.core.Maintain(ctx); err != nil || line != "cleanup: 1 tasks, 1 events" {
+		t.Fatalf("got %q %v", line, err)
 	}
 	h.fails(400, "not found", "get_task", map[string]any{"taskId": overdue}, "")
 	if n := h.count(`SELECT COUNT(*) FROM tasks`); n != 2 {
 		t.Fatalf("%d tasks left", n)
 	}
 	h.clock.Set(start.Add(10*24*time.Hour + time.Hour))
-	if line, _ := h.core.Maintain(ctx); line != "cleanup: 1 events" {
-		t.Fatalf("got %q", line)
+	if line, err := h.core.Maintain(ctx); err != nil || line != "cleanup: 1 events" {
+		t.Fatalf("got %q %v", line, err)
 	}
 	if got := h.eventActions(""); !slices.Equal(got, []string{"maintenance.cleanup", "maintenance.cleanup"}) {
 		t.Fatalf("events left: %v", got)

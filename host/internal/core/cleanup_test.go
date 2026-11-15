@@ -151,3 +151,38 @@ func TestMemberSnapshotIsFromTheJoin(t *testing.T) {
 		t.Fatalf("after joining again: %s", got)
 	}
 }
+
+// A reopened meeting goes on: the summary its last end gave stays until the next end.
+// The text the host wrote when it closed an expired meeting says nothing about a
+// meeting that is active again, so reopening drops that one.
+func TestReopenKeepsTheSummaryUnlessTheHostWroteIt(t *testing.T) {
+	h := newHarness(t)
+	summary := func(id string) any {
+		for _, m := range h.ok("list_meetings", map[string]any{}, "a")["meetings"].([]any) {
+			if m := m.(map[string]any); m["id"] == id {
+				return m["summary"]
+			}
+		}
+		t.Fatalf("meeting %s not listed", id)
+		return nil
+	}
+	ended := h.ok("start_meeting", map[string]any{"topic": "ended"}, "a")["meetingId"].(string)
+	h.ok("end_meeting", map[string]any{"meetingId": ended, "summary": "where we got to"}, "a")
+	h.ok("reopen_meeting", map[string]any{"meetingId": ended}, "a")
+	if got := summary(ended); got != "where we got to" {
+		t.Fatalf("summary of a meeting ended by hand, reopened: %v", got)
+	}
+
+	expired := h.ok("start_meeting", map[string]any{"topic": "expired"}, "a")["meetingId"].(string)
+	h.clock.Set(start.Add(31 * day))
+	if r := h.cleanup(false); !slices.Contains(meetingActions(r), "expired expire") {
+		t.Fatalf("cleanup: %v", meetingActions(r))
+	}
+	if got, _ := summary(expired).(string); !strings.Contains(got, "closed by the host") {
+		t.Fatalf("summary of the expired meeting: %q", got)
+	}
+	h.ok("reopen_meeting", map[string]any{"meetingId": expired}, "a")
+	if got := summary(expired); got != nil {
+		t.Fatalf("summary of an expired meeting, reopened: %v", got)
+	}
+}

@@ -184,7 +184,8 @@ func (c *Core) addMeetingMessage(tx *sql.Tx, meetingID, from, text, category str
 	if err := json.Unmarshal([]byte(participantsJSON), &participants); err != nil {
 		return 0, err
 	}
-	known := false
+	// The host's own messages do not make it a participant.
+	known := from == consensusSender
 	for _, p := range participants {
 		known = known || p == from
 	}
