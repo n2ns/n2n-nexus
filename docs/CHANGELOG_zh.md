@@ -6,7 +6,7 @@
 
 ## [0.13.0] - 2026-11-15
 
-使用 pi 时需同时升级 host 和客户端（契约版本仍为 5：旧 host 对 pi 的 hook 回 400，hook 会忽略它，Claude Code 和 Codex 不受影响）。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。
+使用 pi 时需同时升级 host 和客户端（契约版本仍为 5：旧 host 对 pi 的 hook 回 400，hook 会忽略它）。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。升级 host 后请新开 Claude Code 和 Codex 对话：之前开着的对话还用旧的工具定义，其中会话的客户端只有 claude 和 codex，所以只要结果里列出 pi 会话（带 `includeOffline` 时离线的也算），它的 `peers` 就会报错。
 
 ### 新增
 

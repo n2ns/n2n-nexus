@@ -142,7 +142,7 @@ IPv6 discovery keeps the HTTP address family: a host bound to `::` on this machi
 
 Upgrade the host and the client on every machine to the same release: a host and a client of different contract versions refuse each other's requests, and `n2n-nexus doctor` reports the mismatch. Read the CHANGELOG entry of the release first; it says when the host's data directory has to be reset.
 
-- Client: the MCP server needs nothing: each new conversation starts the latest version (a running conversation keeps the one it started with). For the hooks, run `npm i -g n2n-nexus@latest`; they use the new version at once.
+- Client: the MCP server needs nothing: each new conversation starts the latest version (a running conversation keeps the one it started with, and the tool definitions it got from the host when it started; when the CHANGELOG says a release changes them, start new conversations after upgrading the host). For the hooks, run `npm i -g n2n-nexus@latest`; they use the new version at once.
 - Host: upgrade with the package manager you installed it with (`scoop update n2n-nexus-host`, `brew upgrade n2n-nexus-host`). A Windows install from the release zip upgrades with `n2n-nexus-host.exe install` from the newer release, which restarts the tray and the background service itself. Otherwise replace the program, then restart it (tray: **Restart**; service: run `n2n-nexus-host service install` again from an administrator terminal).
 
 ## 9. Uninstalling

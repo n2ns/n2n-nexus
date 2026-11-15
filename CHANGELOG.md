@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.13.0] - 2026-11-15
 
-Upgrade the host and the client together for pi (the contract version stays 5: an older host answers a pi hook with 400, which the hook ignores, and Claude Code and Codex are not affected). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
+Upgrade the host and the client together for pi (the contract version stays 5: an older host answers a pi hook with 400, which the hook ignores). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database. After upgrading the host, start new Claude Code and Codex conversations: one started before keeps the old tool definitions, in which a session's client is only claude or codex, so its `peers` fails as soon as a pi session is listed (with `includeOffline`, also an offline one).
 
 ### Added
 
