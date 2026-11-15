@@ -4,14 +4,14 @@
 // The extension's pi calls are faked; each hook is the built CLI (`hook pi`), as in pi.
 import { describe, expect, it } from "vitest";
 
-import { useHost, until, sleep } from "./conformance/harness.js";
+import { useHost, until } from "./conformance/harness.js";
 import { NO_AGENT_SESSION_ERROR, agentKit, ids, nameOf } from "./conformance/agents.js";
 import { ctxOf, piKit } from "./helpers/pi.js";
 import { machineInfo } from "../src/cli/machine.js";
 
 const host = useHost({ listenWaitMs: 300, rateLimit: 0 });
 const kit = agentKit(host);
-const { started } = piKit(host, () => kit.endSessions(), "pi-extension");
+const { started, hooks } = piKit(host, () => kit.endSessions(), "pi-extension");
 
 describe("pi extension", () => {
     it("registers the session at start and gives its introduction for the next prompt", async () => {
@@ -53,7 +53,8 @@ describe("pi extension", () => {
         await kit.hook("codex", "SessionStart", sender);
         await pi.emit("before_agent_start", { messageType: "user", prompt: "hi" }, ctxOf(s));
         await pi.emit("agent_settled", { aborted: false }, ctxOf(s));
-        await sleep(300); // the wait is up and waiting
+        // The Stop is over and the wait is up at the host (it shows the session as listening): the message can only arrive through the wait.
+        await until(async () => (await kit.status(`pi:${s}`)) === "listening");
 
         await kit.send(sender, (await kit.profile(`pi:${s}`))!.name, "wake up");
         await until(() => pi.userMessages.length === 1);
@@ -85,8 +86,14 @@ describe("pi extension", () => {
         await kit.hook("codex", "SessionStart", sender);
         await pi.emit("before_agent_start", { messageType: "user", prompt: "hi" }, ctxOf(s));
         await kit.send(sender, (await kit.profile(`pi:${s}`))!.name, "while you were busy");
+        const before = hooks.started();
         await pi.emit("agent_settled", { aborted: true }, ctxOf(s));
-        await sleep(800);
+        // Neither the Stop hook nor the background wait was started: the extension starts each as it handles the event.
+        expect(hooks.started()).toBe(before);
+        expect(pi.userMessages).toEqual([]);
+        // The message is still to be announced: the user's next prompt gets it.
+        const prompt = await pi.emit("before_agent_start", { messageType: "user", prompt: "next" }, ctxOf(s)) as { message: { content: string } };
+        expect(prompt.message.content).toContain("while you were busy");
         expect(pi.userMessages).toEqual([]);
     });
 
@@ -112,7 +119,8 @@ describe("pi extension", () => {
         // pi fires agent_settled and, without waiting for its handlers' work, session_shutdown.
         await pi.emit("agent_settled", { aborted: false }, ctxOf(s));
         await pi.emit("session_shutdown", { reason: "quit" }, pi.shutdownCtx);
-        await sleep(300);
+        // Every hook the extension started has ended, the Stop too: none can still reach the host after the session end.
+        await hooks.done();
         expect(await kit.status(`pi:${s}`)).toBe("offline");
     });
 });

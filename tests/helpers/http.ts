@@ -3,10 +3,16 @@ import type { AddressInfo } from "node:net";
 
 export type Listening = { server: http.Server; port: number; endpoint: string; close: () => Promise<void> };
 
-/** An HTTP server with `handler` on 127.0.0.1 (port 0: a free one unless `port` says otherwise). */
+/** An HTTP server with `handler` on 127.0.0.1 (port 0: a free one unless `port` says otherwise); rejects when it cannot listen there. */
 export async function listen(handler?: http.RequestListener, port = 0): Promise<Listening> {
     const server = http.createServer(handler);
-    await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()));
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, "127.0.0.1", () => {
+            server.off("error", reject);
+            resolve();
+        });
+    });
     const bound = (server.address() as AddressInfo).port;
     return {
         server,

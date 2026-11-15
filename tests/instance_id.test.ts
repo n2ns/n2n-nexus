@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import os from "node:os";
+import { describe, expect, it, vi } from "vitest";
+
+// The machine's name as the hooks report it: on macOS the ComputerName, since the host name there changes with the network.
+vi.mock("../src/cli/machine.js", () => ({ hostnameOf: () => "Studio Mac" }));
+
 import { resolveInstanceId } from "../src/server/instance-id.js";
 
 describe("resolveInstanceId", () => {
@@ -8,13 +11,13 @@ describe("resolveInstanceId", () => {
         expect(resolveInstanceId({}, ["node", "x", "--id", "arg-id"], "/w")).toBe("arg-id");
     });
 
-    it("derives a stable id from hostname and working directory", () => {
+    it("derives a stable id from the machine's name (hostnameOf) and the working directory", () => {
         const a = resolveInstanceId({}, ["node", "x"], "/workspace/one");
         const b = resolveInstanceId({}, ["node", "x"], "/workspace/one");
         const c = resolveInstanceId({}, ["node", "x"], "/workspace/two");
         expect(a).toBe(b);
         expect(a).not.toBe(c);
-        expect(a.startsWith(`mcp-${os.hostname()}-`)).toBe(true);
+        expect(a).toMatch(/^mcp-Studio Mac-[0-9a-f]{8}$/);
     });
 
     it("keeps two WSL distributions on the same workspace apart, since they share the host name", () => {

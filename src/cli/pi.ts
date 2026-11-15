@@ -237,7 +237,12 @@ export function writePiExtension(file: string, text: string): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, text);
-    fs.renameSync(tmp, file);
+    try {
+        fs.renameSync(tmp, file);
+    } catch (error) {
+        fs.rmSync(tmp, { force: true });
+        throw error;
+    }
 }
 
 /** Read the extension file: its text, or undefined when there is none. */

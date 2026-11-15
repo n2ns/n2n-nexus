@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Only execFileSync is replaced: what hostnameOf runs to read a Mac's ComputerName.
+const execFileSync = vi.hoisted(() => vi.fn());
+vi.mock("node:child_process", async (importOriginal) => ({ ...await importOriginal<typeof import("node:child_process")>(), execFileSync }));
 
 import { environmentOf, hostnameOf, machineInfo, platformOf } from "../src/cli/machine.js";
 
@@ -17,6 +21,12 @@ describe("machine information the hooks forward", () => {
         expect(hostnameOf("darwin", "MacBook-Air.local", () => "")).toBe("MacBook-Air");
         expect(hostnameOf("win32", "DESKTOP-01", () => { throw new Error("not read"); })).toBe("DESKTOP-01");
         expect(hostnameOf("linux", "box.local", () => "ignored")).toBe("box");
+    });
+
+    it("reads the ComputerName with scutil by its absolute path: the PATH install gives the MCP server has no /usr/sbin", () => {
+        execFileSync.mockReturnValueOnce("Studio Mac\n");
+        expect(hostnameOf("darwin", "MacBook-Air.local")).toBe("Studio Mac");
+        expect(execFileSync.mock.calls.map((call) => call.slice(0, 2))).toEqual([["/usr/sbin/scutil", ["--get", "ComputerName"]]]);
     });
 
     it("reports the WSL distribution as the environment, and nothing elsewhere", () => {

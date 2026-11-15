@@ -24,12 +24,14 @@ export function platformOf(platform: string = process.platform, readProcVersion:
  * The machine's name. On macOS the name set in System Settings (ComputerName):
  * the host name there is a model name such as MacBook-Air that two Macs share,
  * and it changes with the network. Elsewhere, and when that cannot be read, the
- * host name without the `.local` suffix that macOS adds.
+ * host name without the `.local` suffix that macOS adds. scutil is run by its
+ * absolute path: the PATH install gives the MCP server has no /usr/sbin, and the
+ * adapter must name the machine as the hooks do.
  */
 export function hostnameOf(
     platform: string = process.platform,
     hostname: string = os.hostname(),
-    readComputerName: () => string = () => execFileSync("scutil", ["--get", "ComputerName"], { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] })
+    readComputerName: () => string = () => execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] })
 ): string {
     if (platform === "darwin") {
         try {

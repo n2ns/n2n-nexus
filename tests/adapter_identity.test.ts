@@ -5,6 +5,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 import { NexusServer } from "../src/server/nexus.js";
 import { machineInfo } from "../src/cli/machine.js";
+import { until } from "./conformance/harness.js";
 import { closedPort, listen } from "./helpers/http.js";
 
 type Recorded = { url: string; body: Record<string, unknown> };
@@ -96,6 +97,16 @@ for (const stateless of [false, true]) {
             expect(await callEcho(other, { sessionId: "x", "claudecode/toolUseId": "y" })).not.toHaveProperty("caller");
             const claude = await connect("claude-code", stateless);
             expect(await callEcho(claude, {})).not.toHaveProperty("caller");
+        });
+
+        it("never takes the caller from the model's arguments, also when _meta names none", async () => {
+            await fakeDaemon();
+            const spoofed = { caller: { client: "codex", sessionId: "spoofed" } };
+            for (const name of ["claude-code", "codex-mcp-client", "Cursor"]) {
+                const forwarded = await callEcho(await connect(name, stateless), {}, spoofed);
+                expect(forwarded, name).not.toHaveProperty("caller");
+                expect(forwarded.args, name).toEqual(spoofed);
+            }
         });
 
         it("registers nothing with the daemon: only the tool list and tool calls are requested", async () => {
@@ -202,9 +213,11 @@ describe("No daemon", () => {
         const client = await connect("Cursor", false);
         await client.listTools();
         const daemon = servers.pop()!;
+        const pooled = `127.0.0.1:${new URL(process.env.NEXUS_ENDPOINT!).port}:`;
         daemon.closeAllConnections();
         await new Promise<void>((resolve) => daemon.close(() => resolve()));
-        await new Promise((resolve) => setTimeout(resolve, 50));   // let the client see its pooled socket close
+        // The client has seen its pooled socket close: the call gets a refused connection, not a reset one.
+        await until(() => !Object.entries(http.globalAgent.freeSockets).some(([name, sockets]) => name.startsWith(pooled) && sockets!.length > 0));
         const failed = await client.callTool({ name: "echo", arguments: {} });
         expect(failed.isError).toBe(true);
         expect(JSON.stringify(failed.content)).toContain("Install n2n-nexus-host");

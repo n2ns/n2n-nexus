@@ -272,12 +272,33 @@ function linkTarget(file: string): string {
     return file;
 }
 
-function writeConfig(file: string, config: HooksFile): void {
-    const target = linkTarget(file);
+/**
+ * Replace `target` with `text`: written next to it and renamed over it, with the
+ * permissions the file had (a settings.json that holds tokens is often private).
+ * A rename that fails (on Windows, a file that is read-only or held open) leaves
+ * no temporary file behind.
+ */
+function replaceFile(target: string, text: string): void {
     fs.mkdirSync(path.dirname(target), { recursive: true });
+    let mode: number | undefined;
+    try {
+        mode = fs.statSync(target).mode & 0o7777;
+    } catch {
+        // a new file gets the default permissions
+    }
     const tmp = `${target}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + "\n");
-    fs.renameSync(tmp, target);
+    try {
+        fs.writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+        if (mode !== undefined) fs.chmodSync(tmp, mode);   // the mode given at creation is cut by the umask
+        fs.renameSync(tmp, target);
+    } catch (error) {
+        fs.rmSync(tmp, { force: true });
+        throw error;
+    }
+}
+
+function writeConfig(file: string, config: HooksFile): void {
+    replaceFile(linkTarget(file), JSON.stringify(config, null, 2) + "\n");
 }
 
 /** The marks around our block in the user's CLAUDE.md. */
@@ -324,10 +345,7 @@ function writeInstructions(install: boolean): boolean {
         fs.rmSync(target, { force: true });
         return true;
     }
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const tmp = `${target}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, next);
-    fs.renameSync(tmp, target);
+    replaceFile(target, next);
     return true;
 }
 

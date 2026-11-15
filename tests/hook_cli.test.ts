@@ -12,7 +12,7 @@ import { hookClientPid } from "../src/cli/client-process.js";
 import { nextQueueRetry, waitForWake } from "../src/cli/hook.js";
 import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
-import { ENTRY, REPO, runCli, type CliResult } from "./helpers/cli.js";
+import { ENTRY, REPO, cliEnv, runCli, type CliResult } from "./helpers/cli.js";
 import { closedPort, listen } from "./helpers/http.js";
 
 // Tests the built CLI (built by the globalSetup).
@@ -20,20 +20,39 @@ const TMP = path.join(REPO, "tests", "tmp", "hook-cli");
 
 function runHook(args: string[], stdin: string, env: NodeJS.ProcessEnv = {}, cwd?: string, entry = ENTRY): Promise<CliResult> {
     // CODEX_HOME points at an empty folder unless a test sets it: never read the user's own Codex state.
-    return runCli(["hook", ...args], { env: { ...process.env, NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home"), ...env }, stdin, cwd, entry });
+    return runCli(["hook", ...args], { env: cliEnv({ NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home"), ...env }), stdin, cwd, entry });
+}
+
+/**
+ * The machine a hook run with WSL_DISTRO_NAME=`distro` must report, worked out here and not by
+ * the code under test (the host name alone is its own: machine.test.ts covers how it is read).
+ */
+function expectedMachine(distro: string) {
+    let platform: string = process.platform;
+    if (platform === "linux") {
+        let version = "";
+        try {
+            version = fs.readFileSync("/proc/version", "utf8");
+        } catch {
+            // no /proc: plain Linux
+        }
+        if (/microsoft/i.test(version)) platform = "wsl";
+    }
+    return { hostname: machineInfo().hostname, platform, environment: platform === "wsl" ? distro : "", utcOffset: 0 - new Date().getTimezoneOffset() };
 }
 
 type FakeDaemon = {
     endpoint: string;
     requests: Array<{ url: string; body: unknown }>;
     activeConnections: () => number;
-    respond: (body: Record<string, unknown>) => { delayMs?: number; raw: string };
+    respond: (body: Record<string, unknown>) => { delayMs?: number; status?: number; raw: string };
     close: () => Promise<void>;
 };
 
 async function startFakeDaemon(): Promise<FakeDaemon> {
     const fake: Partial<FakeDaemon> = { requests: [], respond: () => ({ raw: JSON.stringify({ output: null }) }) };
     const sockets = new Set<net.Socket>();
+    const replies = new Set<NodeJS.Timeout>();
     const { server, endpoint } = await listen((req, res) => {
         let raw = "";
         req.on("data", (chunk) => { raw += chunk; });
@@ -41,17 +60,20 @@ async function startFakeDaemon(): Promise<FakeDaemon> {
             const body = JSON.parse(raw) as Record<string, unknown>;
             fake.requests!.push({ url: req.url ?? "", body });
             const reply = fake.respond!(body);
-            setTimeout(() => {
+            const timer = setTimeout(() => {
+                replies.delete(timer);
                 if (res.destroyed) return;
-                res.writeHead(200, { "Content-Type": "application/json" });
+                res.writeHead(reply.status ?? 200, { "Content-Type": "application/json" });
                 res.end(reply.raw);
             }, reply.delayMs ?? 0);
+            replies.add(timer);
         });
     });
     server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
     fake.activeConnections = () => sockets.size;
     fake.endpoint = endpoint;
     fake.close = () => new Promise<void>((resolve) => {
+        for (const timer of replies) clearTimeout(timer);
         for (const socket of sockets) socket.destroy();
         server.close(() => resolve());
     });
@@ -94,13 +116,13 @@ describe("n2n-nexus hook, forwarding", () => {
             hook_event_name: "PostToolUse", session_id: "s1", cwd: "/work", tool_use_id: "t1", tool_name: "Bash",
             transcript_path: "/tmp/t.jsonl", tool_input: { command: "ls" }, tool_response: { stdout: "x".repeat(10_000) }
         };
-        const result = await runHook(["claude", "--endpoint", fake.endpoint], JSON.stringify(stdin));
+        const result = await runHook(["claude", "--endpoint", fake.endpoint], JSON.stringify(stdin), { WSL_DISTRO_NAME: "Test_Distro" });
 
         expect(result.code).toBe(0);
         expect(result.stdout).toBe(JSON.stringify(output) + "\n");
         expect(fake.requests).toEqual([{
             url: "/api/hook",
-            body: { client: "claude", input: { hook_event_name: "PostToolUse", session_id: "s1", cwd: "/work", tool_use_id: "t1", tool_name: "Bash", machine: machineInfo() } }
+            body: { client: "claude", input: { hook_event_name: "PostToolUse", session_id: "s1", cwd: "/work", tool_use_id: "t1", tool_name: "Bash", machine: expectedMachine("Test_Distro") } }
         }]);
     });
 
@@ -136,8 +158,9 @@ describe("n2n-nexus hook, forwarding", () => {
         ]);
         expect(stop).toMatchObject({ code: 0, stdout: JSON.stringify(output) + "\n" });
         expect(stop.ms).toBeGreaterThanOrEqual(6_000);
+        // The other event did not wait for the answer (it would have printed it): its request timed out first.
         expect(post).toMatchObject({ code: 0, stdout: "" });
-        expect(post.ms).toBeLessThan(6_000);
+        expect(post.stderr).toContain("timed out after 5000 ms");
     }, 20_000);
 
     it("gives a SessionEnd a short budget, within Codex's 3 s SessionEnd limit", async () => {
@@ -257,6 +280,21 @@ describe("n2n-nexus hook, conversation title", () => {
         expect(await forwarded("codex", { hook_event_name: "PostToolUse", session_id: "c1" }, env)).not.toHaveProperty("title");
     });
 
+    it("reads no title for a pi session from Codex's state database, even when a Codex thread has its id", async () => {
+        const home = path.join(TMP, "codex-home-pi");
+        fs.mkdirSync(home, { recursive: true });
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(path.join(home, "state_1.sqlite"));
+        db.exec("CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, title TEXT NOT NULL)");
+        db.prepare("INSERT INTO threads VALUES (?, ?, ?)").run("p1", "A Codex thread", "first prompt");
+        db.close();
+        const env = { CODEX_HOME: home };
+        expect((await forwarded("codex", { hook_event_name: "SessionStart", session_id: "p1" }, env)).title).toBe("A Codex thread");
+        for (const event of ["SessionStart", "UserPromptSubmit", "Stop"]) {
+            expect(await forwarded("pi", { hook_event_name: event, session_id: "p1" }, env)).not.toHaveProperty("title");
+        }
+    });
+
     it("forwards no Codex title without a state database", async () => {
         const home = path.join(TMP, "codex-empty-home");
         fs.mkdirSync(home, { recursive: true });
@@ -356,6 +394,27 @@ describe("n2n-nexus hook --wait", () => {
         expect(fake.requests).toHaveLength(1);
     });
 
+    it("exits 0 with one line on stderr when the wait fails: a refusing host, bad input, an unknown client", async () => {
+        const stop = JSON.stringify({ hook_event_name: "Stop", session_id: "s1" });
+        fake.respond = () => ({ status: 500, raw: JSON.stringify({ ok: false, error: "boom" }) });
+        const refused = [
+            await runHook(["claude", "--wait", "--endpoint", fake.endpoint], stop),
+            await runHook(["pi", "--wait", "--session", "s1", "--endpoint", fake.endpoint], "")
+        ];
+        expect(fake.requests).toHaveLength(2);
+        for (const result of refused) expect(result).toEqual({ code: 0, stdout: "", stderr: "[n2n-nexus] hook --wait: boom\n", ms: expect.any(Number) });
+
+        const failed = [
+            await runHook(["claude", "--wait", "--endpoint", fake.endpoint], "not json"),
+            await runHook(["cursor", "--wait", "--endpoint", fake.endpoint], stop)
+        ];
+        expect(fake.requests).toHaveLength(2);
+        for (const result of failed) {
+            expect(result).toMatchObject({ code: 0, stdout: "" });
+            expect(result.stderr).toMatch(/^\[n2n-nexus\] hook --wait: .+\n$/);
+        }
+    });
+
     it("codex: returns at once and leaves a detached wait running for the session", async () => {
         fake.respond = () => ({ delayMs: 500, raw: JSON.stringify({ output: null }) });
         const result = await runHook(["codex", "--wait", "--endpoint", fake.endpoint], JSON.stringify({ hook_event_name: "Stop", session_id: "c1" }));
@@ -376,7 +435,7 @@ describe("n2n-nexus hook --wait", () => {
         const started = Date.now();
         const result = await new Promise<CliResult>((resolve, reject) => {
             const child = spawn(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", command], {
-                env: { ...process.env, NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home") }, stdio: ["pipe", "pipe", "pipe"]
+                env: cliEnv({ NEXUS_ENDPOINT: "", CODEX_HOME: path.join(TMP, "no-codex-home") }), stdio: ["pipe", "pipe", "pipe"]
             });
             let stdout = "";
             let stderr = "";
@@ -556,12 +615,58 @@ describe("n2n-nexus hook --wait, package changed during the wait", () => {
     });
 });
 
+describe("runCli, which these tests run the CLI with", () => {
+    /** A host that holds every background wait open. */
+    async function holdingDaemon(): Promise<FakeDaemon> {
+        const fake = await startFakeDaemon();
+        fake.respond = () => ({ delayMs: 60_000, raw: JSON.stringify({ output: { timeout: true } }) });
+        return fake;
+    }
+    const wait = (fake: FakeDaemon, timeoutMs?: number) => runCli(["hook", "claude", "--wait", "--endpoint", fake.endpoint],
+        { env: cliEnv({ NEXUS_ENDPOINT: "" }), stdin: JSON.stringify({ hook_event_name: "Stop", session_id: "s1" }), timeoutMs });
+    let abandoned: FakeDaemon | undefined;
+    afterAll(async () => { await abandoned?.close(); });
+
+    it("ends a CLI that is still running after its time limit, and rejects", async () => {
+        const fake = await holdingDaemon();
+        try {
+            await expect(wait(fake, 1000)).rejects.toThrow("was still running after 1000 ms and was ended");
+            expect(await waitFor(() => fake.activeConnections() === 0, 3000)).toBe(true);
+        } finally {
+            await fake.close();
+        }
+    });
+
+    it("(first of two) a test ends without waiting for its CLI, as one that timed out does", async () => {
+        abandoned = await holdingDaemon();
+        void wait(abandoned).catch(() => undefined);
+        expect(await waitFor(() => abandoned!.requests.length === 1, 5000)).toBe(true);
+    });
+
+    it("(second of two) that CLI was ended when its test was over: a background wait would go on for a day", async () => {
+        expect(await waitFor(() => abandoned!.activeConnections() === 0, 3000)).toBe(true);
+    });
+});
+
+describe("listen, the stand-in servers of these tests", () => {
+    it("rejects when the port is taken instead of never settling", async () => {
+        const taken = await listen();
+        try {
+            await expect(listen(undefined, taken.port)).rejects.toMatchObject({ code: "EADDRINUSE" });
+        } finally {
+            await taken.close();
+        }
+    });
+});
+
 describe("n2n-nexus hook, no daemon", () => {
     it("exits 0 without output when the daemon is unreachable", async () => {
         const port = await closedPort();
         const result = await runHook(["claude", "--endpoint", `http://127.0.0.1:${port}`], JSON.stringify({ hook_event_name: "PostToolUse", session_id: "x" }));
         expect(result).toMatchObject({ code: 0, stdout: "" });
-        expect(result.ms).toBeLessThan(1_500);
+        // It gave up on the refused connection, not on the request's 5 s timeout (the limit leaves room for a slow process start).
+        expect(result.stderr).toContain(`No n2n-nexus-host at http://127.0.0.1:${port}`);
+        expect(result.ms).toBeLessThan(4_000);
     });
 
     it("never starts a local daemon: it says on stderr how to start one", async () => {

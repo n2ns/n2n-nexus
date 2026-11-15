@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,7 +7,7 @@ import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/e
 
 import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
 import { isOurCodexHook } from "../src/cli/hook-command.js";
-import { PI_EXTENSION_MARK, readPiExtension } from "../src/cli/pi.js";
+import { PI_EXTENSION_MARK, readPiExtension, writePiExtension } from "../src/cli/pi.js";
 
 // Runs the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "install");
@@ -346,6 +346,62 @@ describe("install claude", () => {
         expect(fs.existsSync(claudeDir)).toBe(false);
     });
 
+    it.skipIf(process.platform === "win32")("keeps the permissions of settings.json and CLAUDE.md when it rewrites them", () => {
+        const claudeMd = path.join(claudeDir, "CLAUDE.md");
+        const modes = () => [claudeSettings(), claudeMd].map((file) => fs.statSync(file).mode & 0o777);
+        fs.mkdirSync(claudeDir, { recursive: true });
+        fs.writeFileSync(claudeSettings(), JSON.stringify(userSettings));
+        fs.writeFileSync(claudeMd, "# Mine\n");
+        fs.chmodSync(claudeSettings(), 0o600);                 // settings.json often holds tokens in "env"
+        fs.chmodSync(claudeMd, 0o640);
+
+        expect(run(["install", "claude"]).code).toBe(0);
+        expect(modes()).toEqual([0o600, 0o640]);
+        expect(run(["uninstall", "claude"]).code).toBe(0);
+        expect(readJson(claudeSettings())).toEqual(userSettings);
+        expect(modes()).toEqual([0o600, 0o640]);
+    });
+
+    describe("a rewritten file that cannot be renamed into place", () => {
+        const saved = process.env.CLAUDE_CONFIG_DIR;
+        afterEach(() => {
+            vi.restoreAllMocks();
+            if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+            else process.env.CLAUDE_CONFIG_DIR = saved;
+        });
+        /** Uninstall in this process with the next rename failing, as Windows does for a file the client holds open. */
+        const uninstallWithFailingRename = (): number => {
+            process.env.CLAUDE_CONFIG_DIR = claudeDir;
+            vi.spyOn(fs, "renameSync").mockImplementationOnce(() => { throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" }); });
+            return runInstall({ action: "uninstall", client: "claude" });
+        };
+
+        it("leaves settings.json as it was and no temporary file", () => {
+            expect(run(["install", "claude"]).code).toBe(0);
+            const installed = fs.readFileSync(claudeSettings(), "utf8");
+            expect(uninstallWithFailingRename()).toBe(1);
+            expect(fs.readFileSync(claudeSettings(), "utf8")).toBe(installed);
+            expect(fs.readdirSync(claudeDir).sort()).toEqual(["CLAUDE.md", "settings.json"]);
+        });
+
+        it("leaves CLAUDE.md as it was and no temporary file", () => {
+            const claudeMd = path.join(claudeDir, "CLAUDE.md");
+            const text = `# Mine\n\n${INSTRUCTIONS}\n`;
+            fs.mkdirSync(claudeDir, { recursive: true });
+            fs.writeFileSync(claudeMd, text);                    // no hooks of ours: CLAUDE.md is the only file rewritten
+            expect(uninstallWithFailingRename()).toBe(1);
+            expect(fs.readFileSync(claudeMd, "utf8")).toBe(text);
+            expect(fs.readdirSync(claudeDir)).toEqual(["CLAUDE.md"]);
+        });
+
+        it("leaves no temporary file next to the pi extension", () => {
+            const file = path.join(piAgentDir, "extensions", "n2n-nexus.ts");
+            vi.spyOn(fs, "renameSync").mockImplementationOnce(() => { throw new Error("EBUSY: resource busy or locked, rename"); });
+            expect(() => writePiExtension(file, "// extension\n")).toThrow("EBUSY");
+            expect(fs.readdirSync(path.dirname(file))).toEqual([]);
+        });
+    });
+
     it("refuses to install from an npx cache and writes nothing", () => {
         const saved = process.env.CLAUDE_CONFIG_DIR;
         process.env.CLAUDE_CONFIG_DIR = claudeDir;
@@ -534,6 +590,11 @@ describe("node path", () => {
         expect(link).not.toBe(NODE);
         expect(ourCommands(claudeSettings(), "claude")).toEqual(Array(7).fill(command("claude", undefined, link)));
         expect(calls().at(-1)).toEqual(mcpAdd("claude", link));
+        // The same call spelled out, not worked out with npxFor: the link's folder first on PATH, and npm's npx next to the Node the link leads to.
+        if (process.platform !== "win32") {
+            expect(calls().at(-1)).toEqual(["claude", "mcp", "add", "--scope", "user", "n2n-nexus", "-e", `PATH=${path.join(dir, "bin")}:/usr/bin:/bin`,
+                "--", path.join(dir, "bin", "node"), path.join(path.dirname(fs.realpathSync(NODE)), "npx"), "-y", "n2n-nexus@latest", "mcp"]);
+        }
         expect(result.stdout).toContain(`Node: ${link}\n`);
     });
 
@@ -616,7 +677,10 @@ describe("node path", () => {
         expect(result.stdout).toContain('run "n2n-nexus install claude" again, or install with --node <path>');
         const stable = linkNode("stable/node");
         if (process.platform !== "win32") fs.symlinkSync(fs.realpathSync(npxFor(NODE).npx), path.join(path.dirname(stable), "npx"));
-        expect(run(["install", "codex", "--node", stable]).stdout).not.toContain("--node <path>");
+        const unversioned = run(["install", "codex", "--node", stable]);
+        expect(unversioned.code).toBe(0);
+        expect(unversioned.stdout).toContain(`Node: ${stable}\n`);
+        expect(unversioned.stdout).not.toContain("--node <path>");
     });
 
     it("replaces the entries when reinstalled with another node path and uninstalls cleanly", () => {

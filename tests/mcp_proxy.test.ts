@@ -4,7 +4,7 @@ import { PassThrough } from "node:stream";
 
 import { NexusServer } from "../src/server/nexus.js";
 import { NexusClient, NexusToolError, NexusTransportError } from "../src/client/nexus-client.js";
-import { Host } from "./conformance/harness.js";
+import { Host, until } from "./conformance/harness.js";
 import { closedPort, listen } from "./helpers/http.js";
 
 /** A real n2n-nexus-host (the test build from tests/setup/go-host.ts) on a fresh temporary root. */
@@ -122,6 +122,44 @@ describe.each(Object.entries(ERAS))("MCP proxy, %s client", (_era, versionNegoti
     });
 });
 
+describe.each(Object.entries(ERAS))("MCP proxy tool list changes, %s client", (_era, versionNegotiation) => {
+    it("tells the client when the daemon comes up and when it goes away", async () => {
+        const port = await closedPort();
+        process.env.NEXUS_ENDPOINT = `http://127.0.0.1:${port}`;
+        process.env.NEXUS_INSTANCE_ID = "changes-test";
+        const proxy = new NexusServer({ retryIntervalMs: 50, requestTimeoutMs: 500 });
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        await proxy.run({ transport: serverSide, input: new PassThrough(), onExit: () => { } });
+        const client = new Client({ name: "ide", version: "1" }, versionNegotiation ? { versionNegotiation } : {});
+        let changed = 0;
+        client.setNotificationHandler("notifications/tools/list_changed", () => { changed++; });
+        await client.connect(clientSide);
+        // A 2025-era connection gets list_changed unsolicited; a 2026-07-28 one only on a subscription it opened.
+        if (versionNegotiation) await client.listen({ toolsListChanged: true });
+        try {
+            expect((await client.listTools()).tools).toEqual([]);
+            expect(changed).toBe(0);
+
+            const daemon = await listen((req, res) => {
+                req.resume();
+                req.on("end", () => res.end(JSON.stringify({ tools: [{ name: "ping", description: "p", inputSchema: { type: "object", properties: {} } }] })));
+            }, port);
+            await until(() => changed === 1);
+            expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["ping"]);
+
+            daemon.server.closeAllConnections();
+            await daemon.close();
+            const failed = await client.callTool({ name: "ping", arguments: {} });
+            expect(failed.isError).toBe(true);
+            await until(() => changed === 2);
+            expect((await client.listTools()).tools).toEqual([]);
+        } finally {
+            await client.close();
+            await proxy.shutdown();
+        }
+    });
+});
+
 describe("MCP proxy lifecycle", () => {
     it("shuts down and exits when its input ends, even while waiting for the daemon", async () => {
         process.env.NEXUS_ENDPOINT = "http://127.0.0.1:1"; // nothing listens here
@@ -132,11 +170,12 @@ describe("MCP proxy lifecycle", () => {
         const proxy = new NexusServer();
         await proxy.run({ transport: serverSide, input, onExit: () => { exited = true; } });
         expect((proxy as unknown as { retryTimer: unknown }).retryTimer).not.toBeNull();
+        // Unless a test shortens it, the adapter asks an unreachable daemon again every 3 s.
+        expect((proxy as unknown as { retryIntervalMs: number }).retryIntervalMs).toBe(3000);
 
         input.resume(); // the stdio transport keeps stdin flowing; mimic that so "end" fires
         input.end();
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(exited).toBe(true);
+        await until(() => exited);
         expect((proxy as unknown as { retryTimer: unknown }).retryTimer).toBeNull();
     });
 });
@@ -192,14 +231,17 @@ describe("MCP proxy with a daemon that accepts connections but never answers", (
         const input = new PassThrough();
         let exitedAt = 0;
         const proxy = new NexusServer();
-        const started = Date.now();
         void proxy.run({ transport: serverSide, input, onExit: () => { exitedAt = Date.now(); } });
 
         const client = new Client({ name: "ide", version: "1" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
         await client.connect(clientSide);
+        // The first tools/list waits 1 s for the startup fetch (which hangs here for its 5 s timeout), no longer.
+        const asked = Date.now();
         const list = await client.listTools();
+        const waited = Date.now() - asked;
         expect(list.tools).toEqual([]);
-        expect(Date.now() - started).toBeLessThan(2500);
+        expect(waited).toBeGreaterThanOrEqual(900);
+        expect(waited).toBeLessThan(1900);
 
         const endAt = Date.now();
         input.resume();
@@ -210,6 +252,31 @@ describe("MCP proxy with a daemon that accepts connections but never answers", (
 
         sockets.forEach((s) => s.destroy());
         await new Promise((r) => hung.close(r));
+    });
+});
+
+describe("MCP proxy with a daemon that answers the startup fetch after the client's first tools/list", () => {
+    it("holds that first tools/list until the fetch is done, so the list is complete", async () => {
+        const fake = await listen((req, res) => {
+            req.resume();
+            req.on("end", () => setTimeout(() => res.end(JSON.stringify({ tools: [{ name: "ping", description: "p", inputSchema: { type: "object", properties: {} } }] })), 500));
+        });
+        process.env.NEXUS_ENDPOINT = fake.endpoint;
+        process.env.NEXUS_INSTANCE_ID = "first-list-test";
+
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const proxy = new NexusServer();
+        void proxy.run({ transport: serverSide, input: new PassThrough(), onExit: () => { } });
+        const client = new Client({ name: "ide", version: "1" });
+        await client.connect(clientSide);
+        try {
+            expect((proxy as unknown as { connected: boolean }).connected).toBe(false);   // the list is asked for while the fetch is under way
+            expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["ping"]);
+        } finally {
+            await client.close();
+            await proxy.shutdown();
+            await fake.close();
+        }
     });
 });
 
@@ -295,14 +362,13 @@ describe("MCP proxy reconnect loop", () => {
         const proxy = new NexusServer({ retryIntervalMs: 50, requestTimeoutMs: 200 });
         const [, serverSide] = InMemoryTransport.createLinkedPair();
         const input = new PassThrough();
-        void proxy.run({ transport: serverSide, input, onExit: () => { } });
-        await new Promise((r) => setTimeout(r, 1200));
-
-        expect(total).toBeGreaterThanOrEqual(3);
+        let exited = false;
+        void proxy.run({ transport: serverSide, input, onExit: () => { exited = true; } });
+        await until(() => total >= 3, 5000);          // the startup attempt and two retries, each ended by its timeout
         expect(maxConcurrent).toBe(1);
 
         input.resume(); input.end();
-        await new Promise((r) => setTimeout(r, 50));
+        await until(() => exited);
         open.forEach((s) => s.destroy());
         await new Promise((r) => hung.close(r));
     });
@@ -342,7 +408,7 @@ describe("MCP proxy reconnect race", () => {
         expect(JSON.stringify(during.content)).toContain("n2n-nexus-host unavailable");
 
         drop = false;
-        await new Promise((r) => setTimeout(r, 1000));
+        await until(() => internals.connected, 5000);  // that call lost the connection; the loop went on and connected again
         const after = await client.callTool({ name: "ping", arguments: {} });
         expect(after.isError).toBeFalsy();
 

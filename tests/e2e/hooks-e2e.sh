@@ -65,8 +65,15 @@ CODEX_HOME="$DIR/codex-home" "$NODE" "$REPO/build/index.js" install codex --endp
 command -v sqlite3 >/dev/null || fail "the sqlite3 command-line tool is required"
 "$HOST_BIN" serve --root "$DIR/nexus-root" --port "$PORT" >"$DIR/host.log" 2>&1 &
 HOST_PID=$!
-for _ in $(seq 1 50); do curl -sf "$ENDPOINT/health" >/dev/null && break; sleep 0.1; done
-curl -sf "$ENDPOINT/health" >/dev/null || fail "host did not start (see $DIR/host.log)"
+# Wait for the ready line of the host started here, not for /health: a host already on the port would answer
+# that while this one exits, and the sessions below would talk to a host whose database this script does not read.
+for _ in $(seq 1 50); do
+    grep -q "listening on http://" "$DIR/host.log" && break
+    kill -0 "$HOST_PID" 2>/dev/null || break
+    sleep 0.1
+done
+grep -q "listening on http://" "$DIR/host.log" || fail "host did not start on port $PORT (in use?): $(tail -n 1 "$DIR/host.log")"
+curl -sf "$ENDPOINT/health" >/dev/null || fail "host does not answer at $ENDPOINT: $(tail -n 1 "$DIR/host.log")"
 
 # --- 1. send / notify / read / reply -----------------------------------------------------------
 codex_run b1.log "Call the n2n-nexus peers tool and tell me your own session id."

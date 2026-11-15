@@ -1,17 +1,21 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
 import dgram from "node:dgram";
 import fs from "node:fs";
 import http from "node:http";
-import { AddressInfo } from "node:net";
+import net, { AddressInfo } from "node:net";
 import path from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
+// A lookup that finds nothing falls back to the default endpoint, where the developer's own host may
+// listen: it is closed to this file's tests and (NODE_OPTIONS in runHook) to the CLIs they run.
+import { DEFAULT_ENDPOINT_PORT, REFUSAL, importOption } from "./helpers/block-default-endpoint.mjs";
 import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, discoverEndpoint, resolveEndpoint } from "../src/client/discovery.js";
 import { NexusServer } from "../src/server/nexus.js";
 import { HOOK, Host } from "./conformance/harness.js";
 import { NexusClient } from "../src/client/nexus-client.js";
 import { waitForWake } from "../src/cli/hook.js";
-import { REPO, runCli } from "./helpers/cli.js";
+import { REPO, cliEnv, runCli } from "./helpers/cli.js";
 import { listen } from "./helpers/http.js";
 
 // The hook cases run the built CLI (built by the globalSetup).
@@ -73,6 +77,28 @@ afterEach(async () => {
 
 afterAll(() => {
     fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
+
+/** NODE_OPTIONS for a CLI these tests run: the runner's own, plus the module that closes the default endpoint. */
+const guarded = () => [process.env.NODE_OPTIONS, importOption].filter(Boolean).join(" ");
+
+describe("the default endpoint", () => {
+    // A bare TCP connection, nothing sent: were the guard missing, a host listening there would see no request.
+    const probe = `require("node:net").connect(${DEFAULT_ENDPOINT_PORT}, "127.0.0.1").on("error", (e) => console.log(e.message)).on("connect", function () { this.destroy(); console.log("connected"); })`;
+
+    it("is closed to these tests and to the CLIs they run, whatever listens there", async () => {
+        expect(LOCAL_ENDPOINT).toBe(`http://127.0.0.1:${DEFAULT_ENDPOINT_PORT}`);
+        const refusal = await new Promise<string>((resolve) => {
+            const socket = net.connect(DEFAULT_ENDPOINT_PORT, "127.0.0.1");
+            socket.on("error", (error) => resolve(error.message));
+            socket.on("connect", () => { socket.destroy(); resolve("connected"); });
+        });
+        expect(refusal).toContain(REFUSAL);
+        await expect(new NexusClient({ endpoint: LOCAL_ENDPOINT }).fetchTools()).rejects.toMatchObject({ code: "ECONNREFUSED", message: expect.stringContaining(REFUSAL) });
+
+        const child = spawnSync(process.execPath, ["-e", probe], { env: cliEnv({ NODE_OPTIONS: guarded() }), encoding: "utf8" });
+        expect(child.stdout).toContain(REFUSAL);
+    });
 });
 
 describe("discoverEndpoint", () => {
@@ -230,7 +256,7 @@ describe("hook with --endpoint discover", () => {
 
     async function runHook(event = "PostToolUse"): Promise<string> {
         const result = await runCli(["hook", "claude", "--endpoint", DISCOVER_ENDPOINT], {
-            env: { ...process.env, NEXUS_ENDPOINT: "" },
+            env: cliEnv({ NEXUS_ENDPOINT: "", NODE_OPTIONS: guarded() }),
             stdin: JSON.stringify({ hook_event_name: event, session_id: "s" })
         });
         return result.stdout;
