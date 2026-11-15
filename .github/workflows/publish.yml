@@ -27,6 +27,15 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
+      # A tag that does not name the version in package.json, or a manual run on a branch, publishes nothing.
+      - name: Tag matches the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_TYPE" != tag ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::$GITHUB_REF_TYPE $GITHUB_REF_NAME is not the tag v$version of package.json"
+            exit 1
+          fi
+
       - name: Upgrade npm for Trusted Publishing
         run: npm install -g npm@latest
 

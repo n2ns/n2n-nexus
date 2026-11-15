@@ -12,7 +12,23 @@ permissions:
   contents: read
 
 jobs:
+  # A tag on a commit whose host tests fail releases nothing.
+  test:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./host/...
+
   build:
+    needs: test
     strategy:
       fail-fast: true
       matrix:
@@ -86,9 +102,25 @@ jobs:
           version="${GITHUB_REF_NAME#host-v}"
           prerelease=""
           case "$version" in *-*) prerelease="--prerelease";; esac
-          gh release create "$GITHUB_REF_NAME" $prerelease --title "n2n-nexus-host ${version}" \
-            --notes "n2n-nexus-host ${version}. Install: see host/README.md. Verify: gh attestation verify <file> --repo ${GITHUB_REPOSITORY}" \
-            dist/n2n-nexus-host_* dist/SHA256SUMS dist/winget-manifests.zip
+          state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = true ]; then
+            # A run that was interrupted while uploading left a draft nobody could download: start over.
+            gh release delete "$GITHUB_REF_NAME" --yes
+            state=none
+          fi
+          if [ "$state" = none ]; then
+            gh release create "$GITHUB_REF_NAME" $prerelease --title "n2n-nexus-host ${version}" \
+              --notes "n2n-nexus-host ${version}. Install: see host/README.md. Verify: gh attestation verify <file> --repo ${GITHUB_REPOSITORY}" \
+              dist/n2n-nexus-host_* dist/SHA256SUMS dist/winget-manifests.zip
+          else
+            # A rerun after a later step failed: the published files stay as they are, and the
+            # manifests pushed below must name them, so this run must have built the same archives.
+            gh release download "$GITHUB_REF_NAME" --pattern SHA256SUMS --dir published
+            if ! cmp -s published/SHA256SUMS dist/SHA256SUMS; then
+              echo "::error::release $GITHUB_REF_NAME is published with other archives than this run built; rerun only the failed job, or delete the release to publish again"
+              exit 1
+            fi
+          fi
       - name: Homebrew tap and Scoop bucket
         env:
           TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
