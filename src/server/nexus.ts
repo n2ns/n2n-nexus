@@ -32,7 +32,7 @@ const INSTRUCTIONS =
     "set expectsReply false on one that needs no answer, and skip plain acknowledgements); listen waits for messages " +
     "after each turn. " +
     "Direct messaging needs the n2n-nexus hooks. Separately, send_message and read_messages are the shared " +
-    "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>) are what send " +
+    "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>, pi:<id>) are what send " +
     "takes; with the hooks, chat and meetings also record senders and unread cursors per session id " +
     "(without them, per MCP adapter instance id, mcp-…). join_meeting makes new messages of a meeting wake you " +
     "(mode active) or show at your next prompt (async) until leave_meeting or the meeting ends; a draft " +

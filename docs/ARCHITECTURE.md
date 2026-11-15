@@ -22,7 +22,7 @@
           │ HTTP  (NEXUS_ENDPOINT — cross-env capable)
    ┌──────┼──────┐
    ▼      ▼      ▼
-MCP-A  MCP-B  MCP-C      hooks (Claude Code / Codex)
+MCP-A  MCP-B  MCP-C      hooks (Claude Code / Codex / pi)
 (Win)  (WSL)  (VM)       POST /api/hook per client event
 n2n-nexus (npm): stateless adapter, one per MCP connection
 ```

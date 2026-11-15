@@ -22,7 +22,7 @@
           │ HTTP（NEXUS_ENDPOINT — 可跨环境配置）
    ┌──────┼──────┐
    ▼      ▼      ▼
-MCP-A  MCP-B  MCP-C      hooks（Claude Code / Codex）
+MCP-A  MCP-B  MCP-C      hooks（Claude Code / Codex / pi）
 (Win)  (WSL)  (VM)       每个客户端事件调用一次 POST /api/hook
 n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 ```

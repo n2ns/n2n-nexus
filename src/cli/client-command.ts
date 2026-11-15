@@ -1,5 +1,5 @@
 /**
- * Run the `claude` / `codex` command without a shell. On Windows npm installs
+ * Run the `claude` / `codex` / `pi` command without a shell. On Windows npm installs
  * them as `.cmd` shims, which Node cannot start without cmd.exe, and cmd.exe
  * would parse the arguments again: a message text from another session could
  * end a quoted argument and run commands, and a newline ends the command line.

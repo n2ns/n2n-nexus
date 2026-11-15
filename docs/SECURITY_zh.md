@@ -28,7 +28,7 @@ n2n-nexus 运行一个本地 HTTP host `n2n-nexus-host`，它把协调数据保�
 需要注意的关键边界：
 
 - **未签名的程序**：`n2n-nexus-host` 的发布程序暂未做代码签名。请用 release 里的 `SHA256SUMS` 和 `gh attestation verify <file> --repo n2ns/n2n-nexus`（构建证明）校验下载的文件，或通过从源码编译的 Homebrew 安装。
-- **本机信任模型**：以同一操作系统用户运行的所有进程都被视为可信。host 没有身份认证；这样的进程可以直接调用它，也可以读写 `nexus.db` 以及 `~/.claude` 和 `~/.codex` 下的客户端对话记录。对话 ID 和 Claude 的 tool-use 绑定用于在对话之间路由直接消息；它们不是凭据，所以一个能执行 shell 的 AI 会话可以冒充同一用户的另一个对话。只要数据对该用户可读，host 内部的检查就无法阻止这一点。真正起作用的屏障是客户端执行命令的权限，由用户控制。要让各个代理相互隔离，请让它们以不同的操作系统用户运行，每个用户有自己的 host 和数据目录。
+- **本机信任模型**：以同一操作系统用户运行的所有进程都被视为可信。host 没有身份认证；这样的进程可以直接调用它，也可以读写 `nexus.db` 以及 `~/.claude`、`~/.codex` 和 `~/.pi` 下的客户端对话记录。对话 ID、Claude 的 tool-use 绑定和 pi 的进程 ID 用于在对话之间路由直接消息；它们不是凭据，所以一个能执行 shell 的 AI 会话可以冒充同一用户的另一个对话。只要数据对该用户可读，host 内部的检查就无法阻止这一点。真正起作用的屏障是客户端执行命令的权限，由用户控制。要让各个代理相互隔离，请让它们以不同的操作系统用户运行，每个用户有自己的 host 和数据目录。
 
 - **Host 的网络暴露**：host 默认绑定 `127.0.0.1`。开启局域网访问（托盘的 **Allow LAN access**、`settings.json` 中的 `"host": "0.0.0.0"` 或 `--host 0.0.0.0`）会把它暴露给本地网络，此时它还会在 UDP `discoveryPort` 上应答局域网发现。开源基础版本没有认证层——只在你能控制的网络上把 host 暴露到 localhost 之外。
 - **浏览器请求**：host 没有身份认证，所以它拒绝带浏览器 `Origin` 头或跨站 `Sec-Fetch-Site` 头的请求（403），要求 POST 使用 `Content-Type: application/json`（415），并把请求体限制在 16 MB（413）。它还拒绝任何不是 IP、`localhost`、`host.docker.internal` 或 `settings.json` 中 `allowedHosts` 所列名称的 `Host` 头，以此封堵 DNS rebinding 攻击（网页在攻击者的域名下以同源请求的形式访问 host）。MCP 适配器和脚本不受影响。

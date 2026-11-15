@@ -83,7 +83,7 @@ sync_global_doc(docId, title, content)        → create or update a cross-proje
 
 `send_message` and `read_messages` are global chat and meetings, not direct messages: to message one conversation use `send`, and read what was sent to you with `read`.
 
-Two kinds of id. `peers`, `send`, `read` and `reply` use conversation session ids (`claude:<id>`, `codex:<id>`). Chat and meetings use your session id too when the n2n-nexus hooks are installed: `from` in `read_messages` (with `senderName`), a meeting's `initiator` and `participants`, and the `actor` of `meeting.*` events; such an id can be used with `send`. Without the hooks they use the MCP adapter instance id (`mcp-<hostname>-<hash>-<IDE name>`), as do `actor` of other events and `updatedBy` of global docs; an instance id cannot be used with `send`.
+Two kinds of id. `peers`, `send`, `read` and `reply` use conversation session ids (`claude:<id>`, `codex:<id>`, `pi:<id>`). Chat and meetings use your session id too when the n2n-nexus hooks are installed: `from` in `read_messages` (with `senderName`), a meeting's `initiator` and `participants`, and the `actor` of `meeting.*` events; such an id can be used with `send`. Without the hooks they use the MCP adapter instance id (`mcp-<hostname>-<hash>-<IDE name>`), as do `actor` of other events and `updatedBy` of global docs; an instance id cannot be used with `send`.
 
 Message categories (`category`):
 

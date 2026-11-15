@@ -5,7 +5,7 @@
  * zod or the MCP SDK. The values come from contract/hook.json, which the host
  * (n2n-nexus-host) embeds too.
  *
- * Identity: every Claude Code / Codex conversation is one agent session with
+ * Identity: every Claude Code / Codex / pi conversation is one agent session with
  * id `<client>:<client session id>`. Hooks create and update sessions; tool
  * calls name their session through a {@link Caller} built from the MCP
  * request's `_meta`, never from model-supplied arguments.
