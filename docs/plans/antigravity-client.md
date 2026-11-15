@@ -164,7 +164,7 @@ New helpers go next to the existing ones. `src/cli/client-dirs.ts` gets `geminiD
 | Contract | `contract/hook.json` (§4.1); `src/contract.ts` exports |
 | Host | `host/internal/api/api.go` (`parseCaller`, `serveHook`); `host/internal/agents/identity.go`; `host/internal/agents/hooks.go`, `agents.go` (output per client, reminder, no cancel) |
 | Client | `src/server/nexus.ts` (`callerOf`); `src/cli/hook.ts` (mapping, `--wait` loop for antigravity); `src/cli/hook-command.ts` (PowerShell form, recognition by hook name); `src/cli/install.ts`, `src/cli/doctor.ts`, `src/cli/client-dirs.ts`, `src/cli/mcp-config.ts` |
-| Docs | `docs/TOOLS_REFERENCE.md` (direct messages between conversations), `docs/ARCHITECTURE.md` / `_zh`, `docs/INSTALL.md` / `_zh`, `docs/USER_GUIDE.md` / `_zh`, `README.md` / `docs/README_zh.md` client lists, `CLAUDE.md` (Architecture: four clients) |
+| Docs | `docs/TOOLS_REFERENCE.md` (direct messages between conversations), `docs/ARCHITECTURE.md` / `_zh`, `docs/INSTALL.md` / `_zh`, `docs/USER_GUIDE.md` / `_zh`, `README.md` / `docs/README_zh.md` client lists, `AGENTS.md` (Architecture: four clients) |
 
 ## 7. Tests
 
