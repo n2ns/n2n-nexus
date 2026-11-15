@@ -4,6 +4,32 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [0.13.2] - 2026-11-16
+
+升级 host 和客户端（契约版本 5；各自都能与对方的 0.13.1 配合）。数据库保持原样：保留 `nexus.db`。macOS 上的 pi 不用重新安装，新开一个 pi 会话即可：适配器是以 `n2n-nexus@latest` 运行的。macOS 上适配器的实例 ID 会变一次（现在用电脑名），所以没装 hooks 的客户端在全局聊天和会议里的未读游标会重新开始一次。Linux 上 systemd 没有运行时，`service install` 现在会拒绝执行。
+
+### 修复
+
+- macOS 上的 pi：`peers`、`send`、`reply` 等直接消息工具报 "This call carries no agent session"。`install` 给 MCP 服务的 `PATH` 里没有 `/usr/sbin`，适配器读不到电脑名，于是用主机名称呼这台机器，而 hooks 用的是电脑名；现在改为运行 `/usr/sbin/scutil`。
+- host 停机超过 30 分钟后，原先在等待的会话继续等待：第一个重新请求等待的会话不再把其余会话全部置为离线（那会结束它们的等待，直到各自用户下次输入）。host 没有运行的时间不再算作无活动。
+- 会话自己的提示词或工具调用不再唤醒它自己的后台等待：当这次事件恰好最先发现一条过期消息或一个已离线的订阅目标时，用户的输入曾被算成一次自动回合。
+- 被 Stop 续上的一轮里，只在工具调用后提醒过（那段上下文可能只到了子代理）、到这一轮结束时仍未读的消息，会由待命等待或后台等待再完整提醒一次，而不是一直未读到用户下次输入。
+- `list_meetings`：`participants` 不再列出 host 自己的发送方 `n2n-nexus`；空闲或工作中的会话 30 分钟没有活动时，成员的 `status` 为 `offline`，与 `GET /health` 的统计一致。
+- `reopen_meeting` 会清掉 host 关闭过期会议时写的 summary；`end_meeting` 给的 summary 保留到下次结束，因为重新开启的是同一场会议的继续。
+- Windows 的 `install` 只删除本程序的遗留文件（`n2n-nexus-host.exe` 和 `n2n-nexus-host-tray.exe` 的 `.old` 副本），不再删除安装目录里所有的 `*.old` 文件；升级时两个程序要么都换成新的，要么都不换。
+- Linux：systemd 没有运行时，`service install` 在停掉正在运行的 host 之前就拒绝执行，不再留下 `service uninstall` 删不掉的 unit 文件；`systemctl disable` 失败时 `service uninstall` 也会删除 unit 文件。
+- Windows：路径里带弯引号（`‘ ’ ‚ ‛`，例如用户目录 `O’Brien`）时，`service install` 和升级时的服务重启可以正常工作；PowerShell 把这些字符当作引号。
+- `service install` 不再在新 host 应答之前读取锁；那次读取可能瞬间占住锁，让新 host 晚五秒启动。
+- `n2n-nexus install` 和 `uninstall` 保留被改写文件的权限（600 的 `settings.json` 仍是 600），改名失败时不留下 `.tmp` 文件。
+- 适配器的实例 ID 用与 hooks 相同的方式称呼机器（macOS 上是电脑名，其他系统是去掉 `.local` 的主机名）；macOS 的主机名会随网络变化，ID 也曾随之变化。
+- pi 的 hook 不再到 Codex 的状态数据库里为 pi 会话查标题。
+
+### 变更
+
+- 工具描述与 host 的实际行为一致：`create_task` 返回 `task_id`；`join_meeting` 的 `since` 在首次加入和离开后再加入时默认为 `latest`；`list_meetings` 的 `participants` 是发起者和所有发过言的人。
+- 发布：npm 客户端只从 `v` 加 `package.json` 版本号的标签发布；host 发布会先在 linux、windows 和 macOS 上运行 `go vet` 和 Go 测试，重跑时不动已发布的 release。
+- `npm run test:conformance` 会先构建测试 host。
+
 ## [0.13.1] - 2026-11-15
 
 升级 host 即可，客户端不用动（契约版本 5）。升级后请新开对话：之前开着的对话还用旧的 `peers` 定义，其中的 `includeOffline` 现在会被 host 忽略。

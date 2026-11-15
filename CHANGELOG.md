@@ -4,6 +4,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.2] - 2026-11-16
+
+Upgrade the host and the client (contract version 5; each works with the other's 0.13.1). The database stays as it is: keep `nexus.db`. pi on macOS needs no reinstall, only a new pi session: the adapter runs as `n2n-nexus@latest`. On macOS the adapter's instance ID changes once (it now holds the computer name), so a client without the hooks starts over once with its unread cursors of the global chat and of meetings. On Linux, `service install` now refuses where systemd is not running.
+
+### Fixed
+
+- pi on macOS: `peers`, `send`, `reply` and the other direct-message tools failed with "This call carries no agent session". The adapter could not read the computer name, because the `PATH` that `install` gives the MCP server has no `/usr/sbin`, and named the machine by its host name while the hooks named it by the computer name; it now runs `/usr/sbin/scutil`.
+- After a host stop of more than 30 minutes, the sessions that were waiting keep waiting: the first one to ask for its wait again no longer set all the others offline, which ended their waits until their users' next prompts. The time the host was not running no longer counts as time without activity.
+- A session's own prompt or tool call no longer wakes its own background wait when that event is the first to find an expired message or an offline subscription target, which counted the user's prompt as an automatic turn.
+- In a turn that a Stop already continued, a message that only a tool call announced (its context may be a sub-agent's) and that is still unread at the end of the turn is announced once more by the listening wait or the background wait, instead of staying unread until the user's next prompt.
+- `list_meetings`: `participants` no longer lists the host's own sender `n2n-nexus`, and a member's `status` is `offline` for an idle or working session without activity for 30 minutes, as `GET /health` counts it.
+- `reopen_meeting` clears the summary the host wrote when it closed an expired meeting; the summary of an `end_meeting` stays until the next end, as the reopened meeting is the same meeting going on.
+- Windows `install` deletes only this program's leftovers (the `.old` copies of `n2n-nexus-host.exe` and `n2n-nexus-host-tray.exe`), no longer every `*.old` file in the install folder, and an upgrade replaces both programs or neither.
+- Linux: `service install` refuses, before it stops the running host, where systemd is not running, instead of leaving a unit file that `service uninstall` could not remove; `service uninstall` removes the unit file also when `systemctl disable` fails.
+- Windows: `service install` and the service restart of an upgrade work for a path with a curly quote (`‘ ’ ‚ ‛`, as in a user folder `O’Brien`), which PowerShell reads as a quote.
+- `service install` no longer reads the lock before the new host answers, a read that could take the lock for an instant and make the new host start five seconds later.
+- `n2n-nexus install` and `uninstall` keep the permissions of the files they rewrite (a `settings.json` of mode 600 stays 600) and leave no `.tmp` file when the rename fails.
+- The adapter's instance ID names the machine as the hooks do (on macOS the computer name, elsewhere the host name without `.local`); on macOS the host name changes with the network, and the ID with it.
+- The pi hook no longer looks a pi session up in Codex's state database for a title.
+
+### Changed
+
+- Tool descriptions say what the host does: `create_task` returns `task_id`; `join_meeting` `since` defaults to `latest` on the first join and on a join after leaving; `participants` of `list_meetings` is the initiator and everyone who has posted.
+- Releases: the npm client is published only from the tag `v` + the `package.json` version; the host release runs `go vet` and the Go tests on linux, windows and macOS first, and a rerun leaves a published release as it is.
+- `npm run test:conformance` builds the test host first.
+
 ## [0.13.1] - 2026-11-15
 
 Upgrade the host; the client needs nothing (contract version 5). Start new conversations afterwards: one started before keeps the old `peers` definition, whose `includeOffline` the host now ignores.
