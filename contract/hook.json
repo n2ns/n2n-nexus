@@ -2,11 +2,13 @@
   "contractVersion": 5,
   "clients": [
     "claude",
-    "codex"
+    "codex",
+    "pi"
   ],
   "clientInfoNames": {
     "claude": "claude-code",
-    "codex": "codex-mcp-client"
+    "codex": "codex-mcp-client",
+    "pi": "pi"
   },
   "meta": {
     "claudeToolUseKey": "claudecode/toolUseId",
@@ -107,7 +109,7 @@
     "proposedEnd": "Proposed end of the meeting (only the user's seat ends it): %s",
     "stanceReminder": "Meeting \"%s\" (%s) waits for your stance on draft #%d: call stance with meetingId and messageId %d, endorse or object (with a reason). No other reply needed.",
     "stanceWaiting": "Meeting \"%s\" (%s): draft #%d still waits for the stance of %s. No reply needed.",
-    "noAgentSessionError": "This call carries no agent session, so direct messaging cannot tell who you are. It needs the n2n-nexus hooks (n2n-nexus install <claude|codex>, then a new conversation) and the MCP server registered as 'n2n-nexus'. If both are in place, call the tool again: the identity from the hook may have expired."
+    "noAgentSessionError": "This call carries no agent session, so direct messaging cannot tell who you are. It needs the n2n-nexus hooks (n2n-nexus install <claude|codex|pi>, then a new conversation) and the MCP server registered as 'n2n-nexus'. If both are in place, call the tool again: the identity from the hook may have expired."
   },
   "schemas": {
     "hookRequest": {
@@ -117,7 +119,8 @@
           "type": "string",
           "enum": [
             "claude",
-            "codex"
+            "codex",
+            "pi"
           ]
         },
         "input": {
@@ -175,6 +178,50 @@
           "required": [
             "client",
             "sessionId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "client": {
+              "const": "pi"
+            },
+            "clientPids": {
+              "description": "The processes above the MCP adapter, nearest first: pi starts it through npx and a shell, so one of them is the pi process",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "minItems": 1,
+              "maxItems": 16
+            },
+            "machine": {
+              "description": "Where the processes run, as the pi extension's hooks report it in input.machine",
+              "type": "object",
+              "properties": {
+                "hostname": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "platform": {
+                  "type": "string"
+                },
+                "environment": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hostname",
+                "platform",
+                "environment"
+              ]
+            }
+          },
+          "required": [
+            "client",
+            "clientPids",
+            "machine"
           ]
         }
       ]

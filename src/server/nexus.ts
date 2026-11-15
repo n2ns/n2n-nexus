@@ -11,6 +11,8 @@ import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE 
 import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, cachedEndpoint, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
 import { CLAUDE_TOOL_USE_META_KEY, CLIENT_INFO_NAMES, CODEX_SESSION_META_KEY, noDaemonHint, type Caller } from "../contract.js";
+import { ancestorPids } from "../cli/client-process.js";
+import { machineInfo } from "../cli/machine.js";
 import { resolveInstanceId } from "./instance-id.js";
 
 const RETRY_INTERVAL_MS = 3000;
@@ -19,7 +21,7 @@ const INITIAL_LIST_WAIT_MS = 1000;
 const SERVICE_NAME = "n2n-nexus";
 /** Sent to the client on connect so the model knows it can talk to other AI sessions. */
 const INSTRUCTIONS =
-    "n2n-nexus connects this conversation with other AI sessions (Claude Code and Codex conversations, " +
+    "n2n-nexus connects this conversation with other AI sessions (Claude Code, Codex and pi conversations, " +
     "possibly on other machines), all of your own user. Direct messages: call peers to see who is online (your " +
     "client's own agent list, such as ListAgents, does not show these sessions), send to message a session (everything " +
     "the recipient needs in one message), reply to answer one and read for the messages a notification cut or did not " +
@@ -91,6 +93,8 @@ export class NexusServer {
      * fall back to a different instance id than its siblings.
      */
     private clientName: string | undefined;
+    /** The pi caller, worked out on the first call from pi: the processes above this adapter do not change. */
+    private piCaller: Caller | undefined;
     /** The first daemon fetch, started once serving has begun. */
     private initialFetch: Promise<boolean> | null = null;
 
@@ -200,9 +204,13 @@ export class NexusServer {
         this.instanceId = resolveInstanceId(process.env, process.argv, this.workspace, this.clientName);
     }
 
-    /** The conversation behind a tool call, from the `_meta` its client attaches (verified for Claude Code and Codex). */
+    /**
+     * The conversation behind a tool call, from the `_meta` its client attaches (verified for Claude Code and Codex);
+     * pi attaches none, so the adapter names the processes above it (one is the pi process) and its machine.
+     */
     private callerOf(meta: unknown): Caller | undefined {
         const fields = meta as Record<string, unknown> | undefined;
+        if (this.clientName === CLIENT_INFO_NAMES.pi) return this.piCaller ??= piCaller();
         if (this.clientName === CLIENT_INFO_NAMES.claude) {
             const toolUseId = fields?.[CLAUDE_TOOL_USE_META_KEY];
             return typeof toolUseId === "string" && toolUseId ? { client: "claude", toolUseId } : undefined;
@@ -358,4 +366,10 @@ export class NexusServer {
             this.scheduleRetry();
         }
     }
+}
+
+/** A tool call from pi: the processes above this adapter, nearest first, and this machine. */
+function piCaller(): Caller {
+    const { hostname, platform, environment } = machineInfo();
+    return { client: "pi", clientPids: ancestorPids(), machine: { hostname, platform, environment } };
 }

@@ -36,7 +36,22 @@ type Caller struct {
 	Client    string `json:"client"`
 	ToolUseID string `json:"toolUseId,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
+	// ClientPIDs are the processes above the pi adapter, nearest first: pi
+	// starts it through npx and a shell, so one of them is the pi process
+	// (Client "pi"). Machine is where they run: process IDs are per machine.
+	ClientPIDs []int          `json:"clientPids,omitempty"`
+	Machine    *CallerMachine `json:"machine,omitempty"`
 }
+
+// CallerMachine is the machine of a pi caller, as its hooks report it in input.machine.
+type CallerMachine struct {
+	Hostname    string `json:"hostname"`
+	Platform    string `json:"platform"`
+	Environment string `json:"environment"`
+}
+
+// maxCallerPIDs is the most ancestor processes a pi caller may name (contract/hook.json).
+const maxCallerPIDs = 16
 
 // Call is one tool call.
 type Call struct {
@@ -80,7 +95,7 @@ var Platforms = map[string]string{"darwin": "macOS", "linux": "Linux", "wsl": "W
 type Identity struct {
 	// Kind is IdentitySession or IdentityInstance.
 	Kind string
-	// ID is the session key (claude:<id> / codex:<id>) or the instance id.
+	// ID is the session key (claude:<id> / codex:<id> / pi:<id>) or the instance id.
 	ID string
 	// Name is the session's name; "" for an instance.
 	Name string
@@ -413,6 +428,13 @@ func parseCaller(raw json.RawMessage) *Caller {
 		return &Caller{Client: "claude", ToolUseID: c.ToolUseID}
 	case c.Client == "codex" && c.SessionID != "":
 		return &Caller{Client: "codex", SessionID: c.SessionID}
+	case c.Client == "pi" && len(c.ClientPIDs) > 0 && len(c.ClientPIDs) <= maxCallerPIDs && c.Machine != nil && c.Machine.Hostname != "":
+		for _, pid := range c.ClientPIDs {
+			if pid <= 0 {
+				return nil
+			}
+		}
+		return &Caller{Client: "pi", ClientPIDs: c.ClientPIDs, Machine: c.Machine}
 	}
 	// A malformed caller names no session: direct-message tools then refuse, every other tool ignores it.
 	return nil
@@ -428,8 +450,8 @@ func (s *Server) serveHook(w http.ResponseWriter, r *http.Request) {
 		Client string         `json:"client"`
 		Input  map[string]any `json:"input"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Input == nil || (req.Client != "claude" && req.Client != "codex") {
-		writeError(w, &httpError{status: 400, message: "Invalid hook request: expected {client: \"claude\" | \"codex\", input: object}"})
+	if err := json.Unmarshal(body, &req); err != nil || req.Input == nil || (req.Client != "claude" && req.Client != "codex" && req.Client != "pi") {
+		writeError(w, &httpError{status: 400, message: "Invalid hook request: expected {client: \"claude\" | \"codex\" | \"pi\", input: object}"})
 		return
 	}
 	// Hooks are limited per conversation and per address, apart from tool calls: a busy session cannot starve the others.

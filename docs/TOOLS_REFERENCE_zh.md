@@ -141,9 +141,9 @@
 
 ### 对话之间的直接消息
 
-每个 Claude Code 和 Codex 对话都是一个会话，ID 为 `claude:<会话 ID>` 或 `codex:<会话 ID>`，取自客户端。`n2n-nexus install <claude|codex>` 写入的 hooks 会创建会话并保持其状态最新；子代理与其父对话共用同一个会话。恢复对话时沿用原来的会话。在同一个客户端里开始的新对话（例如 Claude Code 中执行 `/clear` 之后）是一个新会话；Claude Code 还会结束旧会话，旧会话随之变为离线。
+每个 Claude Code、Codex 和 pi 对话都是一个会话，ID 为 `claude:<会话 ID>`、`codex:<会话 ID>` 或 `pi:<会话 ID>`，取自客户端。`n2n-nexus install <claude|codex|pi>` 写入的 hooks（pi 是一个扩展） 会创建会话并保持其状态最新；子代理与其父对话共用同一个会话。恢复对话时沿用原来的会话。在同一个客户端里开始的新对话（例如 Claude Code 中执行 `/clear` 之后）是一个新会话；Claude Code 还会结束旧会话，旧会话随之变为离线。
 
-下面七个工具从 MCP 请求的 `_meta` 识别调用方，从不使用参数：Claude Code 带上 `claudecode/toolUseId`，它由 PreToolUse hook 在调用前刚刚绑定到对话；Codex 带上 `sessionId`。其他客户端、没有 hooks 的对话，或绑定已超过五分钟的调用会收到一条错误，说明：直接消息需要装有 n2n-nexus hooks 的 Claude Code 或 Codex（`n2n-nexus install <claude|codex>`）；hooks 只对安装之后开始的对话生效；MCP 服务器必须以 `n2n-nexus` 为名注册；PreToolUse 绑定过期时再调用一次工具即可解决。其他所有工具都不关心调用方。
+下面七个工具从 MCP 请求的 `_meta` 识别调用方，从不使用参数：Claude Code 带上 `claudecode/toolUseId`，它由 PreToolUse hook 在调用前刚刚绑定到对话；Codex 带上 `sessionId`；pi 什么都不带，所以 pi 启动的适配器按由近到远发送它上面各级进程的 ID（pi 经 npx 和 shell 启动它）和所在机器，host 在这台机器上找到其中最近的一个、取 pi 扩展最近为它报告的会话。其他客户端、没有 hooks 的对话，或绑定已超过五分钟的调用会收到一条错误，说明：直接消息需要装有 n2n-nexus hooks 的 Claude Code、Codex 或 pi（`n2n-nexus install <claude|codex|pi>`）；hooks 只对安装之后开始的对话生效；MCP 服务器必须以 `n2n-nexus` 为名注册；PreToolUse 绑定过期时再调用一次工具即可解决。其他所有工具都不关心调用方。
 
 这七个工具是对话之间的直接消息。全局聊天和会议是另外的东西：`send_message` 发到那里，`read_messages` 从那里读取；两者都不会发到或读取对话的直接消息。
 

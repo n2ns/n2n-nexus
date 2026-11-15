@@ -11,7 +11,7 @@
 import { expect } from "vitest";
 import { HOOK, type Host, type HttpResponse, type ToolReply } from "./harness.js";
 
-export type HookClient = "claude" | "codex";
+export type HookClient = "claude" | "codex" | "pi";
 export type HookOutput = {
     decision?: string;
     reason?: string;

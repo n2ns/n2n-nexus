@@ -1,5 +1,5 @@
 /**
- * Where Claude Code and Codex keep their configuration. Node built-ins only:
+ * Where Claude Code, Codex and pi keep their configuration. Node built-ins only:
  * the hook command uses this to read a Codex conversation's title.
  */
 import os from "node:os";
@@ -13,3 +13,6 @@ export const claudeJsonDir = (): string => process.env.CLAUDE_CONFIG_DIR || os.h
 
 /** Codex's hooks.json, config.toml and state databases: CODEX_HOME, else ~/.codex. */
 export const codexHome = (): string => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+
+/** pi's agent directory (extensions, mcp.json, settings.json): PI_CODING_AGENT_DIR, else ~/.pi/agent. */
+export const piAgentDir = (): string => process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");

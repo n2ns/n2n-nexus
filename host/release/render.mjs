@@ -17,7 +17,7 @@ const sha256 = (file) => createHash("sha256").update(fs.readFileSync(path.join(d
 const zip = (arch) => `n2n-nexus-host_${version}_windows_${arch}.zip`;
 const out = path.join(dist, "manifests");
 fs.mkdirSync(path.join(out, "winget"), { recursive: true });
-const description = "Host of n2n-nexus: lets Claude Code and Codex conversations find and message each other";
+const description = "Host of n2n-nexus: lets Claude Code, Codex and pi conversations find and message each other";
 
 // Homebrew: built from source on the user's machine, so Gatekeeper never sees a downloaded binary.
 fs.writeFileSync(path.join(out, "n2n-nexus-host.rb"), `class N2nNexusHost < Formula

@@ -1,9 +1,10 @@
 /**
- * `n2n-nexus install <claude|codex> [--endpoint <url>] [--node <path>]` and
- * `n2n-nexus uninstall <claude|codex>`: register the hooks and the MCP server
- * with Claude Code or Codex. Our hook entries are recognised by a command that
+ * `n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]` and
+ * `n2n-nexus uninstall <claude|codex|pi>`: register the hooks and the MCP server
+ * with Claude Code, Codex or pi. Our hook entries are recognised by a command that
  * contains both `n2n-nexus` and ` hook <client>`; everything else in the
- * configuration file is kept as it is.
+ * configuration file is kept as it is. pi has no hook configuration: its hooks
+ * are an extension file (pi.ts), which install writes and uninstall removes.
  *
  * For Claude Code, install also writes a marked block into the user's
  * CLAUDE.md that makes direct messages count as the user's own requests
@@ -32,6 +33,7 @@ import { claudeConfigDir, codexHome } from "./client-dirs.js";
 import { entryScript } from "./entry.js";
 import { hookCommand, isOurs, windowsHookCommand } from "./hook-command.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
+import { PI_EXTENSION_MARK, type PiExtensionCommand, piExtensionFile, readPiExtensionFile, renderPiExtension, writePiExtension } from "./pi.js";
 
 type HookEntry = { type: "command"; command: string; commandWindows?: string; asyncRewake?: boolean; timeout: number };
 type HookGroup = { matcher?: string; hooks?: unknown[] } & Record<string, unknown>;
@@ -39,7 +41,8 @@ type HooksFile = { hooks?: Record<string, unknown> } & Record<string, unknown>;
 
 const EVENTS: Record<HookClient, string[]> = {
     claude: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
-    codex: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse", "Stop"]
+    codex: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse", "Stop"],
+    pi: []
 };
 
 type InstallOptions = {
@@ -173,6 +176,7 @@ function checkNodePath(given: string): string {
 }
 
 export function configFile(client: HookClient): string {
+    if (client === "pi") return piExtensionFile();
     return client === "claude" ? path.join(claudeConfigDir(), "settings.json") : path.join(codexHome(), "hooks.json");
 }
 
@@ -334,6 +338,29 @@ function mcpRemoveArgs(client: HookClient): string[] {
 }
 
 /**
+ * Write (install) or remove (uninstall) the pi extension that carries the hooks. An extension file that is not
+ * ours is never overwritten or removed. Returns whether an extension of ours was there before.
+ */
+function piExtensionStep(action: InstallOptions["action"], command: PiExtensionCommand | undefined): boolean {
+    const file = piExtensionFile();
+    const text = readPiExtensionFile(file);
+    const ours = text !== undefined && text.startsWith(PI_EXTENSION_MARK);
+    if (text !== undefined && !ours) {
+        if (action === "install") throw new InstallError(`${file} exists and is not written by n2n-nexus; move it aside and run again.`);
+        process.stdout.write(`Left ${file} alone: it is not written by n2n-nexus.\n`);
+        return false;
+    }
+    if (action === "install") {
+        writePiExtension(file, renderPiExtension(command!));
+        process.stdout.write(`Wrote the pi extension to ${file}\n`);
+    } else if (ours) {
+        fs.rmSync(file, { force: true });
+        process.stdout.write(`Removed the pi extension from ${file}\n`);
+    }
+    return ours;
+}
+
+/**
  * `<client> mcp add` for `"<node>" "<npx>" -y n2n-nexus@latest mcp`. PATH starts with `bin` (see npxFor): npx starts
  * the package's bin, `#!/usr/bin/env node` (Unix) or a .cmd shim running `node` (Windows), which looks Node up on
  * PATH, and a GUI client started from the Dock has none there. The rest is the system folders.
@@ -384,7 +411,7 @@ function removeMcpServer(client: HookClient, action: InstallOptions["action"], h
         if (!registered) return;
         if (action === "uninstall" && (error as NodeJS.ErrnoException).code === "ENOENT") {
             const file = mcpConfigFile(client);
-            const what = client === "claude" ? `the "${MCP_SERVER_NAME}" entry under "mcpServers"` : `the [mcp_servers.${MCP_SERVER_NAME}] table`;
+            const what = client === "codex" ? `the [mcp_servers.${MCP_SERVER_NAME}] table` : `the "${MCP_SERVER_NAME}" entry under "mcpServers"`;
             process.stdout.write(`Skipped "${client} ${removeArgs.join(" ")}": the "${client}" command could not be run (not on PATH, or not runnable without a shell). `
                 + `The MCP server is still registered in ${file}; run that command once ${client} can be run, or delete ${what} from ${file}.\n`);
             return;
@@ -411,23 +438,28 @@ export function runInstall(options: InstallOptions): number {
         if (action === "install") {
             const probe = spawnClientSync(client, ["--version"], { stdio: "ignore" });
             if (probe.error || probe.status !== 0) {
-                throw new InstallError(`The "${client}" command was not found on PATH; install ${client === "claude" ? "Claude Code" : "Codex"} first.`);
+                throw new InstallError(`The "${client}" command was not found on PATH; install ${CLIENT_NAMES[client]} first.`);
             }
         }
         const node = action === "install" ? (options.node ? checkNodePath(options.node) : stableNodePath()) : undefined;
         const npm = node ? npxFor(node) : undefined;
 
-        const file = configFile(client);
-        const config = readConfig(file);
-        const removed = removeOurEntries(config, client, file);
-        if (action === "install") {
-            const command = hookCommand(node!, entry, client, endpoint);
-            const commandWindows = client === "codex" ? windowsHookCommand(node!, entry, client, endpoint) : undefined;
-            addOurEntries(config, client, command, commandWindows);
-        }
-        if (action === "install" || removed) {
-            writeConfig(file, config);
-            process.stdout.write(`${action === "install" ? "Wrote hooks to" : "Removed hooks from"} ${file}\n`);
+        let removed: boolean;
+        if (client === "pi") {
+            removed = piExtensionStep(action, node ? { node, entry, endpoint } : undefined);
+        } else {
+            const file = configFile(client);
+            const config = readConfig(file);
+            removed = removeOurEntries(config, client, file);
+            if (action === "install") {
+                const command = hookCommand(node!, entry, client, endpoint);
+                const commandWindows = client === "codex" ? windowsHookCommand(node!, entry, client, endpoint) : undefined;
+                addOurEntries(config, client, command, commandWindows);
+            }
+            if (action === "install" || removed) {
+                writeConfig(file, config);
+                process.stdout.write(`${action === "install" ? "Wrote hooks to" : "Removed hooks from"} ${file}\n`);
+            }
         }
         if (client === "claude" && writeInstructions(action === "install")) {
             process.stdout.write(`${action === "install" ? "Wrote the n2n-nexus instructions to" : "Removed the n2n-nexus instructions from"} ${instructionsFile()}\n`);
@@ -450,11 +482,14 @@ export function runInstall(options: InstallOptions): number {
     }
 }
 
-/** Parse `<claude|codex> [--endpoint <url>] [--node <path>]` and run. */
+/** The product names the installer's messages use. */
+const CLIENT_NAMES: Record<HookClient, string> = { claude: "Claude Code", codex: "Codex", pi: "pi" };
+
+/** Parse `<claude|codex|pi> [--endpoint <url>] [--node <path>]` and run. */
 export async function runInstallCommand(action: "install" | "uninstall", argv: string[]): Promise<number> {
     const client = argv[0];
     if (!isHookClient(client)) {
-        process.stderr.write(`Usage: n2n-nexus ${action} <claude|codex>${action === "install" ? " [--endpoint <url>] [--node <path>]" : ""}\n`);
+        process.stderr.write(`Usage: n2n-nexus ${action} <claude|codex|pi>${action === "install" ? " [--endpoint <url>] [--node <path>]" : ""}\n`);
         return 1;
     }
     const option = (name: string, what: string): string | undefined | null => {

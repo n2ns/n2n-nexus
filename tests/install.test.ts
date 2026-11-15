@@ -7,13 +7,14 @@ import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/e
 
 import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
 import { isOurCodexHook } from "../src/cli/hook-command.js";
+import { PI_EXTENSION_MARK, readPiExtension } from "../src/cli/pi.js";
 
 // Runs the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "install");
 const NODE = process.execPath;
 const command = (client: string, endpoint?: string, node = NODE) => `"${node}" "${ENTRY}" hook ${client}${endpoint ? ` --endpoint ${endpoint}` : ""}`;
 /** The `<client> mcp add` arguments install runs for `"<node>" "<npx>" -y n2n-nexus@latest mcp`. */
-const mcpAdd = (client: "claude" | "codex", node = NODE, endpoint?: string) => {
+const mcpAdd = (client: "claude" | "codex" | "pi", node = NODE, endpoint?: string) => {
     const flag = client === "claude" ? "-e" : "--env";
     const vars = [...(endpoint ? [`NEXUS_ENDPOINT=${endpoint}`] : []), `PATH=${(process.platform === "win32" ? [npxFor(node).bin, path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : [npxFor(node).bin, "/usr/bin", "/bin"]).join(path.delimiter)}`];
     return [client, "mcp", "add", ...(client === "claude" ? ["--scope", "user"] : []), "n2n-nexus", ...vars.flatMap((v) => [flag, v]), "--", node, npxFor(node).npx, "-y", "n2n-nexus@latest", "mcp"];
@@ -24,6 +25,7 @@ let dir: string;
 let bin: string;
 let claudeDir: string;
 let codexHome: string;
+let piAgentDir: string;
 let callsLog: string;
 
 /**
@@ -80,7 +82,7 @@ if (args[0] === "app-server") {
 
 function run(args: string[], env: NodeJS.ProcessEnv = {}) {
     return runCliSync(args, {
-        env: { SystemRoot: process.env.SystemRoot, PATH: [bin, path.join(bin, "node")].join(path.delimiter), HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, CALLS_LOG: callsLog, ...env }
+        env: { SystemRoot: process.env.SystemRoot, PATH: [bin, path.join(bin, "node")].join(path.delimiter), HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, CALLS_LOG: callsLog, ...env }
     });
 }
 
@@ -134,10 +136,12 @@ beforeEach(() => {
     bin = path.join(dir, "bin");
     claudeDir = path.join(dir, "claude");
     codexHome = path.join(dir, "codex");
+    piAgentDir = path.join(dir, "pi-agent");
     callsLog = path.join(dir, "calls.log");
     fs.mkdirSync(bin, { recursive: true });
     fakeCli("claude");
     fakeCli("codex");
+    fakeCli("pi");
 }, 60_000); // removing the previous tree and writing the fake CLIs is slow on Windows runners
 
 afterAll(() => {
@@ -470,6 +474,55 @@ describe("install codex", () => {
         expect(run(["install", "codex"]).code).toBe(1);
         expect(fs.readFileSync(codexHooks(), "utf8")).toBe("[not json");
         expect(fs.readdirSync(codexHome)).toEqual(["hooks.json"]);
+    });
+});
+
+describe("install pi", () => {
+    const extension = () => path.join(piAgentDir, "extensions", "n2n-nexus.ts");
+
+    it("writes the extension that runs the hooks and registers the MCP server with pi", () => {
+        const endpoint = "http://127.0.0.1:5799";
+        const result = run(["install", "pi", "--endpoint", endpoint]);
+        expect(result.code).toBe(0);
+
+        const text = fs.readFileSync(extension(), "utf8");
+        expect(text.startsWith(PI_EXTENSION_MARK)).toBe(true);
+        expect(readPiExtension(text)).toEqual({ node: NODE, entry: ENTRY, endpoint });
+        expect(calls()).toEqual([
+            ["pi", "--version"],
+            ["pi", "mcp", "remove", "n2n-nexus"],
+            mcpAdd("pi", NODE, endpoint)
+        ]);
+        expect(result.stdout).toContain(`Wrote the pi extension to ${extension()}`);
+        expect(fs.existsSync(path.join(piAgentDir, "settings.json"))).toBe(false);
+    });
+
+    it("uninstall removes the extension it wrote and the MCP server, and reinstall gives the same file", () => {
+        expect(run(["install", "pi"]).code).toBe(0);
+        const first = fs.readFileSync(extension(), "utf8");
+        expect(run(["install", "pi"]).code).toBe(0);
+        expect(fs.readFileSync(extension(), "utf8")).toBe(first);
+
+        expect(run(["uninstall", "pi"]).code).toBe(0);
+        expect(fs.existsSync(extension())).toBe(false);
+        expect(calls().at(-1)).toEqual(["pi", "mcp", "remove", "n2n-nexus"]);
+    });
+
+    it("refuses to overwrite an extension that n2n-nexus did not write, and writes nothing", () => {
+        fs.mkdirSync(path.dirname(extension()), { recursive: true });
+        fs.writeFileSync(extension(), "export default function () {}\n");
+
+        const result = run(["install", "pi"]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain("exists and is not written by n2n-nexus");
+        expect(fs.readFileSync(extension(), "utf8")).toBe("export default function () {}\n");
+        expect(calls()).toEqual([["pi", "--version"]]);
+
+        // uninstall leaves it too, and says so
+        const removed = run(["uninstall", "pi"]);
+        expect(removed.code).toBe(0);
+        expect(removed.stdout).toContain(`Left ${extension()} alone`);
+        expect(fs.readFileSync(extension(), "utf8")).toBe("export default function () {}\n");
     });
 });
 

@@ -57,7 +57,7 @@ upload_project_asset(projectId, fileName, base64Content) → 上传二进制文�
 
 ### 定向会话
 
-在装好 n2n-nexus hooks 的 Claude Code 和 Codex 里，每个对话都是一个可以直接发消息的会话。`send`、`read`、`reply` 是对话之间的定向消息；全局聊天和会议用 `send_message`、`read_messages`（第 4 节）。会话用名字或会话 ID（`claude:<id>`、`codex:<id>`）标识。
+在装好 n2n-nexus hooks 的 Claude Code、Codex 和 pi 里，每个对话都是一个可以直接发消息的会话。`send`、`read`、`reply` 是对话之间的定向消息；全局聊天和会议用 `send_message`、`read_messages`（第 4 节）。会话用名字或会话 ID（`claude:<id>`、`codex:<id>`、`pi:<id>`）标识。
 
 1. `peers()` 列出其他对话（名字、标题、客户端、工作目录、机器：主机名、平台、环境（如 WSL 发行版）、UTC 偏移和标签、备注、状态）和你自己的资料；不同机器或不同 WSL 发行版上的会话可能工作目录一样，要靠机器区分；客户端自带的代理列表（如 Claude Code 的 `ListAgents`）看不到它们。标题来自你的客户端；用 `set_profile({ name, note, title, label })` 让别人知道你在做什么、在哪台机器上（`label` 如 `mac-air`，别人看到时取代主机名）。
 2. `send({ to: 名字或 ID, text })` 发消息；对方在通知里看到完整正文。对方需要的一切都写进一条消息：目标、背景、已经试过什么、做完是什么样子。发完就结束这一轮，不要用 `read` 轮询：回复会在你下一次工具调用后或本轮结束时由 hooks 送到。加上 `notifyWhenIdle: true`，对方这一轮结束时你会收到一次通知，不用反复查 `peers`。
@@ -83,7 +83,7 @@ sync_global_doc(docId, title, content)        → 创建/更新跨项目共享�
 
 `send_message`、`read_messages` 是全局聊天和会议，不是定向消息：要给某个对话发消息用 `send`，读别人发给你的消息用 `read`。
 
-两种 ID。`peers`、`send`、`read`、`reply` 用对话的会话 ID（`claude:<id>`、`codex:<id>`）。装了 n2n-nexus hooks 时，聊天和会议也用你的会话 ID：`read_messages` 的 `from`（附 `senderName`）、会议的 `initiator` 和 `participants`、`meeting.*` 事件的 `actor`；这样的 ID 可以用于 `send`。没装 hooks 时它们用 MCP 适配器实例 ID（`mcp-<hostname>-<hash>-<IDE 名>`），其他事件的 `actor` 和全局文档的 `updatedBy` 也是实例 ID；实例 ID 不能用于 `send`。
+两种 ID。`peers`、`send`、`read`、`reply` 用对话的会话 ID（`claude:<id>`、`codex:<id>`、`pi:<id>`）。装了 n2n-nexus hooks 时，聊天和会议也用你的会话 ID：`read_messages` 的 `from`（附 `senderName`）、会议的 `initiator` 和 `participants`、`meeting.*` 事件的 `actor`；这样的 ID 可以用于 `send`。没装 hooks 时它们用 MCP 适配器实例 ID（`mcp-<hostname>-<hash>-<IDE 名>`），其他事件的 `actor` 和全局文档的 `updatedBy` 也是实例 ID；实例 ID 不能用于 `send`。
 
 消息分类（`category`）：
 - 不传 — 没有分类

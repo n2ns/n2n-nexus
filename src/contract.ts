@@ -19,7 +19,7 @@ const contract = JSON.parse(fs.readFileSync(new URL("../contract/hook.json", imp
 /** Protocol version of this client; the host reports its own in GET /health. */
 export const CONTRACT_VERSION: number = contract.contractVersion;
 
-export const HOOK_CLIENTS = contract.clients as readonly ["claude", "codex"];
+export const HOOK_CLIENTS = contract.clients as readonly ["claude", "codex", "pi"];
 export type HookClient = typeof HOOK_CLIENTS[number];
 
 export function isHookClient(value: unknown): value is HookClient {
@@ -30,11 +30,15 @@ export function isHookClient(value: unknown): value is HookClient {
  * Who is calling a tool, as the adapter read it from the MCP request.
  * Claude Code: `_meta["claudecode/toolUseId"]`, bound to a session by the
  * PreToolUse hook that ran just before the call. Codex: `_meta.sessionId`
- * (a sub-agent carries its parent's session id).
+ * (a sub-agent carries its parent's session id). pi sends no per-call
+ * metadata: the adapter names the processes above it, nearest first (pi
+ * starts it through npx and a shell), and its machine; the pi extension
+ * reports the pi process's session with every hook event.
  */
 export type Caller =
     | { client: "claude"; toolUseId: string }
-    | { client: "codex"; sessionId: string };
+    | { client: "codex"; sessionId: string }
+    | { client: "pi"; clientPids: number[]; machine: { hostname: string; platform: string; environment: string } };
 
 /** MCP clientInfo names the adapter maps to a hook client. */
 export const CLIENT_INFO_NAMES: Record<HookClient, string> = contract.clientInfoNames;

@@ -1,7 +1,7 @@
 /**
- * Where Claude Code and Codex keep their MCP server registrations, and how to
- * read the n2n-nexus entry: `~/.claude.json` (user scope) and
- * `$CODEX_HOME/config.toml`. `claude mcp get` is not used for this because it
+ * Where Claude Code, Codex and pi keep their MCP server registrations, and how to
+ * read the n2n-nexus entry: `~/.claude.json` (user scope), `$CODEX_HOME/config.toml`
+ * and pi's `mcp.json`. `claude mcp get` is not used for this because it
  * looks in every scope, not only the user scope that install writes to, and
  * it starts the server for a health check.
  */
@@ -9,11 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { MCP_SERVER_NAME, type HookClient } from "../contract.js";
-import { claudeJsonDir, codexHome } from "./client-dirs.js";
+import { claudeJsonDir, codexHome, piAgentDir } from "./client-dirs.js";
 
 /** Where the client keeps the MCP server command. */
 export function mcpConfigFile(client: HookClient): string {
-    return client === "claude" ? path.join(claudeJsonDir(), ".claude.json") : path.join(codexHome(), "config.toml");
+    if (client === "claude") return path.join(claudeJsonDir(), ".claude.json");
+    if (client === "pi") return path.join(piAgentDir(), "mcp.json");
+    return path.join(codexHome(), "config.toml");
 }
 
 type McpCommand = { command: string; args: string[]; endpoint?: string };
@@ -27,7 +29,7 @@ export function readMcpCommand(client: HookClient, file: string): McpCommand | u
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
         throw error;
     }
-    if (client === "claude") {
+    if (client === "claude" || client === "pi") {
         let parsed: unknown;
         try {
             parsed = JSON.parse(text);

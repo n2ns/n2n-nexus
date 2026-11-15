@@ -1,5 +1,5 @@
 /**
- * `n2n-nexus hook <claude|codex> [--endpoint <url>] [--wait]`: forward one client
+ * `n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]`: forward one client
  * hook event to the daemon and print its output, or with `--wait` run the
  * background wait that wakes an idle conversation. Runs on every tool call, so
  * it loads only node built-ins (no MCP SDK or zod; node:sqlite only to read a
@@ -42,7 +42,7 @@ function argValue(argv: string[], name: string): string | undefined {
 /** The client named by `<client> [--endpoint <url>]` and the configured endpoint; throws on an unknown client. */
 function clientAndEndpoint(argv: string[]): { client: HookClient; configured: string } {
     const client = argv[0];
-    if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude or codex)`);
+    if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude, codex or pi)`);
     return { client, configured: configuredEndpoint(argValue(argv, "--endpoint")) };
 }
 
@@ -63,6 +63,11 @@ async function forward(argv: string[]): Promise<string> {
     }
     // Every event says where the conversation runs; the host refuses one without it.
     input.machine = machineInfo();
+    // A pi process names itself (--client-pid, its extension passes it): tool calls from it find the session.
+    if (client === "pi") {
+        const pid = parsePid(argValue(argv, "--client-pid"));
+        if (pid !== undefined) input.client_pid = pid;
+    }
     // SessionEnd must finish within Codex's 3 s hook limit (discovery included): a short budget and a single attempt.
     const sessionEnd = stdin.hook_event_name === "SessionEnd";
     const timeoutMs = stdin.hook_event_name === "Stop" ? HOOK_STOP_REQUEST_TIMEOUT_MS : sessionEnd ? SESSION_END_REQUEST_TIMEOUT_MS : HOOK_REQUEST_TIMEOUT_MS;

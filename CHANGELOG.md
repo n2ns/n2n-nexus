@@ -4,6 +4,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+Upgrade the host and the client together for pi (the contract version stays 5: an older host answers a pi hook with 400, which the hook ignores, and Claude Code and Codex are not affected). The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.
+
+### Added
+
+- pi as a client: `n2n-nexus install pi` writes a pi extension (`~/.pi/agent/extensions/n2n-nexus.ts`, or under `$PI_CODING_AGENT_DIR`) that runs `n2n-nexus hook pi` on pi's session start, prompt, tool result, end of run and shutdown, continues a run when messages arrive during it and wakes an idle pi session through the background wait, and registers the MCP server with `pi mcp add`; `uninstall pi` removes both and `doctor pi` checks them. pi's MCP tool calls carry no session, so the MCP server started by pi names the processes above it (pi starts it through npx and a shell) and its machine, and the host attributes the call to the session the nearest pi process among them on that machine reported last.
+
 ## [0.12.6] - 2026-11-10
 
 Upgrade the host and the client together (contract version 5), then run `n2n-nexus install <client>` again so the background wait hook gets its new timeout. The database is upgraded in place: keep `nexus.db`. An older host refuses the upgraded database.

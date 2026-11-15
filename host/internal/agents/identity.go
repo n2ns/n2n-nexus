@@ -101,6 +101,24 @@ func (a *Agents) callerSession(c api.Call, prune bool) (string, error) {
 			return "", nil
 		}
 		return sessionKey("codex", c.Caller.SessionID), nil
+	case "pi":
+		// The session the nearest of the adapter's ancestors that is a pi process on this
+		// machine last reported in a hook event; no expiry, as the process reports on every
+		// prompt and every tool result it runs.
+		if c.Caller.Machine == nil {
+			return "", nil
+		}
+		m := c.Caller.Machine
+		key := a.piMachineKey(m.Hostname, m.Platform, m.Environment)
+		for _, pid := range c.Caller.ClientPIDs {
+			var id string
+			err := a.db().QueryRowContext(bg, "SELECT session_id FROM pi_client_pids WHERE machine = ? AND client_pid = ?", key, pid).Scan(&id)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return id, err
+		}
+		return "", nil
 	}
 	return "", nil
 }

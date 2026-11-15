@@ -1,6 +1,6 @@
 /**
- * `n2n-nexus doctor [claude|codex]`: check that the Node path and the entry
- * script in the hook commands, and the Node path and npm's npx script in the
+ * `n2n-nexus doctor [claude|codex|pi]`: check that the Node path and the entry
+ * script in the hook commands (for pi, in its extension file), and the Node path and npm's npx script in the
  * MCP server command (`"<node>" "<npx>" -y n2n-nexus@latest mcp`), that
  * `install` wrote still exist and run, that the host those commands talk to answers
  * GET /health as n2n-nexus-host with this client's contract version, that
@@ -18,6 +18,7 @@ import { pkg } from "../config/index.js";
 import { hookEndpoint, isOurs, ourCommands, parseHookCommand } from "./hook-command.js";
 import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, probeNode, readConfig } from "./install.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
+import { PI_EXTENSION_MARK, piExtensionFile, readPiExtension, readPiExtensionFile } from "./pi.js";
 
 type Check = { ok: boolean; text: string };
 
@@ -92,7 +93,62 @@ async function doctorHosts(endpoints: Set<string>): Promise<boolean> {
  * Check one client; prints the report and returns whether everything passed, or undefined when nothing is installed.
  * Adds the endpoints its hook and MCP commands use to `endpoints`, falling back to defaultEndpoint.
  */
+/** The MCP server registration of `client`: whether there is one (reported), and the endpoints it names. */
+function doctorMcp(client: HookClient, endpoints: Set<string>, defaultEndpoint: string, report: (label: string, check: Check) => void, mcp: ReturnType<typeof readMcpCommand>): void {
+    const mcpFile = mcpConfigFile(client);
+    if (!mcp) {
+        report(`MCP server ${MCP_SERVER_NAME} in ${mcpFile}`, bad("not registered"));
+        return;
+    }
+    endpoints.add(mcp.endpoint === undefined ? defaultEndpoint : mcp.endpoint || LOCAL_ENDPOINT);
+    report(`MCP Node ${mcp.command}`, checkNode(mcp.command));
+    const [npx, ...rest] = mcp.args;
+    if (npx && rest.join(" ") === `-y ${MCP_PACKAGE} mcp`) report(`MCP npx ${npx}`, checkEntry(npx));
+    else report(`MCP command in ${mcpFile}`, bad(`not in the form "<node>" "<npx>" -y ${MCP_PACKAGE} mcp`));
+}
+
+/** pi: the extension file that carries the hooks, and the MCP server. */
+function doctorPi(endpoints: Set<string>, defaultEndpoint: string): boolean | undefined {
+    const file = piExtensionFile();
+    const mcp = readMcpCommand("pi", mcpConfigFile("pi"));
+    const text = readPiExtensionFile(file);
+    if (text === undefined && !mcp) return undefined;
+    const lines: string[] = [];
+    let failed = false;
+    let versioned = false;
+    const report = (label: string, check: Check) => {
+        lines.push(`  ${check.ok ? "ok  " : "FAIL"} ${label}: ${check.text}`);
+        if (!check.ok) failed = true;
+        if (check.text.includes(VERSIONED_NOTE)) versioned = true;
+    };
+    lines.push("pi");
+    if (text === undefined) {
+        report(`extension in ${file}`, bad("not installed"));
+    } else if (!text.startsWith(PI_EXTENSION_MARK)) {
+        report(`extension in ${file}`, bad("not written by n2n-nexus"));
+    } else {
+        const command = readPiExtension(text);
+        if (!command) {
+            report(`extension in ${file}`, bad("its Node path and entry script cannot be read"));
+        } else {
+            if (command.endpoint) endpoints.add(command.endpoint);
+            else endpoints.add(defaultEndpoint);
+            report(`extension Node ${command.node}`, checkNode(command.node));
+            report(`extension entry ${command.entry}`, checkEntry(command.entry));
+        }
+    }
+    doctorMcp("pi", endpoints, defaultEndpoint, report, mcp);
+    if (failed) {
+        lines.push(`  fix: run "n2n-nexus install pi" again (add --node <path> to use a stable Node path such as /usr/local/bin/node).`);
+    } else if (versioned) {
+        lines.push(`  note: after upgrading Node, run "n2n-nexus install pi" again, or install with --node <path> pointing at a stable entry such as /usr/local/bin/node.`);
+    }
+    process.stdout.write(lines.join("\n") + "\n");
+    return !failed;
+}
+
 function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoint: string): boolean | undefined {
+    if (client === "pi") return doctorPi(endpoints, defaultEndpoint);
     const hooksFile = configFile(client);
     const mcpFile = mcpConfigFile(client);
     const lines: string[] = [];
@@ -122,15 +178,7 @@ function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoin
         report(`hook entry ${parsed.entry}`, checkEntry(parsed.entry));
     }
     if (client === "claude" && commands.size > 0) report(`background wait hook in ${hooksFile}`, checkClaudeWait(config));
-    if (!mcp) {
-        report(`MCP server ${MCP_SERVER_NAME} in ${mcpFile}`, bad("not registered"));
-    } else {
-        endpoints.add(mcp.endpoint === undefined ? defaultEndpoint : mcp.endpoint || LOCAL_ENDPOINT);
-        report(`MCP Node ${mcp.command}`, checkNode(mcp.command));
-        const [npx, ...rest] = mcp.args;
-        if (npx && rest.join(" ") === `-y ${MCP_PACKAGE} mcp`) report(`MCP npx ${npx}`, checkEntry(npx));
-        else report(`MCP command in ${mcpFile}`, bad(`not in the form "<node>" "<npx>" -y ${MCP_PACKAGE} mcp`));
-    }
+    doctorMcp(client, endpoints, defaultEndpoint, report, mcp);
     if (failed) {
         lines.push(`  fix: run "n2n-nexus install ${client}" again (add --node <path> to use a stable Node path such as /usr/local/bin/node).`);
     } else if (versioned) {
@@ -171,11 +219,11 @@ async function doctorCodexTrust(): Promise<boolean> {
     return false;
 }
 
-/** Parse `[claude|codex]`, run the checks and return the exit code. */
+/** Parse `[claude|codex|pi]`, run the checks and return the exit code. */
 export async function runDoctor(argv: string[]): Promise<number> {
     const client = argv[0];
     if (client !== undefined && !isHookClient(client)) {
-        process.stderr.write("Usage: n2n-nexus doctor [claude|codex]\n");
+        process.stderr.write("Usage: n2n-nexus doctor [claude|codex|pi]\n");
         return 1;
     }
     try {

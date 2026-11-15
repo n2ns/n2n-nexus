@@ -48,6 +48,30 @@ function describe(pid: number): { name: string; ppid: number } {
     return { name: name.toLowerCase(), ppid };
 }
 
+/** The most processes ancestorPids lists (contract/hook.json caller.clientPids maxItems). */
+const MAX_ANCESTORS = 16;
+
+/**
+ * This process's parent, its parent and so on up to (not including) init,
+ * nearest first; on Windows, or where a parent cannot be read, the list ends
+ * there. pi starts the MCP adapter through npx and a shell, so the pi process
+ * is one of them (the host finds it among them).
+ */
+export function ancestorPids(): number[] {
+    const pids = [process.ppid];
+    if (process.platform === "win32") return pids;
+    try {
+        while (pids.length < MAX_ANCESTORS) {
+            const { ppid } = describe(pids[pids.length - 1]);
+            if (ppid <= 1 || pids.includes(ppid)) break;
+            pids.push(ppid);
+        }
+    } catch {
+        // Not readable: the processes found so far.
+    }
+    return pids;
+}
+
 /**
  * The process that ran this hook, past the shells it went through: the
  * nearest ancestor that is not a shell; undefined when it cannot be told.

@@ -64,6 +64,21 @@ func (a *Agents) machineOf(input map[string]any) (*machine, error) {
 	return &machine{Hostname: hostname, Platform: platform, Environment: environment, UTCOffset: int(offset)}, nil
 }
 
+// piMachineKey is the machine a pi process ID belongs to (process IDs are per machine, and per
+// WSL distribution), from the hook's input.machine or a pi caller's machine, cut and joined
+// the same way as machineOf, so that both give the same key.
+func (a *Agents) piMachineKey(hostname, platform, environment string) string {
+	limit := a.o.Contract.Hook.Limits.MaxHostnameChars
+	clip := func(s string) string {
+		s = oneLine(s)
+		if r := []rune(s); len(r) > limit {
+			s = string(r[:limit])
+		}
+		return s
+	}
+	return clip(hostname) + "\n" + platform + "\n" + clip(environment)
+}
+
 // Hook handles one client hook event (POST /api/hook); it returns what the hook prints, or nil.
 func (a *Agents) Hook(ctx context.Context, client string, input map[string]any) (map[string]any, error) {
 	a.mu.Lock()
@@ -119,6 +134,15 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 	cwd = oneLine(cwd)
 	if err := a.touch(id, client, cwd, m, now); err != nil {
 		return nil, nil, err
+	}
+	// A pi process names its own process ID with each event: tool calls it makes later are attributed by it.
+	if client == "pi" {
+		if pid, _ := input["client_pid"].(float64); pid >= 1 && pid == float64(int(pid)) {
+			if _, err := a.db().ExecContext(bg, "INSERT OR REPLACE INTO pi_client_pids (machine, client_pid, session_id, updated_at) VALUES (?, ?, ?, ?)",
+				a.piMachineKey(m.Hostname, m.Platform, m.Environment), int(pid), id, a.iso(now)); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	if err := a.expireAll(now); err != nil {
 		return nil, nil, err

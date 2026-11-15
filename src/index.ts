@@ -16,16 +16,16 @@ n2n-nexus v${pkg.version} — Multi-AI assistant coordination hub
 
 USAGE:
   n2n-nexus mcp      Start the MCP proxy (launched by IDE automatically)
-  n2n-nexus install <claude|codex> [--endpoint <url>] [--node <path>]
-                     Register the hooks and the MCP server with Claude Code or Codex
-  n2n-nexus uninstall <claude|codex>
+  n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]
+                     Register the hooks and the MCP server with Claude Code, Codex or pi
+  n2n-nexus uninstall <claude|codex|pi>
                      Remove the hooks and the MCP server installed by install
-  n2n-nexus doctor [claude|codex]
+  n2n-nexus doctor [claude|codex|pi]
                      Check that the Node path and entry script in the installed hooks and
                      the Node path and npx in the MCP command exist and run, and that the
                      host answers with the same contract version; exit 1 and say how to
                      fix them when not
-  n2n-nexus hook <claude|codex> [--endpoint <url>] [--wait]
+  n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
                      Forward a client hook event to the host (run by the hooks)
 
 The host is a separate program, n2n-nexus-host:

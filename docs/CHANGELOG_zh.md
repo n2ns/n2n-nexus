@@ -4,6 +4,14 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [未发布]
+
+使用 pi 时需同时升级 host 和客户端（契约版本仍为 5：旧 host 对 pi 的 hook 回 400，hook 会忽略它，Claude Code 和 Codex 不受影响）。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。
+
+### 新增
+
+- 支持 pi 客户端：`n2n-nexus install pi` 写入一个 pi 扩展（`~/.pi/agent/extensions/n2n-nexus.ts`，或 `$PI_CODING_AGENT_DIR` 下），在 pi 的会话开始、提交提示、工具结果、一轮运行结束和退出时运行 `n2n-nexus hook pi`，运行中收到消息时让这一轮继续，空闲的 pi 会话由后台等待叫醒；并用 `pi mcp add` 注册 MCP 服务。`uninstall pi` 删除这两者，`doctor pi` 检查它们。pi 调用 MCP 工具时不带会话，所以 pi 启动的 MCP 服务器报上它上面的各级进程（pi 经 npx 和 shell 启动它）和所在机器，host 把调用归到这台机器上其中最近的 pi 进程最近报告的会话。
+
 ## [0.12.6] - 2026-11-10
 
 同时升级 host 和客户端（契约版本 5），然后重新运行 `n2n-nexus install <client>`，让后台等待 hook 用上新的超时时间。数据库原地升级：保留 `nexus.db`。升级后的数据库旧 host 不能打开。

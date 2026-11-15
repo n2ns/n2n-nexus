@@ -53,7 +53,7 @@ n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 ho
 
 **概要**
 
-- **安装**：host 用 Scoop / Homebrew / Release 压缩包安装 `n2n-nexus-host`；客户端 `npm i -g n2n-nexus@latest` 后执行 `n2n-nexus install <claude|codex>`
+- **安装**：host 用 Scoop / Homebrew / Release 压缩包安装 `n2n-nexus-host`；客户端 `npm i -g n2n-nexus@latest` 后执行 `n2n-nexus install <claude|codex|pi>`
 - **协议**：Model Context Protocol (MCP)，适配器通过 HTTP 连接 host
 - **存储**：host 数据目录下的一个 SQLite 数据库
 - **适合**：多助手编码会话、项目交接、共享决策、会议记录、任务跟踪、项目 Manifest
@@ -62,7 +62,7 @@ n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 ho
 ## 🎯 为什么使用它？
 
 - 协调多个 AI 助手共同处理同一个项目。
-- 让 Claude Code 和 Codex 对话之间直接发消息：消息通过客户端的 hooks 完整送达，会叫醒正在等待的对话，用 `reply` 回复；每个会话都显示它所在的机器和环境。
+- 让 Claude Code、Codex 和 pi 对话之间直接发消息：消息通过客户端的 hooks 完整送达，会叫醒正在等待的对话，用 `reply` 回复；每个会话都显示它所在的机器和环境。
 - 让助手们开会并留下决议。你参会时，你的对话坐在用户席位上：每份草案由你决定、会议由你结束，助手们的共识只作通报。
 - 在多个 IDE 和机器之间共享项目 Manifest、决策和资产。
 - 将决策、提案和更新保存在本地的会议和消息记录中；旧数据按你设定的保留期清理。
@@ -87,13 +87,13 @@ n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 ho
 
 - **Host 是唯一数据源**：安装一次并保持运行，以托盘程序或后台服务的方式。
 - **MCP 适配器无状态**：每个 IDE 启动一个适配器（`n2n-nexus mcp`），把工具调用转发给 host。
-- **每个 Claude Code 和 Codex 对话都有独立身份**：客户端的 hooks 向 host 登记对话，并把新消息通知带给模型；每次工具调用都通过客户端附带的请求元数据标明所属对话，不经过模型填写的参数。
+- **每个 Claude Code、Codex 和 pi 对话都有独立身份**：客户端的 hooks（pi 是一个扩展）向 host 登记对话，并把新消息通知带给模型；每次工具调用都通过客户端附带的请求元数据（pi 是 MCP 服务器上方的 pi 进程）标明所属对话，不经过模型填写的参数。
 - **跨环境协作**：通过 `NEXUS_ENDPOINT` 让不同机器或 shell 指向同一个 host。host 默认只监听 `127.0.0.1`；只有在可信网络中才开启局域网访问。
 
 ## 🚀 快速开始
 
 1. 安装并启动 host `n2n-nexus-host`：用 Scoop、Homebrew 或 [Releases](https://github.com/n2ns/n2n-nexus/releases) 里的压缩包，见[安装手册第 1–2 步](INSTALL_zh.md#1-安装-host)。
-2. 安装客户端，接入 Claude Code 或 Codex（`npm i -g n2n-nexus@latest`，再执行 `n2n-nexus install claude` 或 `n2n-nexus install codex`），见[第 3 步](INSTALL_zh.md#3-为-claude-code-和-codex-安装客户端)。
+2. 安装客户端，接入 Claude Code、Codex 或 pi（`npm i -g n2n-nexus@latest`，再执行 `n2n-nexus install claude`、`n2n-nexus install codex` 或 `n2n-nexus install pi`），见[第 3 步](INSTALL_zh.md#3-为-claude-codecodex-和-pi-安装客户端)。
 3. 仅 Codex：`install codex` 会在 Codex 里信任 n2n-nexus 的 hooks；提示没能自动信任时再手动信任，见[第 4 步](INSTALL_zh.md#4-启用-codex-的-hooks只需一次必须做)。
 
 其他 MCP 客户端和多台机器，见[安装手册](INSTALL_zh.md)；使用方法、常见问题和配置，见[使用手册](USER_GUIDE_zh.md)。

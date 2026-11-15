@@ -10,6 +10,7 @@ import { HOOK, Host } from "./conformance/harness.js";
 import { npxFor } from "../src/cli/install.js";
 import { readMcpCommand } from "../src/cli/mcp-config.js";
 import { runDoctor } from "../src/cli/doctor.js";
+import { renderPiExtension } from "../src/cli/pi.js";
 import { NexusClient, NexusTransportError } from "../src/client/nexus-client.js";
 import { LOCAL_ENDPOINT } from "../src/client/discovery.js";
 
@@ -23,6 +24,7 @@ const MCP_ARGS = [NPX, "-y", "n2n-nexus@latest", "mcp"];
 let dir: string;
 let claudeDir: string;
 let codexHome: string;
+let piAgentDir: string;
 /** A real n2n-nexus-host (the test build); doctor checks it through NEXUS_ENDPOINT unless a test says otherwise. */
 const host = new Host();
 let hostEndpoint: string;
@@ -32,7 +34,7 @@ let codexCommand: string;
 
 async function run(args: string[], endpoint = hostEndpoint): Promise<{ code: number | null; stdout: string; stderr: string }> {
     const { code, stdout, stderr } = await runCli(["doctor", ...args], {
-        env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand }
+        env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand }
     });
     return { code, stdout, stderr };
 }
@@ -99,6 +101,8 @@ beforeEach(() => {
     dir = TMP;
     claudeDir = path.join(dir, "claude");
     codexHome = path.join(dir, "codex");
+    piAgentDir = path.join(dir, "pi-agent");
+    vi.stubEnv("PI_CODING_AGENT_DIR", piAgentDir);
     codexCommand = path.join(dir, "no-codex");
     fs.mkdirSync(dir, { recursive: true });
 });
@@ -253,8 +257,36 @@ describe("doctor", () => {
         expect((await run(["claude"])).code).toBe(0);
     });
 
+    it("checks the pi extension (its Node path and entry script) and the pi MCP registration", async () => {
+        const extension = path.join(piAgentDir, "extensions", "n2n-nexus.ts");
+        const mcpFile = path.join(piAgentDir, "mcp.json");
+        const written = (node: string) => {
+            fs.mkdirSync(path.dirname(extension), { recursive: true });
+            fs.writeFileSync(extension, renderPiExtension({ node, entry: ENTRY }));
+            fs.mkdirSync(piAgentDir, { recursive: true });
+            fs.writeFileSync(mcpFile, JSON.stringify({ mcpServers: { "n2n-nexus": { command: NODE, args: MCP_ARGS, env: { NEXUS_ENDPOINT: hostEndpoint } } } }));
+        };
+        written(NODE);
+        const good = await run(["pi"]);
+        expect(good.code).toBe(0);
+        expect(good.stdout).toContain(`  ok   extension Node ${NODE}`);
+        expect(good.stdout).toContain(`  ok   extension entry ${ENTRY}`);
+        expect(good.stdout).toContain("  ok   MCP npx");
+
+        written(path.join(dir, "missing-node"));
+        const broken = await run(["pi"]);
+        expect(broken.code).toBe(1);
+        expect(broken.stdout).toContain("FAIL extension Node");
+        expect(broken.stdout).toContain('fix: run "n2n-nexus install pi" again');
+
+        fs.writeFileSync(extension, "export default function () {}\n");
+        const foreign = await run(["pi"]);
+        expect(foreign.stdout).toContain("FAIL extension");
+        expect(foreign.stdout).toContain("not written by n2n-nexus");
+    });
+
     it("reports what is not installed: only for a named client, and the missing half of a partial install", async () => {
-        expect(await run([])).toEqual({ code: 0, stdout: `claude\n  not installed\ncodex\n  not installed\n${hostOk()}`, stderr: "" });
+        expect(await run([])).toEqual({ code: 0, stdout: `claude\n  not installed\ncodex\n  not installed\npi\n  not installed\n${hostOk()}`, stderr: "" });
         const named = await run(["codex"]);
         expect(named.code).toBe(1);
         expect(named.stdout).toContain('FAIL nothing installed: run "n2n-nexus install codex".');
@@ -276,7 +308,7 @@ describe("doctor", () => {
     it("rejects an unknown client and a broken settings file", async () => {
         const usage = await run(["cursor"]);
         expect(usage.code).toBe(1);
-        expect(usage.stderr).toContain("Usage: n2n-nexus doctor [claude|codex]");
+        expect(usage.stderr).toContain("Usage: n2n-nexus doctor [claude|codex|pi]");
 
         fs.mkdirSync(claudeDir, { recursive: true });
         fs.writeFileSync(path.join(claudeDir, "settings.json"), "{ broken");

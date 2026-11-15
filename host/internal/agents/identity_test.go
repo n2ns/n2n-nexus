@@ -116,3 +116,49 @@ func TestIdentityFallsBackOnceTheInstanceStopsResolving(t *testing.T) {
 		t.Fatalf("after the window: %+v %v", id, err)
 	}
 }
+
+func TestIdentityResolvesPiSessionsByProcess(t *testing.T) {
+	h := start(t)
+	// pi names its process in each event: a tool call from that process is the session the process reported last.
+	h.hook("pi", "SessionStart", "p1", map[string]any{"client_pid": 4242})
+	box := &api.CallerMachine{Hostname: "box", Platform: "linux"}
+	id, err := h.identity("mcp-pi", &api.Caller{Client: "pi", ClientPIDs: []int{4242}, Machine: box})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := api.Identity{Kind: api.IdentitySession, ID: "pi:p1", Name: h.session("pi:p1").Name, Instance: "mcp-pi"}
+	if id != want {
+		t.Fatalf("got %+v want %+v", id, want)
+	}
+	// A new session in the same process takes the process over.
+	h.hook("pi", "SessionStart", "p2", map[string]any{"client_pid": 4242})
+	if id, err := h.identity("mcp-pi", &api.Caller{Client: "pi", ClientPIDs: []int{4242}, Machine: box}); err != nil || id.ID != "pi:p2" {
+		t.Fatalf("after /new: %+v %v", id, err)
+	}
+	// An unknown process falls back to the instance, as the other clients do without a session.
+	if id, err := h.identity("mcp-other", &api.Caller{Client: "pi", ClientPIDs: []int{9999}, Machine: box}); err != nil || id.Kind != api.IdentityInstance {
+		t.Fatalf("unknown process: %+v %v", id, err)
+	}
+	// A hook without a process ID records no mapping.
+	h.hook("pi", "UserPromptSubmit", "p3")
+	eq(t, h.count("SELECT COUNT(*) FROM pi_client_pids"), 1)
+}
+
+func TestIdentityResolvesPiByAncestorsOnItsMachine(t *testing.T) {
+	h := start(t)
+	box := map[string]any{"hostname": "box", "platform": "linux", "environment": "", "utcOffset": 0}
+	other := map[string]any{"hostname": "other", "platform": "linux", "environment": "", "utcOffset": 0}
+	h.hook("pi", "SessionStart", "a", map[string]any{"client_pid": 5000, "machine": box})
+	h.hook("pi", "SessionStart", "b", map[string]any{"client_pid": 5000, "machine": other})
+	on := func(host string) *api.CallerMachine { return &api.CallerMachine{Hostname: host, Platform: "linux"} }
+	// The adapter's parent is a shell npx started: the first known ancestor is the pi process.
+	if id, err := h.identity("mcp-a", &api.Caller{Client: "pi", ClientPIDs: []int{7001, 7000, 5000}, Machine: on("box")}); err != nil || id.ID != "pi:a" {
+		t.Fatalf("box: %+v %v", id, err)
+	}
+	if id, err := h.identity("mcp-b", &api.Caller{Client: "pi", ClientPIDs: []int{5000}, Machine: on("other")}); err != nil || id.ID != "pi:b" {
+		t.Fatalf("other: %+v %v", id, err)
+	}
+	if id, err := h.identity("mcp-c", &api.Caller{Client: "pi", ClientPIDs: []int{5000}, Machine: on("third")}); err != nil || id.Kind != api.IdentityInstance {
+		t.Fatalf("third: %+v %v", id, err)
+	}
+}

@@ -79,16 +79,16 @@ n2n-nexus-host version
 # 启动 MCP 适配器（由 IDE 启动）
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <实例 ID>]
 
-# 为 Claude Code 或 Codex 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容）
-n2n-nexus install <claude|codex> [--endpoint <url>] [--node <path>]
-n2n-nexus uninstall <claude|codex>
+# 为 Claude Code、Codex 或 pi 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容；pi 的 hooks 是一个扩展文件）
+n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]
+n2n-nexus uninstall <claude|codex|pi>
 
 # 检查已安装的 hook 和 MCP 命令是否还能运行，以及 host 是否以相同协议版本应答
 # （有问题时退出码 1）
-n2n-nexus doctor [claude|codex]
+n2n-nexus doctor [claude|codex|pi]
 
 # hook 入口（由 install 写进客户端配置）
-n2n-nexus hook <claude|codex> [--endpoint <url>] [--wait]
+n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
 ```
 
 ### 环境变量

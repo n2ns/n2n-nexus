@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 import { NexusServer } from "../src/server/nexus.js";
+import { machineInfo } from "../src/cli/machine.js";
 import { closedPort, listen } from "./helpers/http.js";
 
 type Recorded = { url: string; body: Record<string, unknown> };
@@ -77,6 +78,16 @@ for (const stateless of [false, true]) {
                 .toEqual({ client: "codex", sessionId: "thread-a" });
             expect((await callEcho(client, { sessionId: "thread-b", threadId: "sub-agent" })).caller)
                 .toEqual({ client: "codex", sessionId: "thread-b" });
+        });
+
+        it("names a pi caller by the processes that started the adapter, nearest first, and its machine (pi sends no _meta)", async () => {
+            await fakeDaemon();
+            const client = await connect("pi", stateless);
+            const { hostname, platform, environment } = machineInfo();
+            const caller = (await callEcho(client, {})).caller as { client: string; clientPids: number[]; machine: unknown };
+            expect(caller.client).toBe("pi");
+            expect(caller.clientPids[0]).toBe(process.ppid);
+            expect(caller.machine).toEqual({ hostname, platform, environment });
         });
 
         it("sends no caller for other clients or when the identifying _meta is missing", async () => {
@@ -197,5 +208,20 @@ describe("No daemon", () => {
         const failed = await client.callTool({ name: "echo", arguments: {} });
         expect(failed.isError).toBe(true);
         expect(JSON.stringify(failed.content)).toContain("Install n2n-nexus-host");
+    });
+});
+
+describe("ancestor processes", () => {
+    it.runIf(process.platform !== "win32")("lists the processes above one started through a shell, up to the one that started the shell", async () => {
+        const { spawnSync } = await import("node:child_process");
+        const module = new URL("../build/cli/client-process.js", import.meta.url).href;
+        const script = `import(${JSON.stringify(module)}).then((m) => process.stdout.write(JSON.stringify(m.ancestorPids())))`;
+        // sh -c with a second command keeps the shell between this process and node, as npx does.
+        const run = spawnSync("sh", ["-c", `"${process.execPath}" -e '${script}'; true`], { encoding: "utf8" });
+        expect(run.status, run.stderr).toBe(0);
+        const pids = JSON.parse(run.stdout) as number[];
+        expect(pids.length).toBeGreaterThanOrEqual(2);
+        expect(pids).toContain(process.pid);
+        expect(pids.indexOf(process.pid)).toBeGreaterThan(0);
     });
 });

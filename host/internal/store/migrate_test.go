@@ -207,3 +207,74 @@ func TestMigrationMessageWake(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// 0009 rebuilds agent_sessions for the pi client without losing a session or
+// the messages that refer to it, and pi sessions can then be stored.
+func TestMigrationPiClientKeepsSessions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, FileName))+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() >= "0009" {
+			break
+		}
+		body, err := migrations.ReadFile("migrations/" + e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", e.Name(), err)
+		}
+	}
+	for _, q := range []string{
+		`PRAGMA user_version = 8`,
+		`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, title, hostname, platform, utc_offset, label, environment)
+			VALUES ('claude:1', 'claude', 'claude@p#1', '/p', 'idle', 't', 't', 'Work', 'box', 'wsl', 60, 'lab', 'Ubuntu'),
+			       ('codex:2', 'codex', 'codex@p#2', '/p', 'offline', 't', 't', '', 'box', 'linux', 0, '', '')`,
+		`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply) VALUES ('m1', 'claude:1', 'codex:2', 'hi', 'unread', 't', 't', 1)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var n int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM agent_sessions WHERE (id = 'claude:1' AND title = 'Work' AND utc_offset = 60 AND label = 'lab' AND environment = 'Ubuntu') OR (id = 'codex:2' AND status = 'offline')`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("sessions kept: %d %v", n, err)
+	}
+	if _, err := s.DB.Exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset)
+		VALUES ('pi:3', 'pi', 'pi@p#3', '/p', 'idle', 't', 't', 'box', 'linux', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec(`INSERT INTO pi_client_pids (machine, client_pid, session_id, updated_at) VALUES ('box', 42, 'pi:3', 't')`); err != nil {
+		t.Fatal(err)
+	}
+	// Foreign keys hold against the rebuilt table: a message to an unknown session is refused.
+	if _, err := s.DB.Exec(`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply) VALUES ('m2', 'claude:1', 'nobody', 'x', 'unread', 't', 't', 0)`); err == nil {
+		t.Fatal("a message to an unknown session was stored")
+	}
+	if !strings.Contains(sessionsSQL(t, s), "'pi'") {
+		t.Fatal("client check does not allow pi")
+	}
+}
+
+func sessionsSQL(t *testing.T, s *Store) string {
+	t.Helper()
+	var text string
+	if err := s.DB.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_sessions'`).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
