@@ -46,6 +46,23 @@ describe("pi extension", () => {
         expect(pi.userMessages[0].opts).toEqual({ deliverAs: "followUp" });
     });
 
+    it("announces a message that arrives during a run with the result of the call the model made, not with a call nested in it", async () => {
+        const s = ids()("nested");
+        const sender = ids()("sender");
+        const pi = await started(s);
+        await kit.hook("codex", "SessionStart", sender);
+        await pi.emit("before_agent_start", { messageType: "user", prompt: "hi" }, ctxOf(s));
+        await kit.send(sender, (await kit.profile(`pi:${s}`))!.name, "note for the model");
+
+        // codemode runs an MCP tool: that call's result reaches the model only if the script returns all of it.
+        const nested = await pi.emit("tool_result", { toolName: "mcp__n2n_nexus__peers", toolCallId: "call_1/1", parentToolCallId: "call_1", isError: false, content: [{ type: "text", text: "{}" }] }, ctxOf(s));
+        expect(nested).toBeUndefined();
+        // The result of codemode itself is what the model reads.
+        const outer = await pi.emit("tool_result", { toolName: "codemode", toolCallId: "call_1", isError: false, content: [{ type: "text", text: "Script completed" }] }, ctxOf(s)) as { content: { type: string; text: string }[] };
+        expect(outer.content[0]).toEqual({ type: "text", text: "Script completed" });
+        expect(outer.content[1].text).toContain("note for the model");
+    });
+
     it("wakes an idle pi session with the background wait when a message arrives", async () => {
         const s = ids()("wake");
         const sender = ids()("sender");

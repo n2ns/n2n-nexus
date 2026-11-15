@@ -175,7 +175,10 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.on("tool_result", async (toolEvent) => {
-        if (!sessionId || toolEvent.isError) return;
+        // A call another tool made (codemode running an MCP tool, pi's default for them) is skipped: its result
+        // reaches the model only as far as the script returns it, so the announcement goes with the result of
+        // the call the model made, which follows.
+        if (!sessionId || toolEvent.isError || toolEvent.parentToolCallId) return;
         const result = await run(hookArgs(), event("PostToolUse", { tool_name: toolEvent.toolName, tool_use_id: toolEvent.toolCallId }), HOOK_TIMEOUT_MS);
         const text = contextOf(result);
         if (text) return { content: [...toolEvent.content, { type: "text", text }] };

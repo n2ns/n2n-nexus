@@ -66,7 +66,7 @@ MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`�
 - 用 `--node <path>` 手动指定 Node 路径。路径必须存在、可执行，且版本满足 package.json 的 `engines`（`^22.14.0 || >=23.6.0`），否则 `install` 以退出码 1 退出，不写任何配置。
 - 升级 Node 后：如果 `install` 提示 Node 路径位于带版本号的目录（Homebrew `Cellar`、nvm、fnm、Volta、asdf、`node-v<版本>`），每次升级 Node 后都要重新运行 `n2n-nexus install <claude|codex|pi>`，或用 `--node` 指定稳定路径。
 - 支持 Linux、WSL 和 macOS；Codex hooks 也支持 Windows PowerShell。
-- pi 没有 hook 配置：`install pi` 把扩展 `n2n-nexus.ts` 写进 pi 的全局扩展目录（`~/.pi/agent/extensions`，或 `$PI_CODING_AGENT_DIR/extensions`）。它在 pi 的会话开始、提交提示、工具结果、一轮运行结束和退出时运行 hook 命令，每轮运行结束后启动后台等待；叫醒时把通知作为下一条用户消息发给 pi。pi 调用 MCP 工具时不附带元数据，所以 pi 启动的 MCP 服务器报上它上面的各级进程（pi 经 npx 和 shell 启动它）和所在机器，host 从中找到最近的 pi 进程，取它最近报告的会话。装完后重新启动 pi（或执行 `/reload`）。用户中断的一轮不会被接着跑，`/reload` 不会结束会话。同名的扩展文件如果不是 n2n-nexus 写的，不会被改动：`install pi` 拒绝执行，`uninstall pi` 跳过它。
+- pi 没有 hook 配置：`install pi` 把扩展 `n2n-nexus.ts` 写进 pi 的全局扩展目录（`~/.pi/agent/extensions`，或 `$PI_CODING_AGENT_DIR/extensions`）。它在 pi 的会话开始、提交提示、工具结果（模型自己发起的调用；`codemode` 脚本里的调用由脚本自己的结果覆盖）、一轮运行结束和退出时运行 hook 命令，每轮运行结束后启动后台等待；叫醒时把通知作为下一条用户消息发给 pi。pi 调用 MCP 工具时不附带元数据，所以 pi 启动的 MCP 服务器报上它上面的各级进程（pi 经 npx 和 shell 启动它）和所在机器，host 从中找到最近的 pi 进程，取它最近报告的会话。装完后重新启动 pi（或执行 `/reload`）。用户中断的一轮不会被接着跑，`/reload` 不会结束会话。同名的扩展文件如果不是 n2n-nexus 写的，不会被改动：`install pi` 拒绝执行，`uninstall pi` 跳过它。
 
 ## 4. 启用 Codex 的 hooks（只需一次，必须做）
 
