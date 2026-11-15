@@ -48,4 +48,4 @@ See `docs/ARCHITECTURE.md` for the system design and `host/README.md` for buildi
 
 ## Changelog
 
-User-visible changes should be recorded in `CHANGELOG.md`.
+User-visible changes should be recorded in `CHANGELOG.md` and `docs/CHANGELOG_zh.md`, in the commit that makes them: under `## [Unreleased]` (`## [未发布]` in the Chinese file) at the top, which the commit adds when it is not there. The release commit turns that heading into the version and its date.

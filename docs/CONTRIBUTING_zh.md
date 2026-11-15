@@ -48,4 +48,4 @@ NEXUS_ENDPOINT=http://127.0.0.1:5799 node build/index.js mcp
 
 ## 更新日志
 
-用户可见的变更应记录在 `CHANGELOG.md` 中。
+用户可见的变更应记录在 `CHANGELOG.md` 和 `docs/CHANGELOG_zh.md` 中，并且和改动在同一个提交里：写在顶部的 `## [未发布]`（英文文件里是 `## [Unreleased]`）下面，没有这个章节时由该提交加上。发布提交把这个标题改成版本号和日期。
