@@ -43,6 +43,15 @@ type harness struct {
 	opts   Options
 	// machines: the machine a session reported in its last event, sent again with its later events.
 	machines map[string]any
+	// watch, while a test sets it, is told of each hook event that reaches the coordinator.
+	watch atomic.Pointer[hookWatch]
+}
+
+type hookWatch struct {
+	// arrived gets the request's context when a hook event is about to enter the coordinator.
+	arrived chan context.Context
+	// returned gets a value when the coordinator has answered it.
+	returned chan struct{}
 }
 
 type hostOption func(*Options)
@@ -82,6 +91,17 @@ func (h *harness) open() {
 	h.ag = ag
 	srv := api.New(api.Options{Version: "test", Contract: testContract, Clock: h.clk, RateLimit: 10000, RateBurst: 10000, Logger: o.Logger})
 	ag.Register(srv)
+	srv.SetHook(func(ctx context.Context, client string, input map[string]any) (map[string]any, error) {
+		watch := h.watch.Load()
+		if watch != nil {
+			watch.arrived <- ctx
+		}
+		out, err := ag.Hook(ctx, client, input)
+		if watch != nil {
+			watch.returned <- struct{}{}
+		}
+		return out, err
+	})
 	h.srv = httptest.NewServer(srv)
 }
 

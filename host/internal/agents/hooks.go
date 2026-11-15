@@ -144,11 +144,13 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 			}
 		}
 	}
-	if err := a.expireAll(now); err != nil {
-		return nil, nil, err
-	}
+	// Before the expiry check: what that finds for this session reaches the event itself,
+	// not a background wait that the event ends anyway.
 	if event != "Stop" {
 		a.cancelBackgroundWaits(id)
+	}
+	if err := a.expireAll(now); err != nil {
+		return nil, nil, err
 	}
 	// The client reports the conversation's title with these events only.
 	if event == "SessionStart" || event == "UserPromptSubmit" || event == "Stop" {
@@ -167,6 +169,7 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		text, err := a.introduce(id)
 		return contextOutput("SessionStart", text), nil, err
 	case "UserPromptSubmit":
+		delete(a.toolAnnounced, id)
 		woken := a.userPrompted(id, now)
 		if err := a.setStatus(id, "working"); err != nil {
 			return nil, nil, err
@@ -197,6 +200,7 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 	case "Stop":
 		return a.stop(ctx, id, input)
 	case "SessionEnd":
+		delete(a.toolAnnounced, id)
 		if err := a.setStatus(id, "offline"); err != nil {
 			return nil, nil, err
 		}
@@ -212,6 +216,8 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 
 func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map[string]any, *waiter, error) {
 	now := a.o.Clock.Now()
+	toolAnnounced := a.toolAnnounced[id]
+	delete(a.toolAnnounced, id)
 	if active, _ := input["stop_hook_active"].(bool); !active {
 		// Past the automatic-turn limit, direct messages wait for the user; meeting news still holds the Stop.
 		b, err := a.gather(id, true, !a.autoTurnAllowed(id))
@@ -227,6 +233,13 @@ func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map
 				return nil, nil, err
 			}
 			return blockOutput(text), nil, nil
+		}
+	} else if len(toolAnnounced) > 0 {
+		// The Stop of a continued turn holds nothing, so the messages that only tool calls announced
+		// in it and that are still unread count as not announced: the wait below or the background
+		// wait delivers them, once (that announcement is not a tool call's).
+		if err := a.unmarkUnread(id, toolAnnounced); err != nil {
+			return nil, nil, err
 		}
 	}
 	s, err := getSession(a.db(), id)

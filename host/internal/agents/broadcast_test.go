@@ -206,7 +206,7 @@ func TestBroadcastCleanup(t *testing.T) {
 	id := h.codex("s", "broadcast", map[string]any{"text": "q", "expectsReply": true}).result["broadcastId"].(string)
 	h.codex("r", "reply", map[string]any{"messageId": id, "text": "a"})
 	h.codex("s", "read", nil)
-	// Past the retention, the read delivery and then the broadcast go; the reply keeps its text without the link.
+	// Past the retention, the read delivery, the reply (read at the same time) and then the broadcast go.
 	h.at(8 * 24 * time.Hour)
 	if _, err := h.ag.Cleanup(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -220,4 +220,21 @@ func TestBroadcastCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	eq(t, h.count("SELECT COUNT(*) FROM agent_sessions"), 0)
+}
+
+// A broadcast can go before a reply to it that was read later: the reply keeps its text without the link.
+func TestBroadcastGoesBeforeItsReply(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("codex", "SessionStart", "r")
+	id := h.codex("s", "broadcast", map[string]any{"text": "q", "expectsReply": true}).result["broadcastId"].(string)
+	h.codex("r", "reply", map[string]any{"messageId": id, "text": "a"})
+	h.at(12 * time.Hour)
+	h.codex("s", "read", nil)
+	h.at(7*24*time.Hour + time.Hour)
+	if _, err := h.ag.Cleanup(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, h.count("SELECT COUNT(*) FROM broadcasts"), 0)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE text = 'a' AND reply_to_broadcast IS NULL"), 1)
 }

@@ -82,14 +82,19 @@ func TestIdentityLeavesExpiredBindings(t *testing.T) {
 	h := start(t)
 	h.hook("claude", "SessionStart", "c1")
 	h.hook("claude", "PreToolUse", "c1", map[string]any{"tool_use_id": "toolu_old", "tool_name": "mcp__n2n-nexus__read_messages"})
+	// A call that resolves the session does not refresh it.
+	h.at(time.Minute)
+	id, err := h.identity("", &api.Caller{Client: "claude", ToolUseID: "toolu_old"})
+	if err != nil || id.ID != "claude:c1" {
+		t.Fatalf("bound: %+v %v", id, err)
+	}
+	eq(t, h.session("claude:c1").LastActiveAt, h.ag.iso(h.t0))
 	h.at(time.Duration(testContract.Hook.Timing.ToolUseBindingTtlMs+1) * time.Millisecond)
-	id, err := h.identity("mcp-new", &api.Caller{Client: "claude", ToolUseID: "toolu_old"})
+	id, err = h.identity("mcp-new", &api.Caller{Client: "claude", ToolUseID: "toolu_old"})
 	if err != nil || id.Kind != api.IdentityInstance {
 		t.Fatalf("expired binding: %+v %v", id, err)
 	}
 	eq(t, h.count("SELECT COUNT(*) FROM tool_use_bindings WHERE tool_use_id = 'toolu_old'"), 1)
-	// Nor does it refresh the session.
-	eq(t, h.session("claude:c1").LastActiveAt, h.ag.iso(h.t0))
 }
 
 func TestIdentityFallsBackOnceTheInstanceStopsResolving(t *testing.T) {

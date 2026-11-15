@@ -61,6 +61,9 @@ type Agents struct {
 	// dispatches: the last wake per session whose delivery the client has not reported yet
 	// (WakeResult) and that no real hook event of the session has followed.
 	dispatches map[string]*dispatch
+	// toolAnnounced: per session, the unread messages that may wake it and that only tool
+	// calls announced (markNone) since its last prompt or Stop; see stop.
+	toolAnnounced map[string][]string
 }
 
 // dispatch is one wake handed to a client (backgroundWait), kept so that a
@@ -93,6 +96,9 @@ type waiter struct {
 
 // New returns the agents of a host whose database was just opened. No wait is
 // held yet, so sessions a previous host left listening become idle (and can go stale).
+// The time the host was not running is not time without activity: the sessions
+// that are not offline count as active now, so the first event after a long stop
+// does not set offline the sessions whose clients are about to ask for their waits again.
 func New(o Options) (*Agents, error) {
 	if o.Clock == nil {
 		o.Clock = clock.System{}
@@ -103,13 +109,17 @@ func New(o Options) (*Agents, error) {
 	if _, err := o.Store.DB.Exec("UPDATE agent_sessions SET status = 'idle' WHERE status = 'listening'"); err != nil {
 		return nil, fmt.Errorf("reset listening sessions: %w", err)
 	}
+	if _, err := o.Store.DB.Exec("UPDATE agent_sessions SET last_active_at = ? WHERE status != 'offline'", store.ISO(o.Clock.Now())); err != nil {
+		return nil, fmt.Errorf("refresh sessions: %w", err)
+	}
 	return &Agents{
-		o:          o,
-		closing:    make(chan struct{}),
-		waiters:    map[string][]*waiter{},
-		autoTurns:  map[string]int{},
-		wokenAt:    map[string]time.Time{},
-		dispatches: map[string]*dispatch{},
+		o:             o,
+		closing:       make(chan struct{}),
+		waiters:       map[string][]*waiter{},
+		autoTurns:     map[string]int{},
+		wokenAt:       map[string]time.Time{},
+		dispatches:    map[string]*dispatch{},
+		toolAnnounced: map[string][]string{},
 	}, nil
 }
 
@@ -834,6 +844,15 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 	})
 	if err != nil {
 		return "", err
+	}
+	if mark == markNone {
+		// A tool call's announcement may have reached a sub-agent only: the Stop of a turn
+		// that an earlier Stop continued offers these again (stop).
+		for _, m := range b.messages {
+			if m.Wake {
+				a.toolAnnounced[sessionID] = append(a.toolAnnounced[sessionID], m.ID)
+			}
+		}
 	}
 	return strings.Join(lines, "\n"), nil
 }

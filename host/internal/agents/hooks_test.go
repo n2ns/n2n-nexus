@@ -320,7 +320,8 @@ func TestNoReplyMessageReadOnlyWhenAPromptShowsIt(t *testing.T) {
 	first := h.codex("s", "send", map[string]any{"to": "claude:r", "text": "done with part one", "expectsReply": false}).result["messageId"].(string)
 	contains(t, h.hook("claude", "PostToolUse", "r").context(), "done with part one")
 	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread'", first), 1)
-	// ... and the next prompt counts it, so the conversation can read it.
+	// ... the turn's Stop holds once for it, and the next prompt counts it, so the conversation can read it.
+	contains(t, h.hook("claude", "Stop", "r", stopInactive).str("reason"), fmt.Sprintf(texts.EarlierUnread, 1))
 	h.hook("claude", "Stop", "r", stopActive)
 	second := h.codex("s", "send", map[string]any{"to": "claude:r", "text": "done with part two", "expectsReply": false}).result["messageId"].(string)
 	ctx := h.hook("claude", "UserPromptSubmit", "r").context()
@@ -382,6 +383,22 @@ func TestBackgroundWaitWakes(t *testing.T) {
 		t.Fatalf("prompt after the wake: %v", out)
 	}
 	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
+}
+
+// The woken turn's prompt adds nothing either when the wake left its message unread (it was cut).
+func TestWokenPromptDoesNotCountWhatTheWakeAnnounced(t *testing.T) {
+	h := start(t, listenWait(5*time.Second))
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "Stop", "r", stopInactive)
+	waiting := h.openHook("claude", texts0BackgroundWait(), "r")
+	h.untilStatus("claude:r", "listening")
+	id := h.send("s", "claude:r", strings.Repeat("y", testContract.Hook.Limits.NotifyTextChars+10), false)
+	contains(t, waiting.wait(t).str("wake"), texts.ReadRest)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread'", id), 1)
+	if out := h.hook("claude", "UserPromptSubmit", "r"); out != nil {
+		t.Fatalf("woken prompt repeated the wake: %v", out)
+	}
 }
 
 func texts0BackgroundWait() string { return testContract.Hook.BackgroundWaitEvent }
@@ -505,6 +522,97 @@ func TestBackgroundWaitDoesNotKeepAWorkingSessionAlive(t *testing.T) {
 	eq(t, h.status("codex:r"), "offline")
 }
 
+// A session's own event ends its background wait before the expiry check runs:
+// what that check finds reaches the event itself, not a wake nobody asked for.
+func TestOwnEventEndsTheBackgroundWaitBeforeTheExpiryCheck(t *testing.T) {
+	h := start(t, listenWait(time.Minute), maxTurns(1))
+	h.hook("codex", "SessionStart", "w")
+	h.hook("claude", "SessionStart", "t")
+	h.hook("claude", "UserPromptSubmit", "t") // working, then never heard of again
+	h.send("w", "claude:t", "task", true)
+	h.hook("codex", "Stop", "w", stopActive)
+	waiting := h.openHook("codex", texts0BackgroundWait(), "w")
+	h.untilStatus("codex:w", "listening")
+	h.at(ms(timing.StaleSessionMs) + time.Second)
+	// w's own prompt is the first event to find t stale.
+	ctx := h.hook("codex", "UserPromptSubmit", "w").context()
+	if out := waiting.wait(t); out != nil {
+		t.Fatalf("the session's own prompt woke its background wait: %v", out)
+	}
+	contains(t, ctx, "claude@proj#t (claude:t) went offline.")
+	h.ag.mu.Lock()
+	turns := h.ag.autoTurns["codex:w"]
+	h.ag.mu.Unlock()
+	eq(t, turns, 0) // the user's prompt is no automatic turn
+}
+
+// A message that only a tool call announced during a turn its Stop continued
+// (the context may have been a sub-agent's) is offered again when that turn ends.
+func TestContinuedTurnOffersToolAnnouncedMessagesAgain(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "UserPromptSubmit", "r")
+	h.send("s", "claude:r", "first", false)
+	eq(t, h.hook("claude", "Stop", "r", stopInactive).str("decision"), "block") // the turn continues
+	id := h.send("s", "claude:r", "second", false)
+	contains(t, h.hook("claude", "PostToolUse", "r").context(), "second")
+	// The Stop of a continued turn holds nothing; the background wait delivers the message as new.
+	if out := h.hook("claude", "Stop", "r", stopActive); out != nil {
+		t.Fatal(out)
+	}
+	wake := h.openHook("claude", texts0BackgroundWait(), "r").wait(t).str("wake")
+	contains(t, wake, prefix+" 1 new direct message:")
+	contains(t, wake, "second")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'read'", id), 1)
+}
+
+func TestContinuedTurnOffersToolAnnouncedMessagesAgainWhileListening(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("codex", "SessionStart", "r")
+	h.codex("r", "listen", map[string]any{"on": true})
+	h.hook("codex", "UserPromptSubmit", "r")
+	h.send("s", "codex:r", "first", false)
+	eq(t, h.hook("codex", "Stop", "r", stopInactive).str("decision"), "block")
+	h.send("s", "codex:r", "second", false)
+	contains(t, h.hook("codex", "PostToolUse", "r").context(), "second")
+	held := h.hook("codex", "Stop", "r", stopActive)
+	eq(t, held.str("decision"), "block")
+	contains(t, held.str("reason"), "second")
+	// Shown whole in the text that drives the turn: read, so the next Stop only waits.
+	if out := h.hook("codex", "Stop", "r", stopActive); out != nil {
+		t.Fatal(out)
+	}
+}
+
+// Offered again once: a message that is still unread after that (cut in the
+// wake) is not offered a second time.
+func TestToolAnnouncedMessageIsOfferedAgainOnce(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "s")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "UserPromptSubmit", "r")
+	h.send("s", "claude:r", "first", false)
+	eq(t, h.hook("claude", "Stop", "r", stopInactive).str("decision"), "block")
+	big := strings.Repeat("y", testContract.Hook.Limits.NotifyTextChars+10)
+	id := h.send("s", "claude:r", big, false)
+	contains(t, h.hook("claude", "PostToolUse", "r").context(), texts.ReadRest)
+	h.hook("claude", "Stop", "r", stopActive)
+	contains(t, h.openHook("claude", texts0BackgroundWait(), "r").wait(t).str("wake"), texts.ReadRest)
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread' AND notified_at IS NOT NULL", id), 1)
+	// The woken turn: its prompt, a Stop that holds once for the unread message (as for any), and its end.
+	h.hook("claude", "UserPromptSubmit", "r")
+	contains(t, h.hook("claude", "Stop", "r", stopInactive).str("reason"), fmt.Sprintf(texts.EarlierUnread, 1))
+	if out := h.hook("claude", "Stop", "r", stopActive); out != nil {
+		t.Fatal(out)
+	}
+	if out := h.openHook("claude", texts0BackgroundWait(), "r").wait(t); out["timeout"] != true {
+		t.Fatalf("offered a second time: %v", out)
+	}
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE id = ? AND status = 'unread' AND notified_at IS NOT NULL", id), 1)
+}
+
 func TestBackgroundWaitUnknownSession(t *testing.T) {
 	h := start(t)
 	if out := h.hook("claude", texts0BackgroundWait(), "nobody"); out != nil {
@@ -601,10 +709,13 @@ func TestAutoTurnLimitListeningStop(t *testing.T) {
 	h.untilStatus("codex:r", "listening")
 	h.send("s", "codex:r", "one", false)
 	contains(t, first.wait(t).str("reason"), "Automatic turn 1 of 1")
+	// The limit is reached: the next listening Stop only waits; the message stays unread and not announced.
+	h.send("s", "codex:r", "two", false)
 	if out := h.hook("codex", "Stop", "r", stopActive); out != nil {
-		t.Fatal(out)
+		t.Fatalf("past the limit the listening Stop was held again: %v", out)
 	}
 	eq(t, h.status("codex:r"), "idle")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'unread' AND notified_at IS NULL"), 1)
 }
 
 func TestNoAutoTurnLimit(t *testing.T) {
@@ -761,6 +872,27 @@ func TestRestartResetsListening(t *testing.T) {
 	h.at(ms(timing.StaleSessionMs) + time.Second)
 	h.hook("codex", "SessionStart", "other")
 	eq(t, h.status("codex:r"), "offline")
+}
+
+// A host that was stopped for longer than the stale limit: every session whose
+// client kept asking for its background wait waits again, not only the first to come back.
+func TestRestartAfterALongStopKeepsTheWaitingSessions(t *testing.T) {
+	h := start(t, listenWait(time.Minute))
+	h.hook("codex", "SessionStart", "s")
+	h.hook("codex", "SessionStart", "a")
+	h.hook("codex", "SessionStart", "b")
+	h.hook("codex", "Stop", "a", stopInactive)
+	h.hook("codex", "Stop", "b", stopInactive)
+	h.stop()
+	h.at(ms(timing.StaleSessionMs) + time.Minute)
+	h.open()
+	h.openHook("codex", texts0BackgroundWait(), "a")
+	h.untilStatus("codex:a", "listening")
+	eq(t, h.status("codex:b"), "idle") // the time the host was down is not time without activity
+	waiting := h.openHook("codex", texts0BackgroundWait(), "b")
+	h.untilStatus("codex:b", "listening")
+	h.send("s", "codex:b", "after the restart", false)
+	contains(t, waiting.wait(t).str("wake"), "after the restart")
 }
 
 func TestCloseEndsHeldWaits(t *testing.T) {

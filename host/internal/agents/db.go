@@ -476,6 +476,18 @@ func (a *Agents) unmarkNotified(sessionID string, messageIDs []string, noticeIDs
 	})
 }
 
+// unmarkUnread marks those of the messages that are still unread as not notified again.
+func (a *Agents) unmarkUnread(sessionID string, messageIDs []string) error {
+	return a.tx(func(tx *sql.Tx) error {
+		for _, id := range messageIDs {
+			if err := updateItem(tx, sessionID, id, "notified_at = NULL", "status = 'unread'"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // readUnread returns the oldest count unread messages, marked read, and the unread count left.
 func (a *Agents) readUnread(toID string, count int, now time.Time) ([]*message, int, error) {
 	var messages []*message
