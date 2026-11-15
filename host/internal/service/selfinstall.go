@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,42 +25,68 @@ type SelfInstallOptions struct {
 // Programs `install` copies on Windows: the console build and the tray build.
 var installedPrograms = []string{"n2n-nexus-host.exe", "n2n-nexus-host-tray.exe"}
 
-// ReplacePrograms copies names from srcDir to dstDir. A program already in
-// dstDir is renamed to <name>.old first, which Windows allows while it runs,
-// and a leftover .old from an earlier install that no longer runs is removed;
-// one that still runs stays, and this rename gets a timestamped name instead.
+// ReplacePrograms copies names from srcDir to dstDir, all of them or none:
+// the programs of one release work together. A program already in dstDir is
+// renamed to <name>.old first, which Windows allows while it runs, and a
+// leftover .old from an earlier install that no longer runs is removed; one
+// that still runs stays, and this rename gets a timestamped name instead.
 func ReplacePrograms(srcDir, dstDir string, names []string) error {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return err
 	}
+	defer func() {
+		for _, name := range names {
+			os.Remove(filepath.Join(dstDir, name) + ".new")
+		}
+	}()
+	// Copy all of them first, so a failed copy leaves the installed programs in place.
 	for _, name := range names {
-		dst := filepath.Join(dstDir, name)
-		// Copy first, so a failed copy leaves the installed program in place.
-		if err := copyFile(filepath.Join(srcDir, name), dst+".new"); err != nil {
-			os.Remove(dst + ".new")
+		if err := copyFile(filepath.Join(srcDir, name), filepath.Join(dstDir, name)+".new"); err != nil {
 			return fmt.Errorf("copy %s: %w", name, err)
 		}
-		if err := os.Remove(dst + ".old"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	}
+	// Then put them in place; when one cannot be, the ones already replaced are put back.
+	type replaced struct{ dst, aside string } // aside "": no program was installed under dst
+	var done []replaced
+	for _, name := range names {
+		dst := filepath.Join(dstDir, name)
+		aside := dst + ".old"
+		if err := os.Remove(aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			// Still running (or locked): keep it, move the current one aside under another name.
-			if err := moveAside(dst, dst+"."+strconv.FormatInt(time.Now().UnixNano(), 36)+".old"); err != nil {
-				return err
-			}
-		} else if err := moveAside(dst, dst+".old"); err != nil {
-			return err
+			aside = dst + "." + strconv.FormatInt(time.Now().UnixNano(), 36) + ".old"
 		}
-		if err := os.Rename(dst+".new", dst); err != nil {
+		moved, err := moveAside(dst, aside)
+		if err == nil {
+			if !moved {
+				aside = ""
+			}
+			done = append(done, replaced{dst, aside})
+			err = renameFile(dst+".new", dst)
+		}
+		if err != nil {
+			for _, r := range slices.Backward(done) {
+				if r.aside == "" {
+					os.Remove(r.dst)
+				} else {
+					os.Rename(r.aside, r.dst)
+				}
+			}
 			return err
 		}
 	}
 	return nil
 }
 
-// moveAside renames file to aside when it exists.
-func moveAside(file, aside string) error {
-	if err := os.Rename(file, aside); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+// renameFile puts a copied program in place; tests replace it.
+var renameFile = os.Rename
+
+// moveAside renames file to aside and reports whether file existed.
+func moveAside(file, aside string) (bool, error) {
+	err := os.Rename(file, aside)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
 	}
-	return nil
+	return err == nil, err
 }
 
 func copyFile(src, dst string) error {
@@ -79,11 +106,14 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// removeLeftovers deletes the .old programs of earlier installs that no longer run.
+// removeLeftovers deletes the .old programs of earlier installs that no longer
+// run: <program>.old and <program>.<time>.old (see ReplacePrograms), nothing else in dir.
 func removeLeftovers(dir string) {
-	olds, _ := filepath.Glob(filepath.Join(dir, "*.old"))
-	for _, old := range olds {
-		_ = os.Remove(old)
+	for _, name := range installedPrograms {
+		olds, _ := filepath.Glob(filepath.Join(dir, name+".*.old"))
+		for _, old := range append(olds, filepath.Join(dir, name+".old")) {
+			_ = os.Remove(old)
+		}
 	}
 }
 

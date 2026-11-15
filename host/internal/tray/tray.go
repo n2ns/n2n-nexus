@@ -27,6 +27,9 @@ const refreshInterval = 5 * time.Second
 // restartWait bounds how long a restart in controller mode waits for the service to answer again.
 var restartWait = 20 * time.Second
 
+// notify shows the user a message outside the menu (notice); tests replace it.
+var notify = notice
+
 type app struct {
 	o      Options
 	t      texts
@@ -264,7 +267,7 @@ func (a *app) refresh() {
 func (a *app) open(dir string) {
 	if err := openFolder(dir); err != nil {
 		a.logger.Printf("open %s: %v", dir, err)
-		go notice(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
+		go notify(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
 	}
 }
 
@@ -282,12 +285,12 @@ func (a *app) restartHost() {
 	}
 	info, err := host.ReadLock(a.o.DataDir)
 	if err != nil || !info.Held || info.Supervisor == 0 {
-		go notice(a.t.Tooltip, a.t.RestartNoControl)
+		go notify(a.t.Tooltip, a.t.RestartNoControl)
 		return
 	}
 	if err := host.RequestRestart(a.o.DataDir); err != nil {
 		a.logger.Printf("restart request: %v", err)
-		go notice(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
+		go notify(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
 		return
 	}
 	a.logger.Printf("asked serve PID %d to restart; its supervisor starts it again", info.PID)
@@ -301,7 +304,7 @@ func (a *app) restartHost() {
 	if addr == "" {
 		a.lastErr = errors.New(a.t.ServiceDown)
 		a.logger.Printf("the service did not answer within %s of the restart", restartWait)
-		go notice(a.t.Tooltip, fmt.Sprintf(a.t.ServiceNotBack, int(restartWait/time.Second)))
+		go notify(a.t.Tooltip, fmt.Sprintf(a.t.ServiceNotBack, int(restartWait/time.Second)))
 		return
 	}
 	a.external, a.lastErr = addr, nil
@@ -338,7 +341,7 @@ func (a *app) toggleLAN() {
 	s, err := setLAN(a.o.DataDir, on)
 	if err != nil {
 		a.logger.Print(err)
-		go notice(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
+		go notify(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
 		a.refresh()
 		return
 	}
@@ -346,10 +349,10 @@ func (a *app) toggleLAN() {
 	a.logger.Printf("settings: host %s", s.Host)
 	if on {
 		if lanNeedsNotice {
-			go notice(a.t.Tooltip, fmt.Sprintf(a.t.FirewallNotice, s.Port, s.DiscoveryPort))
+			go notify(a.t.Tooltip, fmt.Sprintf(a.t.FirewallNotice, s.Port, s.DiscoveryPort))
 		} else if err := allowLAN(s.Port, s.DiscoveryPort); err != nil {
 			a.logger.Printf("firewall: %v", err)
-			go notice(a.t.Tooltip, fmt.Sprintf(a.t.FirewallFailed, s.Port, s.DiscoveryPort, err))
+			go notify(a.t.Tooltip, fmt.Sprintf(a.t.FirewallFailed, s.Port, s.DiscoveryPort, err))
 		}
 	}
 	a.restartHost()
@@ -363,7 +366,7 @@ func (a *app) toggleAutostart() {
 	where, err := service.SetAutostart(a.o.Exe, on)
 	if err != nil {
 		a.logger.Printf("autostart %s: %v", where, err)
-		go notice(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
+		go notify(a.t.Tooltip, fmt.Sprintf(a.t.Error, err))
 	}
 	a.refresh()
 }

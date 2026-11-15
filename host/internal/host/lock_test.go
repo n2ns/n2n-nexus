@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/n2ns/n2n-nexus/host/internal/config"
@@ -50,6 +51,8 @@ func TestStartRefusesASecondHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	stop := sync.OnceFunc(h.Stop)
+	t.Cleanup(stop) // a failed check below does not leave the host running
 	if info, _ := ReadLock(dir); !info.Held || info.PID != os.Getpid() || info.Role != RoleServe {
 		t.Fatalf("lock while running: %+v", info)
 	}
@@ -59,7 +62,7 @@ func TestStartRefusesASecondHost(t *testing.T) {
 	if _, err := Start(opts); err == nil || !strings.Contains(err.Error(), "another n2n-nexus-host is running for "+dir) {
 		t.Fatalf("second Start: %v", err)
 	}
-	h.Stop()
+	stop()
 	h2, err := Start(opts)
 	if err != nil {
 		t.Fatalf("Start after Stop: %v", err)

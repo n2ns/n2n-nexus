@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"encoding/xml"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -108,6 +109,20 @@ func TestWindowsFirewallScript(t *testing.T) {
 	)
 }
 
+// PowerShell ends a single-quoted string at ' and at the curly quotes U+2018, U+2019, U+201A and U+201B alike.
+func TestPSQuoteDoublesEveryQuoteCharacter(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\Users\O'Brien`:        `'C:\Users\O''Brien'`,
+		"C:\\Users\\O\u2019Brien": "'C:\\Users\\O\u2019\u2019Brien'",
+		"\u2018a\u201Ab\u201B":    "'\u2018\u2018a\u201A\u201Ab\u201B\u201B'",
+		`plain`:                   `'plain'`,
+	} {
+		if got := psQuote(in); got != want {
+			t.Errorf("psQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestWindowsInstallScripts(t *testing.T) {
 	mustContain(t, WindowsTaskActionScript(), "Get-ScheduledTask -TaskName 'n2n-nexus-host'", "$task.Actions[0].Execute", "$task.Actions[0].Arguments")
 	s := WindowsElevatedScript(`C:\Program's\n2n-nexus-host.exe`, []string{"service", "install"}, `C:\Temp\out.log`)
@@ -130,8 +145,11 @@ func plistStrings(t *testing.T, s string) []string {
 	inString := false
 	for {
 		tok, err := d.Token()
-		if err != nil {
+		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			t.Fatalf("the plist is not well-formed XML: %v", err)
 		}
 		switch v := tok.(type) {
 		case xml.StartElement:

@@ -126,6 +126,9 @@ func refuseTray(dataDir string) error {
 	return fmt.Errorf("the n2n-nexus-host tray (PID %d) runs the host for %s: quit the n2n-nexus-host tray first; after the service starts, the tray can be opened again and will control it", info.PID, dataDir)
 }
 
+// stopPID asks a process to end; tests replace it.
+var stopPID = StopPID
+
 // StopLockHolder stops the host holding dataDir's lock, by the PIDs it
 // recorded there (its supervisor first, so it is not restarted), and waits
 // until the lock is free. It never stops a tray (see refuseTray).
@@ -141,7 +144,7 @@ func StopLockHolder(dataDir string, out io.Writer) error {
 		if pid <= 0 {
 			continue
 		}
-		if err := StopPID(pid); err != nil {
+		if err := stopPID(pid); err != nil {
 			fmt.Fprintf(out, "Could not stop PID %d: %v\n", pid, err)
 		} else {
 			fmt.Fprintf(out, "Stopped n2n-nexus-host PID %d.\n", pid)
@@ -227,13 +230,7 @@ func Install(o Options) error {
 	if err := register(t, o.Out); err != nil {
 		return err
 	}
-	for i := 0; i < 50; i++ {
-		info, _ := host.ReadLock(t.dataDir)
-		if _, ok := Probe(HealthAddr(s.Host, s.Port), 500*time.Millisecond); ok && info.Held {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	awaitHost(t.dataDir, HealthAddr(s.Host, s.Port), 50)
 	if !describeRunning(o.Out, t, s) {
 		fmt.Fprintf(o.Out, "See %s.\n", host.LogFile(t.logDir))
 	}
@@ -241,6 +238,24 @@ func Install(o Options) error {
 		fmt.Fprintf(o.Out, "Other machines reach it only if the firewall allows TCP %d and UDP %d (discovery) from them.\n", s.Port, s.DiscoveryPort)
 	}
 	return nil
+}
+
+// readLock reads a data directory's lock; tests replace it.
+var readLock = host.ReadLock
+
+// awaitHost waits, for up to tries rounds of 200 ms, until a host answers on
+// addr and holds dataDir's lock. The lock is read only once a host answers:
+// reading takes it for a moment, which a serve that is just starting would
+// find taken (it would exit, and start again 5 s later).
+func awaitHost(dataDir, addr string, tries int) {
+	for i := 0; i < tries; i++ {
+		if _, ok := Probe(addr, 500*time.Millisecond); ok {
+			if info, _ := readLock(dataDir); info.Held {
+				return
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // Uninstall removes the service and stops the service's host still running for the data directory.

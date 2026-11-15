@@ -97,10 +97,11 @@ func TestSuperviseStopsTheChildWhenSignalled(t *testing.T) {
 		t.Fatal("child did not start")
 	}
 	cancel()
+	// Well under the 10 s after which Supervise kills a child that ignored the request to end.
 	select {
 	case <-done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("Supervise did not return")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Supervise did not return: the child was not asked to end")
 	}
 	if runtime.GOOS != "windows" {
 		p, _ := os.FindProcess(pid)

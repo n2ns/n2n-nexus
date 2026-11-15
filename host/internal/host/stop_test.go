@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,8 @@ func TestStopAnswersHeldHooks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			stop := sync.OnceFunc(h.Stop)
+			t.Cleanup(stop) // a failed step below does not leave the host running
 			base := fmt.Sprintf("http://%s", h.Addr)
 			post := func(path string, body any) (*http.Response, error) {
 				raw, _ := json.Marshal(body)
@@ -76,12 +79,11 @@ func TestStopAnswersHeldHooks(t *testing.T) {
 					break
 				}
 				if time.Now().After(deadline) {
-					h.Stop()
 					t.Fatal("hook was not held")
 				}
 				time.Sleep(5 * time.Millisecond)
 			}
-			h.Stop()
+			stop()
 			select {
 			case r := <-done:
 				if r.err != nil || r.status != 200 || r.body != tc.want {

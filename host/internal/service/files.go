@@ -31,8 +31,11 @@ func ServeArgs(dataDir, logDir string) []string {
 
 // ---- PowerShell (Windows) ----
 
-// psQuote is a PowerShell single-quoted string literal.
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+// psQuote is a PowerShell single-quoted string literal. PowerShell ends one
+// at the curly quotes too (a user folder such as O’Brien), so each is doubled like '.
+func psQuote(s string) string { return "'" + psQuotes.Replace(s) + "'" }
+
+var psQuotes = strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛")
 
 // EncodePowerShell is the -EncodedCommand form of script (UTF-16LE, base64).
 func EncodePowerShell(script string) string {

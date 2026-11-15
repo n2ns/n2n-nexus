@@ -12,7 +12,7 @@ import (
 	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 )
 
-// Hooks are limited per session only: tool calls that used up the address budget do not block them.
+// Hooks are limited per session and per address in buckets of their own: tool calls that used up their address budget do not block them.
 func TestHooksDoNotShareTheAddressBucket(t *testing.T) {
 	contract, err := protocol.Load()
 	if err != nil {

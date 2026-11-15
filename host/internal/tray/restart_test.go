@@ -4,6 +4,7 @@ package tray
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -39,6 +40,8 @@ func TestMain(m *testing.M) {
 		_ = http.ListenAndServe("127.0.0.1:"+port, nil)
 		os.Exit(4)
 	}
+	// No test shows a dialog or a desktop notification on the machine it runs on.
+	notify = func(string, string) {}
 	os.Exit(m.Run())
 }
 
@@ -91,6 +94,9 @@ func serviceSettings(t *testing.T, dir string) config.Settings {
 func TestControllerRestartNeverHostsInProcess(t *testing.T) {
 	restartWait = time.Second
 	t.Cleanup(func() { restartWait = 20 * time.Second })
+	told, silent := make(chan string, 1), notify
+	notify = func(_, msg string) { told <- msg }
+	t.Cleanup(func() { notify = silent })
 	dir := t.TempDir()
 	s := serviceSettings(t, dir)
 	_, exited := fakeService(t, dir, s)
@@ -110,6 +116,45 @@ func TestControllerRestartNeverHostsInProcess(t *testing.T) {
 	}
 	if info, _ := host.ReadLock(dir); info.Held {
 		t.Fatal("the lock is held after the restart")
+	}
+	select {
+	case msg := <-told:
+		if want := fmt.Sprintf(english.ServiceNotBack, 1); msg != want {
+			t.Fatalf("the user was told %q, want %q", msg, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the user was not told that the service did not come back")
+	}
+}
+
+// The status line says whether and where the host runs; the line under it
+// is the address a controlling tray's service listens on (from settings, not
+// the loopback address the tray probes a LAN host on), or the error.
+func TestStatusAndAddressLines(t *testing.T) {
+	s := config.Defaults()
+	s.Host = "0.0.0.0"
+	a := &app{t: chinese, external: "127.0.0.1:5688", settings: s}
+	if got, want := a.statusTitle(), "运行中 · 后台服务"; got != want {
+		t.Fatalf("status: got %q, want %q", got, want)
+	}
+	if got, want := a.addressTitle(), "http://0.0.0.0:5688"; got != want {
+		t.Fatalf("address: got %q, want %q", got, want)
+	}
+	s.Host = "127.0.0.1"
+	a.settings = s
+	if got, want := a.addressTitle(), "http://127.0.0.1:5688"; got != want {
+		t.Fatalf("address: got %q, want %q", got, want)
+	}
+	// The service stopped answering: the status says so and the error takes the address line.
+	a.lastErr = errors.New(chinese.ServiceDown)
+	if got, want := a.statusTitle(), "未运行"; got != want {
+		t.Fatalf("stopped status: got %q, want %q", got, want)
+	}
+	if got, want := a.addressTitle(), "后台服务无响应"; got != want {
+		t.Fatalf("stopped address: got %q, want %q", got, want)
+	}
+	if a.addressURL() != "" {
+		t.Fatalf("stopped URL: %q", a.addressURL())
 	}
 }
 

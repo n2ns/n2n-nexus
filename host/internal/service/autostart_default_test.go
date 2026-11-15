@@ -8,8 +8,8 @@ import (
 // The tray starts at login by default: the first run turns it on, later runs
 // leave the user's choice alone.
 func TestAutostartDefaultsOnOnce(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("uses the Linux autostart file under a temporary HOME")
+	if runtime.GOOS == "windows" {
+		t.Skip("start at login is a registry value on Windows, not a file under a temporary HOME")
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -32,8 +32,8 @@ func TestAutostartDefaultsOnOnce(t *testing.T) {
 
 // An explicit `autostart on|off` before the first tray run is the user's choice: the tray keeps it.
 func TestAutostartChoiceBeforeFirstTrayRun(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("uses the Linux autostart file under a temporary HOME")
+	if runtime.GOOS == "windows" {
+		t.Skip("start at login is a registry value on Windows, not a file under a temporary HOME")
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", "")

@@ -2,6 +2,7 @@ package service
 
 import (
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -129,30 +130,85 @@ func TestUninstallLeavesATrayRunning(t *testing.T) {
 // HealthAddr reaches a host bound to the wildcard of either family (each binds its own family only).
 func TestHealthAddrReachesTheHost(t *testing.T) {
 	for _, bind := range []string{"0.0.0.0", "::"} {
-		s := config.Defaults()
-		s.Host, s.Port, s.DiscoveryPort = bind, 0, 0
-		h, err := host.Start(host.Options{Version: "test", DataDir: t.TempDir(), Settings: s, Logger: host.NewLogger(io.Discard)})
-		if err != nil {
-			t.Fatalf("%s: %v", bind, err)
-		}
-		addr := HealthAddr(bind, h.Addr.Port)
-		_, ok := Probe(addr, time.Second)
-		h.Stop()
-		if !ok {
-			t.Errorf("host bound to %s does not answer on %s", bind, addr)
-		}
+		t.Run(bind, func(t *testing.T) {
+			if bind == "::" {
+				ln, err := net.Listen("tcp6", "[::1]:0")
+				if err != nil {
+					t.Skipf("this machine has no IPv6 loopback: %v", err)
+				}
+				ln.Close()
+			}
+			s := config.Defaults()
+			s.Host, s.Port, s.DiscoveryPort = bind, 0, 0
+			h, err := host.Start(host.Options{Version: "test", DataDir: t.TempDir(), Settings: s, Logger: host.NewLogger(io.Discard)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := HealthAddr(bind, h.Addr.Port)
+			_, ok := Probe(addr, time.Second)
+			h.Stop()
+			if !ok {
+				t.Errorf("host bound to %s does not answer on %s", bind, addr)
+			}
+		})
+	}
+}
+
+// Reading the lock takes it for a moment, which a serve that is just starting
+// would find taken: after the service is registered, the lock is read only once a host answers.
+func TestAwaitHostReadsTheLockOnlyOnceAHostAnswers(t *testing.T) {
+	reads := 0
+	readLock = func(dir string) (host.LockInfo, error) { reads++; return host.ReadLock(dir) }
+	t.Cleanup(func() { readLock = host.ReadLock })
+
+	closed := httptest.NewServer(http.NotFoundHandler())
+	nobody := strings.TrimPrefix(closed.URL, "http://")
+	closed.Close()
+	awaitHost(t.TempDir(), nobody, 2)
+	if reads != 0 {
+		t.Fatalf("the lock was read %d time(s) while no host answered", reads)
+	}
+
+	// A host answers and holds the lock: one read, no waiting.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true,"service":"n2n-nexus","version":"1","sessions":{"online":0}}`)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	l, err := host.AcquireLock(dir, os.Getpid(), 0, host.RoleSupervised)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Release()
+	started := time.Now()
+	awaitHost(dir, strings.TrimPrefix(srv.URL, "http://"), 50)
+	if reads != 1 || time.Since(started) > 5*time.Second {
+		t.Fatalf("answering host: %d lock read(s) in %s", reads, time.Since(started))
 	}
 }
 
 func TestStopLockHolderWithoutHolder(t *testing.T) {
+	var stopped []int
+	stopPID = func(pid int) error { stopped = append(stopped, pid); return nil }
+	t.Cleanup(func() { stopPID = StopPID })
 	dir := t.TempDir()
 	if err := StopLockHolder(dir, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	// A released lock with a stale record stops nothing.
-	l, _ := host.AcquireLock(dir, 1, 1, host.RoleSupervised)
+	// A released lock with a stale record stops nothing: its PIDs may be other processes by now.
+	// (PIDs no system assigns, so nothing is signalled even if this fails.)
+	l, err := host.AcquireLock(dir, 1<<30, 1<<30+1, host.RoleSupervised)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l.Release()
+	if info, _ := host.ReadLock(dir); info.Held || info.PID != 1<<30 || info.Supervisor != 1<<30+1 {
+		t.Fatalf("stale record: %+v", info)
+	}
 	if err := StopLockHolder(dir, io.Discard); err != nil {
 		t.Fatal(err)
+	}
+	if len(stopped) != 0 {
+		t.Fatalf("stopped %v from the record of a lock nobody holds", stopped)
 	}
 }
