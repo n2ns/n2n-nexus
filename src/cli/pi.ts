@@ -90,6 +90,8 @@ export default function (pi: ExtensionAPI) {
     let cwd = "";
     let alive = true;
     let wait: ChildProcess | undefined;
+    /** A later turn ended while the previous wait was still finishing or retrying. */
+    let restartWait = false;
     /** The Stop hook under way, if any: the session end waits for it, or ends it. */
     let stopping: { child?: ChildProcess; done: Promise<unknown> } | undefined;
     /**
@@ -103,7 +105,11 @@ export default function (pi: ExtensionAPI) {
 
     /** Start the background wait for this session; a wake it prints is sent to pi as the next user message. */
     function startWait(): void {
-        stopWait();
+        if (wait) {
+            restartWait = true;
+            return;
+        }
+        restartWait = false;
         let child: ChildProcess;
         try {
             child = spawn(NODE, [ENTRY, ...hookArgs("--wait", "--session", sessionId)], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
@@ -113,16 +119,18 @@ export default function (pi: ExtensionAPI) {
         let stderr = "";
         child.stderr.on("data", (chunk) => (stderr += chunk));
         child.on("error", () => { if (wait === child) wait = undefined; });
-        child.on("exit", (code) => {
+        child.on("close", (code) => {
             if (wait !== child) return;
             wait = undefined;
             // Exit code 2: the wait handed over a wake (its text is on stderr); anything else is nothing to deliver.
             if (code === 2 && stderr.trim()) pi.sendUserMessage(stderr.replace(/\\s+$/, ""), { deliverAs: "followUp" });
+            if (restartWait) startWait();
         });
         wait = child;
     }
 
     function stopWait(): void {
+        restartWait = false;
         const child = wait;
         wait = undefined;
         child?.kill();
@@ -167,7 +175,9 @@ export default function (pi: ExtensionAPI) {
 
     pi.on("before_agent_start", async (startEvent) => {
         if (!sessionId || startEvent.messageType !== "user") return;
-        stopWait();
+        // The host ends a pending wait on this hook. A wake already in its pipe must
+        // finish delivery, even if this run ends before the pipe closes.
+        restartWait = false;
         if (continued) return;
         const result = await run(hookArgs(), event("UserPromptSubmit"), HOOK_TIMEOUT_MS);
         const text = contextOf(result);

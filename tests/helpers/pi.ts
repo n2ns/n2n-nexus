@@ -32,6 +32,9 @@ export function piKit(host: Host, endSessions: () => Promise<void>, folder: stri
     let register: (pi: unknown) => void = () => { throw new Error("extension not loaded"); };
     const pis: FakePi[] = [];
     const ended: Promise<void>[] = [];
+    const running = new Set<childProcess.ChildProcess>();
+    const waiting = new Set<childProcess.ChildProcess>();
+    let onWaitOutput: (() => void) | undefined;
     const codexHome = process.env.CODEX_HOME;
 
     beforeAll(async () => {
@@ -46,6 +49,14 @@ export function piKit(host: Host, endSessions: () => Promise<void>, folder: stri
             ...childProcess,
             spawn: (command: string, args: string[], options: childProcess.SpawnOptions) => {
                 const child = childProcess.spawn(command, args, options);
+                running.add(child);
+                if (args.includes("--wait")) waiting.add(child);
+                child.once("close", () => { running.delete(child); waiting.delete(child); });
+                if (args.includes("--wait")) child.stderr?.once("data", () => {
+                    const callback = onWaitOutput;
+                    onWaitOutput = undefined;
+                    callback?.();
+                });
                 ended.push(new Promise((resolve) => { child.once("close", () => resolve()); child.once("error", () => resolve()); }));
                 return child;
             }
@@ -55,6 +66,7 @@ export function piKit(host: Host, endSessions: () => Promise<void>, folder: stri
         register = (pi) => mod.default(pi);
     });
     afterEach(async () => {
+        onWaitOutput = undefined;
         for (const pi of pis.splice(0)) await pi.emit("session_shutdown", { reason: "quit" }, pi.shutdownCtx);
         await endSessions();
     });
@@ -63,7 +75,9 @@ export function piKit(host: Host, endSessions: () => Promise<void>, folder: stri
         else process.env.CODEX_HOME = codexHome;
         fs.rmSync(tmp, { recursive: true, force: true });
     });
-    const hooks = { started: () => ended.length, done: async () => { await Promise.all(ended); } };
+    const hooks = { started: () => ended.length, done: async () => { await Promise.all(ended); },
+        waiting: () => waiting.size, runningHooks: () => running.size - waiting.size,
+        onWaitOutput: (callback: () => void) => { onWaitOutput = callback; } };
 
     function fakePi(): FakePi {
         const handlers = new Map<string, Handler[]>();

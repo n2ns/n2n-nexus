@@ -10,6 +10,9 @@ Upgrade the client, then run `n2n-nexus install pi` again and start a new pi ses
 
 ### Fixed
 
+- pi: a wake already handed to its background process is delivered even when a user prompt or a later wait starts before that process exits.
+- Meeting news announced only by a tool during a continued turn is offered again to an active member by its listening or background wait; messages already read are not repeated.
+
 - pi: a message that arrives during a run is announced with the result of the tool call the model made. Before, the announcement was added to the first tool result after it, also when that was a call another tool made: pi runs MCP tools from `codemode` scripts by default, and the model sees such a result only as far as the script returns it, so the message stayed unread until the end of the run.
 
 ### Documentation

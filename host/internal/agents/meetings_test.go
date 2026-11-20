@@ -7,6 +7,27 @@ import (
 	"time"
 )
 
+func TestContinuedMeetingToolNewsReachesListeningStop(t *testing.T) {
+	h := start(t)
+	for _, id := range []string{"sender", "receiver"} {
+		h.hook("codex", "SessionStart", id)
+	}
+	h.meeting("m1", map[string]string{"codex:receiver": "active"})
+	h.postInMeeting("m1", "codex:sender", "initial")
+	eq(t, h.hook("codex", "Stop", "receiver", stopInactive).str("decision"), "block")
+	h.postInMeeting("m1", "codex:sender", "read during the turn")
+	contains(t, h.hook("codex", "PostToolUse", "receiver").context(), "read during the turn")
+	h.exec(`UPDATE read_cursors SET last_read_id = ? WHERE instance_id = 'codex:receiver' AND context_id = 'm1'`, h.row("m1", 2))
+	h.postInMeeting("m1", "codex:sender", "still unread")
+	contains(t, h.hook("codex", "PostToolUse", "receiver").context(), "still unread")
+	h.codex("receiver", "listen", map[string]any{"on": true})
+	result := h.hook("codex", "Stop", "receiver", stopActive).str("reason")
+	contains(t, result, "still unread")
+	notContains(t, result, "read during the turn")
+	notContains(t, result, "initial")
+	eq(t, h.cursor("codex:receiver", "m1"), h.row("m1", 3))
+}
+
 // meeting creates an active meeting with members (id → mode), as the core tools would.
 func (h *harness) meeting(id string, members map[string]string) {
 	h.t.Helper()

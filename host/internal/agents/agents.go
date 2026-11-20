@@ -64,6 +64,8 @@ type Agents struct {
 	// toolAnnounced: per session, the unread messages that may wake it and that only tool
 	// calls announced (markNone) since its last prompt or Stop; see stop.
 	toolAnnounced map[string][]string
+	// toolMeetings records the boundary before news announced only by tools.
+	toolMeetings map[string]map[string]int64
 }
 
 // dispatch is one wake handed to a client (backgroundWait), kept so that a
@@ -120,6 +122,7 @@ func New(o Options) (*Agents, error) {
 		wokenAt:       map[string]time.Time{},
 		dispatches:    map[string]*dispatch{},
 		toolAnnounced: map[string][]string{},
+		toolMeetings:  map[string]map[string]int64{},
 	}, nil
 }
 
@@ -846,6 +849,17 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 		return "", err
 	}
 	if mark == markNone {
+		for _, n := range b.news {
+			if !n.active {
+				continue
+			}
+			if a.toolMeetings[sessionID] == nil {
+				a.toolMeetings[sessionID] = map[string]int64{}
+			}
+			if _, tracked := a.toolMeetings[sessionID][n.meetingID]; !tracked {
+				a.toolMeetings[sessionID][n.meetingID] = n.messages[0].row - 1
+			}
+		}
 		// A tool call's announcement may have reached a sub-agent only: the Stop of a turn
 		// that an earlier Stop continued offers these again (stop).
 		for _, m := range b.messages {

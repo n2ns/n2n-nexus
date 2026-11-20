@@ -14,6 +14,24 @@ const kit = agentKit(host);
 const { started, hooks } = piKit(host, () => kit.endSessions(), "pi-extension");
 
 describe("pi extension", () => {
+    it("delivers a real background wake when a user prompt starts as its text arrives", async () => {
+        const s = ids()("overlap");
+        const sender = ids()("sender");
+        const pi = await started(s);
+        await kit.hook("codex", "SessionStart", sender);
+        await pi.emit("before_agent_start", { messageType: "user", prompt: "hi" }, ctxOf(s));
+        await pi.emit("agent_settled", { aborted: false }, ctxOf(s));
+        await until(async () => (await kit.status(`pi:${s}`)) === "listening");
+        let prompt: Promise<unknown> | undefined;
+        // Real pipe data from the CLI after the host dispatched the wake; no fabricated child events.
+        hooks.onWaitOutput(() => { prompt = pi.emit("before_agent_start", { messageType: "user", prompt: "next" }, ctxOf(s)); });
+        await kit.send(sender, (await kit.profile(`pi:${s}`))!.name, "wake during prompt");
+        await until(() => prompt !== undefined);
+        await prompt;
+        await hooks.done();
+        expect(pi.userMessages.map((m) => m.text).join("\n")).toContain("wake during prompt");
+        expect(pi.userMessages).toHaveLength(1);
+    });
     it("registers the session at start and gives its introduction for the next prompt", async () => {
         const s = ids()("start");
         const pi = await started(s);

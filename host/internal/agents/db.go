@@ -476,11 +476,20 @@ func (a *Agents) unmarkNotified(sessionID string, messageIDs []string, noticeIDs
 	})
 }
 
-// unmarkUnread marks those of the messages that are still unread as not notified again.
-func (a *Agents) unmarkUnread(sessionID string, messageIDs []string) error {
+// unmarkUnread offers tool-only announcements again, without rewinding past
+// messages already read or the beginning of this turn's meeting news.
+func (a *Agents) unmarkUnread(sessionID string, messageIDs []string, meetings map[string]int64) error {
 	return a.tx(func(tx *sql.Tx) error {
 		for _, id := range messageIDs {
 			if err := updateItem(tx, sessionID, id, "notified_at = NULL", "status = 'unread'"); err != nil {
+				return err
+			}
+		}
+		for meetingID, before := range meetings {
+			if _, err := tx.ExecContext(bg, `UPDATE meeting_members SET notified_id = MIN(notified_id, MAX(?,
+				COALESCE((SELECT last_read_id FROM read_cursors WHERE instance_id = ? AND context_type = 'meeting' AND context_id = ?), 0)))
+				WHERE meeting_id = ? AND member_id = ? AND mode = 'active' AND left_at IS NULL`,
+				before, sessionID, meetingID, meetingID, sessionID); err != nil {
 				return err
 			}
 		}
