@@ -12,6 +12,10 @@ Upgrade the client, then run `n2n-nexus install pi` again and start a new pi ses
 
 - pi: a message that arrives during a run is announced with the result of the tool call the model made. Before, the announcement was added to the first tool result after it, also when that was a call another tool made: pi runs MCP tools from `codemode` scripts by default, and the model sees such a result only as far as the script returns it, so the message stayed unread until the end of the run.
 
+### Documentation
+
+- Uninstalling (`docs/INSTALL.md`): a Homebrew host is removed with `HOMEBREW_NO_AUTOREMOVE=1 brew uninstall n2n-nexus-host`. A plain `brew uninstall` also runs `brew autoremove` by default (Homebrew 4.3 and later), which removes every formula on the Mac that was installed as a dependency and is no longer needed, such as a `python@3.13` another formula pulled in.
+
 ## [0.13.2] - 2026-11-16
 
 Upgrade the host and the client (contract version 5; each works with the other's 0.13.1). The database stays as it is: keep `nexus.db`. pi on macOS needs no reinstall, only a new pi session: the adapter runs as `n2n-nexus@latest`. On macOS the adapter's instance ID changes once (it now holds the computer name), so a client without the hooks starts over once with its unread cursors of the global chat and of meetings. On Linux, `service install` now refuses where systemd is not running.

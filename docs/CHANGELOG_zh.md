@@ -12,6 +12,10 @@
 
 - pi：一轮运行期间到达的消息，随模型自己发起的那次工具调用的结果提醒。此前提醒被加到它之后的第一个工具结果上，包括由别的工具发起的调用：pi 默认从 `codemode` 脚本里调用 MCP 工具，这种结果模型只能看到脚本返回的部分，所以消息会一直未读到这一轮结束。
 
+### 文档
+
+- 卸载（`docs/INSTALL_zh.md`）：用 Homebrew 安装的 host 用 `HOMEBREW_NO_AUTOREMOVE=1 brew uninstall n2n-nexus-host` 卸载。直接 `brew uninstall` 默认还会运行 `brew autoremove`（Homebrew 4.3 及以后），删除这台 Mac 上所有作为依赖安装、现在已不被需要的 formula，例如别的 formula 带进来的 `python@3.13`。
+
 ## [0.13.2] - 2026-11-16
 
 升级 host 和客户端（契约版本 5；各自都能与对方的 0.13.1 配合）。数据库保持原样：保留 `nexus.db`。macOS 上的 pi 不用重新安装，新开一个 pi 会话即可：适配器是以 `n2n-nexus@latest` 运行的。macOS 上适配器的实例 ID 会变一次（现在用电脑名），所以没装 hooks 的客户端在全局聊天和会议里的未读游标会重新开始一次。Linux 上 systemd 没有运行时，`service install` 现在会拒绝执行。

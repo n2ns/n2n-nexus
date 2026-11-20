@@ -155,3 +155,11 @@ n2n-nexus uninstall codex
 n2n-nexus-host service uninstall     # 如果装了服务（管理员终端 / sudo）
 n2n-nexus-host autostart off         # 如果托盘设置了登录后自启
 ```
+
+然后用当初安装 host 的包管理器卸载它，或删掉你放到 `PATH` 里的程序。用 Homebrew 安装的，这样卸载：
+
+```bash
+HOMEBREW_NO_AUTOREMOVE=1 brew uninstall n2n-nexus-host
+```
+
+从 Homebrew 4.3 起，`brew uninstall` 默认还会运行 `brew autoremove`，删除这台 Mac 上所有作为依赖安装、现在已不被需要的 formula，不限于被卸载的那个（例如别的 formula 当初带进来的 `python@3.13`）。加上 `HOMEBREW_NO_AUTOREMOVE=1` 只删除 `n2n-nexus-host`。Homebrew 为构建 host 安装的 `go` 会保留；运行 `brew autoremove --dry-run` 查看哪些已不被需要，由你自己决定是否删除。

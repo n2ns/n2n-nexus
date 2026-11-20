@@ -155,3 +155,11 @@ n2n-nexus uninstall codex
 n2n-nexus-host service uninstall     # if you installed the service (administrator / sudo)
 n2n-nexus-host autostart off         # if the tray starts at login
 ```
+
+Then remove the host program with the package manager you installed it with, or delete the program you put on your `PATH`. With Homebrew, uninstall it this way:
+
+```bash
+HOMEBREW_NO_AUTOREMOVE=1 brew uninstall n2n-nexus-host
+```
+
+Since Homebrew 4.3, `brew uninstall` also runs `brew autoremove` by default, which removes every formula on the Mac that was installed as a dependency and is no longer needed, not only those of the formula you uninstall (for example a `python@3.13` another formula once pulled in). `HOMEBREW_NO_AUTOREMOVE=1` removes only `n2n-nexus-host`. `go`, which Homebrew installed to build the host, stays; run `brew autoremove --dry-run` to see what is no longer needed and decide yourself.
