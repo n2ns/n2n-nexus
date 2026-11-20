@@ -4,7 +4,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.13.4] - 2026-11-21
+
+Host-only release (`host-v0.13.4`); the npm client stays at 0.13.3 and contract version stays at 5. Upgrade the host and keep `nexus.db`: migration 0010 runs automatically and preserves existing data. Older hosts cannot open the upgraded database.
 
 ### Fixed
 
@@ -31,7 +33,7 @@ Upgrade the host and the client (contract version 5; each works with the other's
 ### Fixed
 
 - pi on macOS: `peers`, `send`, `reply` and the other direct-message tools failed with "This call carries no agent session". The adapter could not read the computer name, because the `PATH` that `install` gives the MCP server has no `/usr/sbin`, and named the machine by its host name while the hooks named it by the computer name; it now runs `/usr/sbin/scutil`.
-- After a host stop of more than 30 minutes, the sessions that were waiting keep waiting: the first one to ask for its wait again no longer set all the others offline, which ended their waits until their users' next prompts. This startup-time refresh was the behavior of 0.13.2; the Unreleased fix above replaces it with recovery on actual reconnection.
+- After a host stop of more than 30 minutes, the sessions that were waiting keep waiting: the first one to ask for its wait again no longer set all the others offline, which ended their waits until their users' next prompts. This startup-time refresh was the behavior of 0.13.2; the 0.13.4 fix above replaces it with recovery on actual reconnection.
 - A session's own prompt or tool call no longer wakes its own background wait when that event is the first to find an expired message or an offline subscription target, which counted the user's prompt as an automatic turn.
 - In a turn that a Stop already continued, a message that only a tool call announced (its context may be a sub-agent's) and that is still unread at the end of the turn is announced once more by the listening wait or the background wait, instead of staying unread until the user's next prompt.
 - `list_meetings`: `participants` no longer lists the host's own sender `n2n-nexus`, and a member's `status` is `offline` for an idle or working session without activity for 30 minutes, as `GET /health` counts it.
