@@ -278,3 +278,60 @@ func sessionsSQL(t *testing.T, s *Store) string {
 	}
 	return text
 }
+
+func TestMigrationSessionExpiryKeepsActivityAndReferences(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, FileName))+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() >= "0010" {
+			break
+		}
+		body, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+	}
+	for _, q := range []string{
+		`PRAGMA user_version = 9`,
+		`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset)
+			VALUES ('codex:a', 'codex', 'a', '/p', 'idle', 'created', 'active-a', 'box', 'linux', 0),
+			       ('pi:b', 'pi', 'b', '/p', 'offline', 'created', 'active-b', 'box', 'linux', 0)`,
+		`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply)
+			VALUES ('m', 'codex:a', 'pi:b', 'retained', 'unread', 'created', 'expires', 1)`,
+		`INSERT INTO pi_client_pids (machine, client_pid, session_id, updated_at) VALUES ('box', 42, 'pi:b', 'active-b')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for q, want := range map[string]int{
+		`PRAGMA user_version`:                           10,
+		`PRAGMA foreign_keys`:                           1,
+		`SELECT COUNT(*) FROM pragma_foreign_key_check`: 0,
+		`SELECT COUNT(*) FROM agent_sessions WHERE stale_from = '' AND ((id = 'codex:a' AND status = 'idle' AND last_active_at = 'active-a') OR (id = 'pi:b' AND status = 'offline' AND last_active_at = 'active-b'))`: 2,
+		`SELECT COUNT(*) FROM agent_messages WHERE id = 'm' AND from_id = 'codex:a' AND to_id = 'pi:b' AND text = 'retained'`:                                                                                          1,
+		`SELECT COUNT(*) FROM pi_client_pids WHERE session_id = 'pi:b' AND client_pid = 42`:                                                                                                                            1,
+	} {
+		var got int
+		if err := s.DB.QueryRow(q).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s: got %d, want %d: %v", q, got, want, err)
+		}
+	}
+}

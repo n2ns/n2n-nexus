@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Host restarts preserve sessions' original last activity time instead of giving absent sessions another 30 minutes online. Expired idle sessions resume when their background wait reconnects, including across repeated restarts; SessionEnd and expired working sessions cannot be revived by an old wait. Migration `0010_session_stale_from.sql` records the expiry state without deleting sessions or messages; upgrade the host, with no client or protocol change.
+
 ## [0.13.3] - 2026-11-20
 
 Upgrade the host and client to 0.13.3 (contract version 5; compatible with 0.13.2, with no database migration). Keep `nexus.db`. For pi, run `n2n-nexus install pi` again and start a new pi session (or `/reload`): the fixes are in the generated extension.
@@ -25,7 +31,7 @@ Upgrade the host and the client (contract version 5; each works with the other's
 ### Fixed
 
 - pi on macOS: `peers`, `send`, `reply` and the other direct-message tools failed with "This call carries no agent session". The adapter could not read the computer name, because the `PATH` that `install` gives the MCP server has no `/usr/sbin`, and named the machine by its host name while the hooks named it by the computer name; it now runs `/usr/sbin/scutil`.
-- After a host stop of more than 30 minutes, the sessions that were waiting keep waiting: the first one to ask for its wait again no longer set all the others offline, which ended their waits until their users' next prompts. The time the host was not running no longer counts as time without activity.
+- After a host stop of more than 30 minutes, the sessions that were waiting keep waiting: the first one to ask for its wait again no longer set all the others offline, which ended their waits until their users' next prompts. This startup-time refresh was the behavior of 0.13.2; the Unreleased fix above replaces it with recovery on actual reconnection.
 - A session's own prompt or tool call no longer wakes its own background wait when that event is the first to find an expired message or an offline subscription target, which counted the user's prompt as an automatic turn.
 - In a turn that a Stop already continued, a message that only a tool call announced (its context may be a sub-agent's) and that is still unread at the end of the turn is announced once more by the listening wait or the background wait, instead of staying unread until the user's next prompt.
 - `list_meetings`: `participants` no longer lists the host's own sender `n2n-nexus`, and a member's `status` is `offline` for an idle or working session without activity for 30 minutes, as `GET /health` counts it.

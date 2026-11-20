@@ -520,6 +520,11 @@ func TestBackgroundWaitDoesNotKeepAWorkingSessionAlive(t *testing.T) {
 		t.Fatal(out)
 	}
 	eq(t, h.status("codex:r"), "offline")
+	h.restart()
+	if out := h.hook("codex", texts0BackgroundWait(), "r"); out != nil {
+		t.Fatalf("expired working session resumed waiting: %v", out)
+	}
+	eq(t, h.status("codex:r"), "offline")
 }
 
 // A session's own event ends its background wait before the expiry check runs:
@@ -874,13 +879,37 @@ func TestRestartResetsListening(t *testing.T) {
 	eq(t, h.status("codex:r"), "offline")
 }
 
+func TestRestartPreservesActivityAndOriginalExpiry(t *testing.T) {
+	h := start(t)
+	h.hook("codex", "SessionStart", "idle-gone")
+	h.hook("claude", "UserPromptSubmit", "working-gone")
+	h.at(ms(timing.StaleSessionMs) - time.Minute)
+	h.restart()
+	for _, id := range []string{"codex:idle-gone", "claude:working-gone"} {
+		eq(t, h.session(id).LastActiveAt, store.ISO(h.t0))
+	}
+	h.hook("pi", "SessionStart", "live")
+	eq(t, h.status("codex:idle-gone"), "idle") // not expired early
+	eq(t, h.status("claude:working-gone"), "working")
+	h.at(ms(timing.StaleSessionMs) + time.Second)
+	h.restart() // restarting again must not postpone the original deadline
+	h.hook("pi", "PostToolUse", "live")
+	eq(t, h.status("codex:idle-gone"), "offline")
+	eq(t, h.status("claude:working-gone"), "offline")
+	eq(t, h.status("pi:live"), "working")
+}
+
 // A host that was stopped for longer than the stale limit: every session whose
-// client kept asking for its background wait waits again, not only the first to come back.
+// client kept asking for its background wait waits again, even if another
+// event expired it before it reconnected. No restart renews absent sessions.
 func TestRestartAfterALongStopKeepsTheWaitingSessions(t *testing.T) {
 	h := start(t, listenWait(time.Minute))
 	h.hook("codex", "SessionStart", "s")
 	h.hook("codex", "SessionStart", "a")
 	h.hook("codex", "SessionStart", "b")
+	h.hook("codex", "SessionStart", "gone")
+	h.hook("codex", "SessionStart", "ended")
+	h.hook("codex", "SessionEnd", "ended")
 	h.hook("codex", "Stop", "a", stopInactive)
 	h.hook("codex", "Stop", "b", stopInactive)
 	h.stop()
@@ -888,11 +917,24 @@ func TestRestartAfterALongStopKeepsTheWaitingSessions(t *testing.T) {
 	h.open()
 	h.openHook("codex", texts0BackgroundWait(), "a")
 	h.untilStatus("codex:a", "listening")
-	eq(t, h.status("codex:b"), "idle") // the time the host was down is not time without activity
+	eq(t, h.status("codex:b"), "offline") // no evidence yet that this client survived
+	eq(t, h.status("codex:gone"), "offline")
+	eq(t, h.session("codex:gone").LastActiveAt, store.ISO(h.t0))
+	h.restart() // retain the distinction between timed-out and explicitly ended
 	waiting := h.openHook("codex", texts0BackgroundWait(), "b")
 	h.untilStatus("codex:b", "listening")
 	h.send("s", "codex:b", "after the restart", false)
 	contains(t, waiting.wait(t).str("wake"), "after the restart")
+	if out := h.hook("codex", texts0BackgroundWait(), "ended"); out != nil {
+		t.Fatalf("ended session resumed waiting: %v", out)
+	}
+	eq(t, h.status("codex:ended"), "offline")
+	eq(t, h.status("codex:gone"), "offline")
+	// SessionEnd after expiry also prevents a late wait from reviving it.
+	h.hook("codex", "SessionEnd", "gone")
+	if out := h.hook("codex", texts0BackgroundWait(), "gone"); out != nil {
+		t.Fatalf("session ended after expiry resumed waiting: %v", out)
+	}
 }
 
 func TestCloseEndsHeldWaits(t *testing.T) {

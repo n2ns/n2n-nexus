@@ -98,9 +98,8 @@ type waiter struct {
 
 // New returns the agents of a host whose database was just opened. No wait is
 // held yet, so sessions a previous host left listening become idle (and can go stale).
-// The time the host was not running is not time without activity: the sessions
-// that are not offline count as active now, so the first event after a long stop
-// does not set offline the sessions whose clients are about to ask for their waits again.
+// Preserve their last activity: only a real request establishes that a client
+// survived the stop. An expired idle session can resume its background wait.
 func New(o Options) (*Agents, error) {
 	if o.Clock == nil {
 		o.Clock = clock.System{}
@@ -110,9 +109,6 @@ func New(o Options) (*Agents, error) {
 	}
 	if _, err := o.Store.DB.Exec("UPDATE agent_sessions SET status = 'idle' WHERE status = 'listening'"); err != nil {
 		return nil, fmt.Errorf("reset listening sessions: %w", err)
-	}
-	if _, err := o.Store.DB.Exec("UPDATE agent_sessions SET last_active_at = ? WHERE status != 'offline'", store.ISO(o.Clock.Now())); err != nil {
-		return nil, fmt.Errorf("refresh sessions: %w", err)
 	}
 	return &Agents{
 		o:             o,

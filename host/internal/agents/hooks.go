@@ -104,6 +104,17 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		if err != nil || s == nil {
 			return nil, nil, err
 		}
+		if s.Status == "offline" {
+			// Another request may have expired this idle session before its
+			// wait reconnected after downtime. The wait is evidence it survived.
+			// Explicit SessionEnd and expired working sessions remain offline.
+			if s.StaleFrom != "idle" {
+				return nil, nil, nil
+			}
+			if err := a.setStatus(id, "idle"); err != nil {
+				return nil, nil, err
+			}
+		}
 		// The client is waiting on its behalf: activity, so a long wait does not let the session go stale.
 		// Not for a working session: its activity is its own events, and a wait is all that
 		// touches a session whose Stop was lost, which must go stale like any other.

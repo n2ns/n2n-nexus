@@ -101,7 +101,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 要叫醒的客户端不在了，等待就结束：每次请求前检查 Claude Code 进程（`CLAUDE_PID`），或运行 Stop hook 的 Codex 进程（最近一个不是 shell 的祖先进程，以 `--client-pid` 传给独立后台进程），所以客户端被强制结束或崩溃、没有发出 `SessionEnd` 时，会话最多再显示一次请求的时间（590 秒）为 `listening`，而不是一直到等待期限。进行中的请求不会因此被中断，因为 host 可能已经在这次请求上交出了唤醒；客户端不在后才到的唤醒，用 `WakeResult` `ok: false` 回报（Claude Code 也一样）并被撤销。拿不到这个进程 ID 时（客户端没有设置 `CLAUDE_PID`、读不到祖先进程），等待照常进行，不做这项检查。
 
-后台等待会在原有的 24 小时时限内重试临时连接故障；使用 `discover` 时重新查找 host。正常取消（`output: null`）仍结束等待。host 与客户端都需要包含这项恢复行为，才能在 host 正常重启后继续等待。host 没有运行的时间不算无活动：启动时所有未离线的会话都从启动那一刻起算活动时间，所以停机超过 30 分钟的失活时限也不会把等待中的会话置为离线。
+后台等待会在原有的 24 小时时限内重试临时连接故障；使用 `discover` 时重新查找 host。正常取消（`output: null`）仍结束等待。host 与客户端都需要包含这项恢复行为，才能在 host 正常重启后继续等待。host 启动保留各会话原有的最后活动时间，重启不会再给没有回来上报的会话增加 30 分钟在线时间。尚未有新活动的会话可能显示离线，直到它重连。超时下线时把原状态记入 `agent_sessions.stale_from`（迁移 `0010_session_stale_from.sql`）；因空闲超时下线的会话可凭真实 BackgroundWait 请求恢复等待，即使中间再次重启。SessionEnd 清除这项恢复状态；工作中超时的会话仍需自己的事件或工具调用恢复，后台等待不能让丢失 Stop 的会话一直存活。旧数据库已有的离线记录没有恢复状态，因为旧数据无法区分超时与 SessionEnd。不改变客户端或 HTTP 协议。
 
 会话处于 `working`，或者 listen 模式的 Stop hook 正在等待时，后台等待不会送达，所以同一条消息只提醒一次。`codex queue` 失败（出错或退出码非 0）时，Codex 的后台等待回报 `ok: false`，host 撤销这次唤醒：它提醒过的消息和通知重新算作未提醒，会话退出 `working`，这一轮不计入自动轮次，失败的唤醒记入 `host.log`（会话、唤醒 ID、再次送达的消息和通知各有几条）；随后等待在 1 秒后重新请求（每失败一次间隔加倍），再次送达它们。连续失败 10 次（间隔 1 秒到 256 秒，共约 8.5 分钟）后等待结束：Codex 没有加载该对话（终端没发出 `SessionEnd` 就被关闭时，它的 app-server，也就是 hook 的客户端进程，仍在运行），消息保持未读，留到用户下次在该对话里输入时再提醒。回报到达前该会话已有其他事件，说明唤醒已送达，回报被忽略。已在 Windows 上用 Claude 桌面应用和 Codex 桌面应用实测（2026-10-23）：两个方向都能在数秒内叫醒空闲的对话。2026-11-10 又用 WSL 中的 Claude Code、Codex CLI 和 Windows 上的 Codex 桌面应用实测，全程无人输入：无需回复的消息在两个方向都能叫醒收件方，没有确认循环；发给正在工作的收件方的消息在它这一轮里处理，不另起一轮；host 重启后等待在 7 秒内重连；闲置超过一小时后两个方向仍能叫醒；被 `kill -9` 结束的 Claude Code 对话收到的消息保持未读，它的等待随之结束。已知限制：
 
@@ -117,7 +117,7 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 
 全部数据都在 host 数据目录里的一个 SQLite 文件 `nexus.db` 中，同一目录下还有 `settings.json` 和 `host.lock`（各系统的位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）。
 
-- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql` 到 `0009_pi_client.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。前两个文件各包含一个模块的初始表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；之后每次改表结构都新增一个编号文件（目前是 `0003` 到 `0009`），当前表结构是它们合在一起的结果。
+- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql` 到 `0010_session_stale_from.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。前两个文件各包含一个模块的初始表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；之后每次改表结构都新增一个编号文件（目前是 `0003` 到 `0010`），当前表结构是它们合在一起的结果。
 - **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`meeting_approvers`（会议当前稿的必需认可人）、`meeting_stances`（每个成员对提案的表态）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`broadcasts` 和 `broadcast_deliveries`（每次广播一行、每个收件方一行；`agent_inbox` 视图把直接消息和送达记录合成一个收件箱）、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`、`pi_client_pids`（每台机器上每个 pi 进程最近报告的会话），以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
 - **事务**：每个写操作一个事务，多行修改（会议消息，开始 / 结束 / 重开会议，项目改名）要么全部生效，要么都不生效。数据库使用 WAL 模式，开启 `foreign_keys`，忙等超时 5 秒，只用一个连接。
 - **只有 host 打开数据库**。MCP 适配器和 hooks 都走 HTTP。

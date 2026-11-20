@@ -41,6 +41,9 @@ type session struct {
 	Label                   string
 	Listening               bool
 	CreatedAt, LastActiveAt string
+	// StaleFrom is the status before expiry, or "" if not expired. Only an
+	// expired idle session may resume through BackgroundWait; SessionEnd clears it.
+	StaleFrom string
 }
 
 // machine is where a conversation runs, as its hooks report it: Platform is
@@ -99,12 +102,12 @@ type notice struct {
 	Wakes bool
 }
 
-const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, environment, utc_offset, label"
+const sessionColumns = "id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, environment, utc_offset, label, stale_from"
 
 func scanSession(row interface{ Scan(...any) error }) (*session, error) {
 	var s session
 	var listening int
-	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource, &s.Hostname, &s.Platform, &s.Environment, &s.UTCOffset, &s.Label); err != nil {
+	if err := row.Scan(&s.ID, &s.Client, &s.Name, &s.Note, &s.Cwd, &s.Status, &listening, &s.CreatedAt, &s.LastActiveAt, &s.Title, &s.TitleSource, &s.Hostname, &s.Platform, &s.Environment, &s.UTCOffset, &s.Label, &s.StaleFrom); err != nil {
 		return nil, err
 	}
 	s.Listening = listening == 1
@@ -235,7 +238,7 @@ func (a *Agents) setStatus(id, status string) error {
 				}
 			}
 		}
-		_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET status = ? WHERE id = ?", status, id)
+		_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET status = ?, stale_from = '' WHERE id = ?", status, id)
 		return err
 	})
 }
@@ -344,7 +347,7 @@ func (a *Agents) expireStale(before time.Time) ([]string, error) {
 		if ids, err = store.Append(ids, rows, err, store.ScanString); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET status = 'offline' WHERE status IN ('idle', 'working') AND last_active_at < ?", a.iso(before))
+		_, err = tx.ExecContext(bg, "UPDATE agent_sessions SET stale_from = status, status = 'offline' WHERE status IN ('idle', 'working') AND last_active_at < ?", a.iso(before))
 		return err
 	})
 	return ids, err
