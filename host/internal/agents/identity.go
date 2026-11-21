@@ -72,7 +72,7 @@ func (a *Agents) SessionOf(c *api.Caller) string {
 }
 
 // callerSession is the session key the caller names: a Claude toolUseId bound
-// within the binding TTL, or a Codex session id; "" when there is none. With
+// within the binding TTL, a Codex or Antigravity session id, or a pi process; "" when there is none. With
 // prune, expired tool-use bindings are removed first.
 func (a *Agents) callerSession(c api.Call, prune bool) (string, error) {
 	if c.Caller == nil {
@@ -101,6 +101,11 @@ func (a *Agents) callerSession(c api.Call, prune bool) (string, error) {
 			return "", nil
 		}
 		return sessionKey("codex", c.Caller.SessionID), nil
+	case "antigravity":
+		if c.Caller.SessionID == "" {
+			return "", nil
+		}
+		return sessionKey("antigravity", c.Caller.SessionID), nil
 	case "pi":
 		// The session the nearest of the adapter's ancestors that is a pi process on this
 		// machine last reported in a hook event; no expiry, as the process reports on every

@@ -123,6 +123,19 @@ describe("Windows .cmd shims", () => {
         expect(launches).toEqual([]);
     });
 
+    it("Antigravity's agy.cmd runs the agy.exe its launch line names; the same wrapper is not run for codex", async () => {
+        const bin = path.join(dir, "agy-bin");
+        fs.mkdirSync(bin);
+        const wrapper = '@echo off\r\n"C:\\Program Files\\Antigravity\\bin\\agy.exe" %*\r\n';
+        fs.writeFileSync(path.join(bin, "agy.cmd"), wrapper);
+        fs.writeFileSync(path.join(bin, "codex.cmd"), wrapper);
+        vi.stubEnv("PATH", bin);
+        vi.stubEnv("PATHEXT", ".COM;.EXE;.BAT;.CMD");
+        const { clientCommand } = await import("../src/cli/client-command.js");
+        expect(clientCommand("agy")).toEqual({ command: "C:\\Program Files\\Antigravity\\bin\\agy.exe", args: [] });
+        expect(clientCommand("codex")).toBeNull();
+    });
+
     it("a codex that is not found is not run at all", async () => {
         vi.stubEnv("PATH", path.join(dir, "empty"));
         const { runInstall } = await import("../src/cli/install.js");

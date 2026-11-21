@@ -7,7 +7,8 @@ import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/e
 import { closedPort, listen } from "./helpers/http.js";
 import { HOOK, Host } from "./conformance/harness.js";
 
-import { npxFor } from "../src/cli/install.js";
+import { DIRECT_MESSAGE_RULE, npxFor } from "../src/cli/install.js";
+import { antigravityHook, renderRule, waiterGrant } from "../src/cli/antigravity.js";
 import { readMcpCommand } from "../src/cli/mcp-config.js";
 import { runDoctor } from "../src/cli/doctor.js";
 import { renderPiExtension } from "../src/cli/pi.js";
@@ -32,9 +33,9 @@ let hostVersion: string;
 /** The Codex doctor asks about hook trust: none by default (it cannot be run), so the checks never ask a real Codex. */
 let codexCommand: string;
 
-async function run(args: string[], endpoint = hostEndpoint): Promise<{ code: number | null; stdout: string; stderr: string }> {
+async function run(args: string[], endpoint = hostEndpoint, PATH = process.env.PATH): Promise<{ code: number | null; stdout: string; stderr: string }> {
     const { code, stdout, stderr } = await runCli(["doctor", ...args], {
-        env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand }
+        env: { SystemRoot: process.env.SystemRoot, PATH, HOME: dir, USERPROFILE: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, NEXUS_ENDPOINT: endpoint, NEXUS_CODEX_COMMAND: codexCommand }
     });
     return { code, stdout, stderr };
 }
@@ -285,8 +286,69 @@ describe("doctor", () => {
         expect(foreign.stdout).toContain("not written by n2n-nexus");
     });
 
+    it("checks Antigravity's named hook, rule, grants, waiter command and MCP server, and reports each missing one", async () => {
+        const endpoint = hostEndpoint;
+        const bin = path.join(dir, "bin");
+        writeExecutable(path.join(bin, "n2n-nexus"), "process.exit(0);");
+        const config = path.join(dir, ".gemini", "config");
+        const cli = path.join(dir, ".gemini", "antigravity-cli", "settings.json");
+        const hooksFile = path.join(config, "hooks.json");
+        const ruleFile = path.join(config, "rules", "n2n-nexus.md");
+        fs.mkdirSync(path.join(config, "rules"), { recursive: true });
+        fs.mkdirSync(path.dirname(cli), { recursive: true });
+        fs.writeFileSync(hooksFile, JSON.stringify({ other: {}, "n2n-nexus": antigravityHook(NODE, ENTRY, endpoint) }));
+        fs.writeFileSync(ruleFile, renderRule(endpoint, DIRECT_MESSAGE_RULE));
+        fs.writeFileSync(path.join(config, "config.json"), JSON.stringify({ userSettings: { globalPermissionGrants: { allow: [waiterGrant(endpoint)] } } }));
+        fs.writeFileSync(cli, JSON.stringify({ permissions: { allow: ["command(ls)", waiterGrant(endpoint)] } }));
+        fs.writeFileSync(path.join(config, "mcp_config.json"), JSON.stringify({ mcpServers: { "n2n-nexus": { command: NODE, args: MCP_ARGS, env: { NEXUS_ENDPOINT: endpoint } } } }));
+
+        const passed = await run(["antigravity"], "http://127.0.0.2:1", bin);
+        expect(passed.stdout).toContain(`ok   hook Node ${NODE}`);
+        expect(passed.stdout).toContain(`ok   hook entry ${ENTRY}`);
+        expect(passed.stdout).toContain(`ok   rule ${ruleFile}: ok`);
+        expect(passed.stdout).toContain(`ok   CLI grant in ${cli}: ${waiterGrant(endpoint)}`);
+        expect(passed.stdout).toContain("ok   waiter command n2n-nexus on PATH");
+        expect(passed.stdout).toContain(`ok   MCP npx ${NPX}`);
+        expect(passed.stdout).toContain(hostOk(endpoint));          // the endpoint the hooks name, not NEXUS_ENDPOINT
+        expect(passed.code, passed.stdout).toBe(0);
+
+        // Each part missing or out of step is reported.
+        fs.writeFileSync(cli, JSON.stringify({ permissions: { allow: [waiterGrant()] } }));
+        fs.writeFileSync(ruleFile, renderRule(undefined, DIRECT_MESSAGE_RULE));
+        const hooks = antigravityHook(NODE, ENTRY, endpoint);
+        delete hooks.Stop;
+        fs.writeFileSync(hooksFile, JSON.stringify({ "n2n-nexus": hooks }));
+        const failed = await run(["antigravity"], endpoint, path.join(dir, "empty"));
+        expect(failed.code).toBe(1);
+        expect(failed.stdout).toContain(`FAIL hook "n2n-nexus" Stop in ${hooksFile}: missing`);
+        expect(failed.stdout).toContain(`FAIL rule ${ruleFile}: does not name the waiter command n2n-nexus hook antigravity --wait --endpoint ${endpoint}`);
+        expect(failed.stdout).toContain(`FAIL CLI grant in ${cli}: ${waiterGrant(endpoint)} missing`);
+        expect(failed.stdout).toContain("FAIL waiter command n2n-nexus on PATH: not found");
+        expect(failed.stdout).toContain('fix: run "n2n-nexus install antigravity" again');
+
+        fs.writeFileSync(ruleFile, "my own rule\n");
+        fs.rmSync(path.join(config, "mcp_config.json"));
+        fs.writeFileSync(hooksFile, "{}");
+        const missing = await run(["antigravity"], endpoint, bin);
+        expect(missing.stdout).toContain(`FAIL hook "n2n-nexus" in ${hooksFile}: not installed`);
+        expect(missing.stdout).toContain(`FAIL rule ${ruleFile}: not written by n2n-nexus`);
+        expect(missing.stdout).toContain("FAIL MCP server n2n-nexus in");
+    });
+
+    it("notes an Antigravity file it cannot parse without failing a check of every client, and fails a check of Antigravity", async () => {
+        const config = path.join(dir, ".gemini", "config");
+        fs.mkdirSync(config, { recursive: true });
+        fs.writeFileSync(path.join(config, "hooks.json"), "{ // not JSON");
+        const all = await run([]);
+        expect(all.code, all.stdout + all.stderr).toBe(0);
+        expect(all.stdout).toContain(`antigravity\n  note: not checked: ${path.join(config, "hooks.json")} is not valid JSON`);
+        const named = await run(["antigravity"]);
+        expect(named.code).toBe(1);
+        expect(named.stderr).toContain("doctor failed");
+    });
+
     it("reports what is not installed: only for a named client, and the missing half of a partial install", async () => {
-        expect(await run([])).toEqual({ code: 0, stdout: `claude\n  not installed\ncodex\n  not installed\npi\n  not installed\n${hostOk()}`, stderr: "" });
+        expect(await run([])).toEqual({ code: 0, stdout: `claude\n  not installed\ncodex\n  not installed\npi\n  not installed\nantigravity\n  not installed\n${hostOk()}`, stderr: "" });
         const named = await run(["codex"]);
         expect(named.code).toBe(1);
         expect(named.stdout).toContain('FAIL nothing installed: run "n2n-nexus install codex".');
@@ -308,7 +370,7 @@ describe("doctor", () => {
     it("rejects an unknown client and a broken settings file", async () => {
         const usage = await run(["cursor"]);
         expect(usage.code).toBe(1);
-        expect(usage.stderr).toContain("Usage: n2n-nexus doctor [claude|codex|pi]");
+        expect(usage.stderr).toContain("Usage: n2n-nexus doctor [claude|codex|pi|antigravity]");
 
         fs.mkdirSync(claudeDir, { recursive: true });
         fs.writeFileSync(path.join(claudeDir, "settings.json"), "{ broken");

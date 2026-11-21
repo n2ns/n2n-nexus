@@ -24,7 +24,7 @@ Claude 桌面版里有两种对话：
 
 ## 3. 对话之间的直接消息
 
-每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文），收件方可以为它做什么由你自己的指令决定：对 Claude Code，`n2n-nexus install claude` 写进用户级 `CLAUDE.md` 的那段说明让它当作你的指令照要求执行、不找你确认、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`，pi 通过它的 n2n-nexus 扩展，把通知作为下一条用户消息发给 pi），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
+每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文），收件方可以为它做什么由你自己的指令决定：对 Claude Code，`n2n-nexus install claude` 写进用户级 `CLAUDE.md` 的那段说明让它当作你的指令照要求执行、不找你确认、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`，pi 通过它的 n2n-nexus 扩展，把通知作为下一条用户消息发给 pi，Antigravity 通过消息等待器：通知说它没有运行时，模型按 `install antigravity` 写入的规则把它作为后台命令启动），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
 
 ## 4. 检查是否正常
 
@@ -79,16 +79,17 @@ n2n-nexus-host version
 # 启动 MCP 适配器（由 IDE 启动）
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <实例 ID>]
 
-# 为 Claude Code、Codex 或 pi 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容；pi 的 hooks 是一个扩展文件）
-n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]
-n2n-nexus uninstall <claude|codex|pi>
+# 为 Claude Code、Codex、pi 或 Antigravity 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容；pi 的 hooks 是一个扩展文件；Antigravity 还有规则文件和等待器的权限授权）
+n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]
+n2n-nexus uninstall <claude|codex|pi|antigravity>
 
 # 检查已安装的 hook 和 MCP 命令是否还能运行，以及 host 是否以相同协议版本应答
 # （有问题时退出码 1）
-n2n-nexus doctor [claude|codex|pi]
+n2n-nexus doctor [claude|codex|pi|antigravity]
 
 # hook 入口（由 install 写进客户端配置）
 n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
+n2n-nexus hook antigravity <Event>|--wait [--endpoint <url>]   # --wait：由模型启动的消息等待器
 ```
 
 ### 环境变量

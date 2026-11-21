@@ -15,8 +15,8 @@ const manifest = (id: string, relations: { targetId: string; type: string }[] = 
 
 describe("tool results", () => {
     it("match each tool's output schema", async () => {
-        for (const session of ["me", "peer"]) {
-            const hook = await host.request("POST", "/api/hook", { client: "codex", input: { hook_event_name: "SessionStart", session_id: session, cwd: "/work", machine: TEST_MACHINE } });
+        for (const [client, session] of [["codex", "me"], ["codex", "peer"], ["antigravity", "ag"]]) {
+            const hook = await host.request("POST", "/api/hook", { client, input: { hook_event_name: "SessionStart", session_id: session, cwd: "/work", machine: TEST_MACHINE } });
             expect(hook.status).toBe(200);
         }
 
@@ -57,6 +57,15 @@ describe("tool results", () => {
         await call("peers");
         await call("peers", {});
         await call("set_profile", { name: "contract-test", note: "checking contracts", title: "Contract test" });
+        // An Antigravity session in peers.self, peers.peers[] and set_profile.profile.
+        for (const [name, args] of [["peers", {}], ["set_profile", { note: "antigravity" }]] as const) {
+            const res = await host.callTool<Record<string, unknown>>(name, args, "structured-ag", { client: "antigravity", sessionId: "ag" });
+            expect(res.status, `${name}: ${res.body}`).toBe(200);
+            const validate = validators[name];
+            expect(validate(res.payload.result), `${name}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+        }
+        const listed = await call("peers") as { peers: { id: string; client: string }[] };
+        expect(listed.peers).toContainEqual(expect.objectContaining({ id: "antigravity:ag", client: "antigravity" }));
         await call("listen", { on: false });
         await call("send", { to: "codex:peer", text: "direct hi", notifyWhenIdle: true });
         const inbox = await call("read", {}, "peer") as { messages: { messageId: string }[] };

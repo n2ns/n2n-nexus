@@ -24,7 +24,7 @@ Use the Code tab for sessions that should talk to each other.
 
 ## 3. Direct messages between conversations
 
-Each conversation appears in `peers`. A new direct message is announced to the recipient automatically: when the user sends a prompt, after each tool call, and once before the turn ends. The notification shows the message's text (`read` returns a message it cut), and what the recipient may do for it is set by your own instructions: for Claude Code, the block that `n2n-nexus install claude` writes into your user-level `CLAUDE.md` says to carry it out as your instruction without asking you for confirmation and without going beyond it; a question about it goes back to the sending session, so you do not have to switch terminals. An idle conversation is woken too: when a turn ends, a background hook waits up to a day for anything new and then starts a turn with it (Claude Code through an `asyncRewake` hook, Codex through `codex queue`, pi through its n2n-nexus extension, which sends it to pi as the next user message), so AI sessions carry out each other's requests and answer without anyone typing. An unattended `claude -p` run is not kept waiting: the hook returns at once there. A Codex conversation is woken only while it is loaded in the running Codex app, and not again after Codex restarts until it ends a turn; see [Architecture](ARCHITECTURE.md#sessions-presence-and-waking-idle-conversations) for the limits. With `listen` on, a conversation that finished its turn keeps waiting for up to about 10 minutes and continues when a message arrives; while it waits, input you type is queued until you press Esc.
+Each conversation appears in `peers`. A new direct message is announced to the recipient automatically: when the user sends a prompt, after each tool call, and once before the turn ends. The notification shows the message's text (`read` returns a message it cut), and what the recipient may do for it is set by your own instructions: for Claude Code, the block that `n2n-nexus install claude` writes into your user-level `CLAUDE.md` says to carry it out as your instruction without asking you for confirmation and without going beyond it; a question about it goes back to the sending session, so you do not have to switch terminals. An idle conversation is woken too: when a turn ends, a background hook waits up to a day for anything new and then starts a turn with it (Claude Code through an `asyncRewake` hook, Codex through `codex queue`, pi through its n2n-nexus extension, which sends it to pi as the next user message, Antigravity through a message waiter that the model starts as a background command when a notice says it is not running, as the rule `install antigravity` writes tells it), so AI sessions carry out each other's requests and answer without anyone typing. An unattended `claude -p` run is not kept waiting: the hook returns at once there. A Codex conversation is woken only while it is loaded in the running Codex app, and not again after Codex restarts until it ends a turn; see [Architecture](ARCHITECTURE.md#sessions-presence-and-waking-idle-conversations) for the limits. With `listen` on, a conversation that finished its turn keeps waiting for up to about 10 minutes and continues when a message arrives; while it waits, input you type is queued until you press Esc.
 
 ## 4. Check that it works
 
@@ -79,16 +79,17 @@ Under `sudo`, the service uses the default data and log directories of the user 
 # Start the MCP adapter (launched by the IDE)
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <instance id>]
 
-# Install / remove the hooks and MCP server for Claude Code, Codex or pi (and the CLAUDE.md block for Claude Code; for pi the hooks are an extension file)
-n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]
-n2n-nexus uninstall <claude|codex|pi>
+# Install / remove the hooks and MCP server for Claude Code, Codex, pi or Antigravity (and the CLAUDE.md block for Claude Code; for pi the hooks are an extension file; for Antigravity also its rule file and the waiter's permission grants)
+n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]
+n2n-nexus uninstall <claude|codex|pi|antigravity>
 
 # Check that the installed hook and MCP commands still run and that the host answers
 # with the client's contract version (exit 1 when not)
-n2n-nexus doctor [claude|codex|pi]
+n2n-nexus doctor [claude|codex|pi|antigravity]
 
 # Hook entry point (written into the client configuration by install)
 n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
+n2n-nexus hook antigravity <Event>|--wait [--endpoint <url>]   # --wait: the message waiter the model starts
 ```
 
 ### Environment variables

@@ -1,10 +1,11 @@
 /**
- * `n2n-nexus doctor [claude|codex|pi]`: check that the Node path and the entry
+ * `n2n-nexus doctor [claude|codex|pi|antigravity]`: check that the Node path and the entry
  * script in the hook commands (for pi, in its extension file), and the Node path and npm's npx script in the
  * MCP server command (`"<node>" "<npx>" -y n2n-nexus@latest mcp`), that
  * `install` wrote still exist and run, that the host those commands talk to answers
  * GET /health as n2n-nexus-host with this client's contract version, that
- * Codex trusts the Codex hooks (asked through codex-trust.ts), and say
+ * Codex trusts the Codex hooks (asked through codex-trust.ts), that Antigravity has
+ * the n2n-nexus rule, the waiter's grants and the waiter command on PATH, and say
  * how to fix what does not. Without a client both are checked; a client with
  * nothing installed is only reported when it was named. Exit code 1 when a
  * check failed.
@@ -15,8 +16,12 @@ import { CONTRACT_VERSION, HOOK_CLIENTS, MCP_SERVER_NAME, WAIT_HOOK_TIMEOUT_SEC,
 import { NexusClient, NexusToolError } from "../client/nexus-client.js";
 import { LOCAL_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
-import { hookEndpoint, isOurs, ourCommands, parseHookCommand } from "./hook-command.js";
-import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, probeNode, readConfig } from "./install.js";
+import {
+    ANTIGRAVITY_EVENTS, ANTIGRAVITY_HOOK_NAME, RULE_MARK, antigravityGrantFiles, antigravityHookCommands, antigravityHooksFile, antigravityRuleFile, grantsIn, waiterCommand, waiterGrant
+} from "./antigravity.js";
+import { onPath } from "./client-command.js";
+import { hookEndpoint, isOurs, ourCommands, parseAntigravityHookCommand, parseHookCommand } from "./hook-command.js";
+import { MCP_PACKAGE, VERSIONED_NODE_DIR, configFile, probeNode, readConfig, readJsonObject } from "./install.js";
 import { mcpConfigFile, readMcpCommand } from "./mcp-config.js";
 import { PI_EXTENSION_MARK, piExtensionFile, readPiExtension, readPiExtensionFile } from "./pi.js";
 
@@ -147,8 +152,79 @@ function doctorPi(endpoints: Set<string>, defaultEndpoint: string): boolean | un
     return !failed;
 }
 
-function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoint: string): boolean | undefined {
+/** Antigravity: the named hook, the rule file, the waiter's grants and command, and the MCP server. */
+function doctorAntigravity(endpoints: Set<string>, defaultEndpoint: string): boolean | undefined {
+    const hooksFile = antigravityHooksFile();
+    const ruleFile = antigravityRuleFile();
+    const commands = antigravityHookCommands(readJsonObject(hooksFile));
+    const mcp = readMcpCommand("antigravity", mcpConfigFile("antigravity"));
+    let rule: string | undefined;
+    try {
+        rule = fs.readFileSync(ruleFile, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (commands.size === 0 && !mcp && rule === undefined) return undefined;
+    const lines: string[] = ["antigravity"];
+    let failed = false;
+    let versioned = false;
+    const report = (label: string, check: Check) => {
+        lines.push(`  ${check.ok ? "ok  " : "FAIL"} ${label}: ${check.text}`);
+        if (!check.ok) failed = true;
+        if (check.text.includes(VERSIONED_NOTE)) versioned = true;
+    };
+
+    // The endpoint the hooks were installed with: the waiter command, its grants and the rule name it too.
+    let endpoint: string | undefined;
+    if (commands.size === 0) report(`hook "${ANTIGRAVITY_HOOK_NAME}" in ${hooksFile}`, bad("not installed"));
+    else {
+        const seen = new Set<string>();
+        for (const event of Object.keys(ANTIGRAVITY_EVENTS)) {
+            const list = commands.get(event) ?? [];
+            const parsed = list.map(parseAntigravityHookCommand).find((p) => p?.event === event);
+            if (!parsed) {
+                report(`hook "${ANTIGRAVITY_HOOK_NAME}" ${event} in ${hooksFile}`, bad(list.length ? "not an n2n-nexus hook command" : "missing"));
+                continue;
+            }
+            endpoint ??= parsed.endpoint;
+            endpoints.add(parsed.endpoint ?? defaultEndpoint);
+            for (const [what, file, check] of [["Node", parsed.node, checkNode], ["entry", parsed.entry, checkEntry]] as const) {
+                if (seen.has(`${what}\n${file}`)) continue;
+                seen.add(`${what}\n${file}`);
+                report(`hook ${what} ${file}`, check(file));
+            }
+        }
+    }
+    const command = waiterCommand(endpoint);
+    if (rule === undefined) report(`rule ${ruleFile}`, bad("missing"));
+    else if (!rule.includes(RULE_MARK)) report(`rule ${ruleFile}`, bad("not written by n2n-nexus"));
+    else report(`rule ${ruleFile}`, rule.includes(`\`${command}\``) ? ok("ok") : bad(`does not name the waiter command ${command}`));
+    for (const { label, file, keys } of antigravityGrantFiles()) {
+        report(`${label} grant in ${file}`, grantsIn(readJsonObject(file), keys).includes(waiterGrant(endpoint)) ? ok(waiterGrant(endpoint)) : bad(`${waiterGrant(endpoint)} missing`));
+    }
+    report("waiter command n2n-nexus on PATH", onPath("n2n-nexus") ? ok("ok") : bad(`not found: install the client with npm i -g ${MCP_PACKAGE}`));
+    doctorMcp("antigravity", endpoints, defaultEndpoint, report, mcp);
+    if (failed) {
+        lines.push(`  fix: run "n2n-nexus install antigravity" again (add --node <path> to use a stable Node path such as /usr/local/bin/node).`);
+    } else if (versioned) {
+        lines.push(`  note: after upgrading Node, run "n2n-nexus install antigravity" again, or install with --node <path> pointing at a stable entry such as /usr/local/bin/node.`);
+    }
+    process.stdout.write(lines.join("\n") + "\n");
+    return !failed;
+}
+
+function doctorClient(client: HookClient, endpoints: Set<string>, defaultEndpoint: string, named: boolean): boolean | undefined {
     if (client === "pi") return doctorPi(endpoints, defaultEndpoint);
+    if (client === "antigravity") {
+        try {
+            return doctorAntigravity(endpoints, defaultEndpoint);
+        } catch (error) {
+            // Antigravity writes these files itself: one it cannot parse fails only a check of Antigravity.
+            if (named) throw error;
+            process.stdout.write(`antigravity\n  note: not checked: ${(error as Error).message}\n`);
+            return true;
+        }
+    }
     const hooksFile = configFile(client);
     const mcpFile = mcpConfigFile(client);
     const lines: string[] = [];
@@ -219,11 +295,11 @@ async function doctorCodexTrust(): Promise<boolean> {
     return false;
 }
 
-/** Parse `[claude|codex|pi]`, run the checks and return the exit code. */
+/** Parse `[claude|codex|pi|antigravity]`, run the checks and return the exit code. */
 export async function runDoctor(argv: string[]): Promise<number> {
     const client = argv[0];
     if (client !== undefined && !isHookClient(client)) {
-        process.stderr.write("Usage: n2n-nexus doctor [claude|codex|pi]\n");
+        process.stderr.write("Usage: n2n-nexus doctor [claude|codex|pi|antigravity]\n");
         return 1;
     }
     try {
@@ -231,7 +307,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
         const defaultEndpoint = configuredEndpoint();
         const endpoints = new Set<string>();
         for (const c of client ? [client] : HOOK_CLIENTS) {
-            const result = doctorClient(c, endpoints, defaultEndpoint);
+            const result = doctorClient(c, endpoints, defaultEndpoint, client !== undefined);
             if (result === undefined) {
                 if (client) {
                     process.stdout.write(`${c}\n  FAIL nothing installed: run "n2n-nexus install ${c}".\n`);

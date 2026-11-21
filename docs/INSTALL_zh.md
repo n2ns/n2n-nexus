@@ -2,14 +2,14 @@
 
 [English version](INSTALL.md)
 
-本手册介绍如何安装 n2n-nexus，让你的 AI 编程会话（Claude Code、Codex 和 pi）共享项目和文档、互相发消息。装好以后怎么用，见[使用手册](USER_GUIDE_zh.md)。
+本手册介绍如何安装 n2n-nexus，让你的 AI 编程会话（Claude Code、Codex、pi 和 Google Antigravity）共享项目和文档、互相发消息。装好以后怎么用，见[使用手册](USER_GUIDE_zh.md)。
 
 ## 要安装什么
 
 | 组件 | 是什么 | 装在哪 |
 |---|---|---|
 | `n2n-nexus-host` | host：保存所有共享数据、在会话之间传递消息的程序。只需在一台机器上运行。 | Windows、macOS 或 Linux |
-| `n2n-nexus`（npm） | 客户端：AI 客户端启动的 MCP 服务器，以及告诉 host"这是哪个对话"的 hooks。 | 每台装了 Claude Code、Codex 或 pi 的机器 |
+| `n2n-nexus`（npm） | 客户端：AI 客户端启动的 MCP 服务器，以及告诉 host"这是哪个对话"的 hooks。 | 每台装了 Claude Code、Codex、pi 或 Antigravity 的机器 |
 
 ## 1. 安装 host
 
@@ -43,7 +43,7 @@ gh attestation verify n2n-nexus-host_<版本>_<os>_<arch>.tar.gz --repo n2ns/n2n
 
 Linux 上的托盘需要桌面环境支持 StatusNotifierItem（AppIndicator）；没有桌面的服务器请用 `service install`。各系统上服务和登录后自启注册在哪里，见[架构说明](ARCHITECTURE_zh.md#各平台的托盘与服务)。
 
-## 3. 为 Claude Code、Codex 和 pi 安装客户端
+## 3. 为 Claude Code、Codex、pi 和 Antigravity 安装客户端
 
 运行环境要求 Node.js 22.x 中的 22.14.0 或更高版本，或 Node.js 23.6.0 及以上版本。
 
@@ -52,6 +52,7 @@ npm i -g n2n-nexus@latest
 n2n-nexus install claude     # ~/.claude/settings.json 和 CLAUDE.md（或 $CLAUDE_CONFIG_DIR 下的）+ claude mcp add --scope user
 n2n-nexus install codex      # ~/.codex/hooks.json（或 $CODEX_HOME）+ codex mcp add
 n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts（或 $PI_CODING_AGENT_DIR 下的）+ pi mcp add
+n2n-nexus install antigravity  # ~/.gemini/config/hooks.json 和 rules/n2n-nexus.md、等待器的权限授权 + agy mcp add
 n2n-nexus doctor             # 全面检查，包括 host 是否应答
 ```
 
@@ -64,9 +65,10 @@ MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`�
 - hooks 和 MCP 服务的命令里写的是 Node 的绝对路径，因为从 Dock 启动的 GUI 客户端（如 Claude 桌面版）不读取 shell 的 `PATH`。MCP 服务的命令是 `"<node>" "<npx>" -y n2n-nexus@latest mcp`，npx 取这个 Node 旁边的 npm 自带的那个（版本管理工具的 shim 则取它实际运行的 Node 旁边的）；同时把 `PATH` 设为一个其中 `node` 就是这个 Node 的目录，后面跟系统目录（`/usr/bin` 和 `/bin`；Windows 上是 `System32` 和 Windows 目录），让 npx 启动的包能找到 Node。默认情况下，`PATH` 上的 `node` 与运行 `install` 的 Node 是同一个文件时，`install` 写入 `PATH` 上的路径（例如 `/usr/local/bin/node`、`/opt/homebrew/bin/node`、`~/.local/bin/node` 或版本管理工具的稳定入口），否则写入当前运行的 Node 的真实路径。`install` 会打印一行 `Node: <path>` 显示实际写入的路径。
 - macOS 上用 Claude 桌面版：Code 标签页只需要 `n2n-nexus install claude`，它和 `claude` 命令行读同一份 `~/.claude.json` 和 hooks。不要再把 n2n-nexus 加进桌面版的 `claude_desktop_config.json`：桌面版会把那个服务器桥接进每个 Code 标签页、顶替 Claude Code 自己启动的那份，桥接会丢掉对话身份，直接消息全部报 "This call carries no agent session"。如果已经加了，删掉这一项、重启桌面版、再新开 Code 标签页对话（[用户手册第 2 节](USER_GUIDE_zh.md#2-claude-桌面版)）。
 - 用 `--node <path>` 手动指定 Node 路径。路径必须存在、可执行，且版本满足 package.json 的 `engines`（`^22.14.0 || >=23.6.0`），否则 `install` 以退出码 1 退出，不写任何配置。
-- 升级 Node 后：如果 `install` 提示 Node 路径位于带版本号的目录（Homebrew `Cellar`、nvm、fnm、Volta、asdf、`node-v<版本>`），每次升级 Node 后都要重新运行 `n2n-nexus install <claude|codex|pi>`，或用 `--node` 指定稳定路径。
+- 升级 Node 后：如果 `install` 提示 Node 路径位于带版本号的目录（Homebrew `Cellar`、nvm、fnm、Volta、asdf、`node-v<版本>`），每次升级 Node 后都要重新运行 `n2n-nexus install <claude|codex|pi|antigravity>`，或用 `--node` 指定稳定路径。
 - 支持 Linux、WSL 和 macOS；Codex hooks 也支持 Windows PowerShell。
 - pi 没有 hook 配置：`install pi` 把扩展 `n2n-nexus.ts` 写进 pi 的全局扩展目录（`~/.pi/agent/extensions`，或 `$PI_CODING_AGENT_DIR/extensions`）。它在 pi 的会话开始、提交提示、工具结果（模型自己发起的调用；`codemode` 脚本里的调用由脚本自己的结果覆盖）、一轮运行结束和退出时运行 hook 命令，每轮运行结束后启动后台等待；叫醒时把通知作为下一条用户消息发给 pi。pi 调用 MCP 工具时不附带元数据，所以 pi 启动的 MCP 服务器报上它上面的各级进程（pi 经 npx 和 shell 启动它）和所在机器，host 从中找到最近的 pi 进程，取它最近报告的会话。装完后重新启动 pi（或执行 `/reload`）。用户中断的一轮不会被接着跑，`/reload` 不会结束会话。同名的扩展文件如果不是 n2n-nexus 写的，不会被改动：`install pi` 拒绝执行，`uninstall pi` 跳过它。
+- Google Antigravity（IDE 和 `agy` CLI）：`install antigravity` 需要 `PATH` 上有 `agy`。它把名为 `n2n-nexus` 的命名 hook 写进 `~/.gemini/config/hooks.json`（SessionStart、PreInvocation 和 Stop；其他命名 hook 保留），写入规则文件 `~/.gemini/config/rules/n2n-nexus.md`（`trigger: always_on`），并把权限授权 `command(n2n-nexus hook antigravity --wait)`（指定了 `--endpoint` 时带上 ` --endpoint <url>`）加进 IDE 的 `~/.gemini/config/config.json`（`userSettings.globalPermissionGrants.allow`）和 CLI 的 `~/.gemini/antigravity-cli/settings.json`（`permissions.allow`），其他授权和设置都保留；然后用 `agy mcp add` 注册 MCP 服务器。它不改沙箱、模型或权限模式。Antigravity 没有能在后台等待的 hook，所以由模型按规则启动消息等待器 `n2n-nexus hook antigravity --wait`：`[n2n-nexus]` 通知说等待器没有运行时，模型把它作为后台命令启动；等待器通过 `agy agentapi send-message` 叫醒空闲的对话。这条命令必须能在 `PATH` 上找到（全局 npm 安装）。空闲叫醒取决于模型是否遵守规则，以及权限策略是否允许这条授权运行该命令；没有运行中的等待器时，对话仍会在下一次提示、模型调用之间和一轮结束时收到消息。恢复的对话在下一次提示时重新启动等待器。Windows 上每条 hook 命令是 `powershell -NoProfile -NonInteractive -EncodedCommand …`，因为 Antigravity 通过 `cmd /c` 运行 hook。同名但不是 n2n-nexus 写的规则文件不会被动：`install antigravity` 拒绝执行，`uninstall antigravity` 跳过它。安装后新开一个 Antigravity 对话。
 
 ## 4. 启用 Codex 的 hooks（只需一次，必须做）
 
@@ -136,7 +138,7 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 7. 检查安装
 
-`n2n-nexus doctor [claude|codex|pi]` 检查已安装的 hook 命令里的 Node 路径与入口脚本、MCP 命令里的 Node 路径与 npx 是否仍然存在、能否运行，Claude Code 的后台等待 hook 的超时时间是否与客户端一致（旧版 install 写入的更短），Codex 是否信任 Codex 的 hooks（直接问 Codex），以及它们连接的 host 是否应答、协议版本是否与客户端一致，有检查失败时以退出码 1 退出。检查会同时读取 hooks 的地址和 MCP 注册中的 `env.NEXUS_ENDPOINT`，一方连接正常不会掩盖另一方的连接故障。
+`n2n-nexus doctor [claude|codex|pi|antigravity]` 检查已安装的 hook 命令里的 Node 路径与入口脚本、MCP 命令里的 Node 路径与 npx 是否仍然存在、能否运行，Claude Code 的后台等待 hook 的超时时间是否与客户端一致（旧版 install 写入的更短），Codex 是否信任 Codex 的 hooks（直接问 Codex），Antigravity 是否有写着等待器命令的 n2n-nexus 规则、两个设置文件里是否有等待器的授权、`PATH` 上能否找到 `n2n-nexus`，以及它们连接的 host 是否应答、协议版本是否与客户端一致，有检查失败时以退出码 1 退出。检查会同时读取 hooks 的地址和 MCP 注册中的 `env.NEXUS_ENDPOINT`，一方连接正常不会掩盖另一方的连接故障。
 
 ## 8. 升级
 
@@ -147,7 +149,7 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 9. 卸载
 
-`n2n-nexus uninstall <claude|codex|pi>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删），配置里的其他内容不动。
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删）；Antigravity 先删除规则文件、命名 hook 和等待器的授权；配置里的其他内容不动。已打开的 Antigravity 对话会保留它们的消息等待器，直到对话关闭。
 
 ```bash
 n2n-nexus uninstall claude

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
+import dgram from "node:dgram";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -7,13 +8,14 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { MAX_TITLE_CHARS, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS } from "../src/contract.js";
+import { DISCOVERY_QUERY, MAX_TITLE_CHARS, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS } from "../src/contract.js";
 import { hookClientPid } from "../src/cli/client-process.js";
-import { nextQueueRetry, waitForWake } from "../src/cli/hook.js";
+import { agentapiProgram, nextQueueRetry, waitForWake } from "../src/cli/hook.js";
 import { machineInfo } from "../src/cli/machine.js";
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../src/client/nexus-client.js";
 import { ENTRY, REPO, cliEnv, runCli, type CliResult } from "./helpers/cli.js";
 import { closedPort, listen } from "./helpers/http.js";
+import { cleanupExecutables, writeExecutable } from "./helpers/executable.js";
 
 // Tests the built CLI (built by the globalSetup).
 const TMP = path.join(REPO, "tests", "tmp", "hook-cli");
@@ -190,6 +192,210 @@ describe("n2n-nexus hook, forwarding", () => {
             expect(result.stderr.trim().split("\n")).toHaveLength(1);
         }
     }, 20_000);
+});
+
+describe("n2n-nexus hook antigravity, forwarding", () => {
+    let fake: FakeDaemon;
+    beforeEach(async () => { fake = await startFakeDaemon(); });
+    afterEach(async () => { await fake.close(); });
+
+    /** Run `hook antigravity <args>` with `stdin`; returns the result and the input it forwarded (undefined: none). */
+    async function hook(args: string[], stdin: Record<string, unknown>) {
+        fake.requests.length = 0;
+        const result = await runHook(["antigravity", ...args, "--endpoint", fake.endpoint], JSON.stringify(stdin));
+        const body = fake.requests[0]?.body as { client: string; input: Record<string, unknown> } | undefined;
+        expect(fake.requests.length).toBeLessThanOrEqual(1);
+        if (body) expect(body.client).toBe("antigravity");
+        return { result, input: body?.input };
+    }
+    const base = { conversationId: "conv-1", cwd: "/home/u", workspacePaths: ["", "/work/a", "/work/b"], transcriptPath: "/t.jsonl", artifactDirectoryPath: "/a", modelName: "m" };
+
+    it("maps SessionStart, its title from lastUserInput, and prints {} for a null output", async () => {
+        const { result, input } = await hook(["SessionStart"], { ...base, hookEventName: "SessionStart", lastUserInput: `  ${"x".repeat(MAX_TITLE_CHARS + 5)}\nsecond line` });
+        expect(result).toMatchObject({ code: 0, stdout: "{}\n", stderr: "" });
+        expect(input).toEqual({ hook_event_name: "SessionStart", session_id: "conv-1", cwd: "/work/a", title: "x".repeat(MAX_TITLE_CHARS), machine: machineInfo() });
+    });
+
+    it("maps PreInvocation by invocationNum and Stop by executionNum, with the registered event argument", async () => {
+        // Historical payloads carry no hookEventName: the registered argument names the event.
+        expect((await hook(["PreInvocation"], { ...base, invocationNum: 0 })).input).toMatchObject({ hook_event_name: "UserPromptSubmit", session_id: "conv-1" });
+        expect((await hook(["PreInvocation"], { ...base, hookEventName: "PreInvocation", invocationNum: 3 })).input).toMatchObject({ hook_event_name: "PostToolUse" });
+        expect((await hook(["Stop"], { ...base, hookEventName: "Stop", executionNum: 1, continuationActive: false, fullyIdle: false })).input)
+            .toEqual({ hook_event_name: "Stop", session_id: "conv-1", cwd: "/work/a", stop_hook_active: true, machine: machineInfo() });
+        expect((await hook(["Stop"], { ...base, executionNum: 0, continuationActive: true })).input).toMatchObject({ stop_hook_active: false });
+        // Without an argument, hookEventName names it.
+        expect((await hook([], { ...base, hookEventName: "PreInvocation", invocationNum: 0 })).input).toMatchObject({ hook_event_name: "UserPromptSubmit" });
+        // cwd: the first workspace path, else cwd, else none.
+        expect((await hook(["Stop"], { conversationId: "c", workspacePaths: [], cwd: "/home/u" })).input).toMatchObject({ cwd: "/home/u" });
+        expect((await hook(["Stop"], { conversationId: "c" })).input).not.toHaveProperty("cwd");
+    });
+
+    it("prints the host's output as one JSON line and skips events the host does not handle", async () => {
+        const output = { injectSteps: [{ systemMessage: { systemMessage: "[n2n-nexus] 1 new direct message" } }] };
+        fake.respond = () => ({ raw: JSON.stringify({ output }) });
+        expect((await hook(["PreInvocation"], { ...base, invocationNum: 0 })).result).toMatchObject({ code: 0, stdout: JSON.stringify(output) + "\n" });
+        const skipped = await hook(["PostToolUse"], { ...base, hookEventName: "PostToolUse" });
+        expect(skipped.result).toMatchObject({ code: 0, stdout: "{}\n", stderr: "" });
+        expect(skipped.input).toBeUndefined();
+    });
+
+    it("waits past the short timeout for Stop only", async () => {
+        const output = { decision: "continue", reason: "[n2n-nexus] new message" };
+        fake.respond = () => ({ delayMs: 6_000, raw: JSON.stringify({ output }) });
+        const [stop, pre] = await Promise.all([
+            runHook(["antigravity", "Stop", "--endpoint", fake.endpoint], JSON.stringify({ ...base, executionNum: 0 })),
+            runHook(["antigravity", "PreInvocation", "--endpoint", fake.endpoint], JSON.stringify({ ...base, invocationNum: 1 }))
+        ]);
+        expect(stop).toMatchObject({ code: 0, stdout: JSON.stringify(output) + "\n" });
+        expect(pre).toMatchObject({ code: 0, stdout: "" });
+        expect(pre.stderr).toContain("timed out after 5000 ms");
+    }, 20_000);
+});
+
+describe("n2n-nexus hook antigravity --wait", () => {
+    let fake: FakeDaemon;
+    let dir: string;
+    beforeEach(async () => {
+        fake = await startFakeDaemon();
+        dir = path.join(TMP, "antigravity-wait");
+        fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(dir, { recursive: true });
+    });
+    afterEach(async () => { await fake.close(); });
+    afterAll(() => cleanupExecutables());
+
+    const SECRET = "csrf-secret-value-123";
+    /** A fake agy that records each call's arguments and exits with the next code in ./codes (0 when none is left). */
+    function fakeAgy(codes: number[]): { exe: string; calls: () => string[][] } {
+        const record = path.join(dir, "agentapi.jsonl");
+        const codesFile = path.join(dir, "codes.json");
+        fs.writeFileSync(codesFile, JSON.stringify(codes));
+        const exe = writeExecutable(path.join(dir, "agy"), `
+const fs = require("node:fs");
+fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), token: process.env.ANTIGRAVITY_CSRF_TOKEN }) + "\\n");
+const codes = JSON.parse(fs.readFileSync(${JSON.stringify(codesFile)}, "utf8"));
+const code = codes.shift() ?? 0;
+fs.writeFileSync(${JSON.stringify(codesFile)}, JSON.stringify(codes));
+process.exit(code);
+`);
+        const calls = () => fs.existsSync(record) ? fs.readFileSync(record, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { args: string[]; token: string }).map((c) => {
+            expect(c.token).toBe(SECRET);                      // agentapi gets the credentials
+            return c.args;
+        }) : [];
+        return { exe, calls };
+    }
+    const env = (exe: string, extra: NodeJS.ProcessEnv = {}) => ({
+        ANTIGRAVITY_CONVERSATION_ID: "conv-9", ANTIGRAVITY_AGENTAPI_EXE: exe, ANTIGRAVITY_LS_ADDRESS: "127.0.0.1:1", ANTIGRAVITY_CSRF_TOKEN: SECRET, ...extra
+    });
+    /** Start the waiter; it never ends by itself, so the test ends it. */
+    function startWaiter(environment: NodeJS.ProcessEnv, endpoint = fake.endpoint) {
+        const child = spawn(process.execPath, [ENTRY, "hook", "antigravity", "--wait", "--endpoint", endpoint], { env: cliEnv({ NEXUS_ENDPOINT: "", ...environment }), stdio: ["ignore", "pipe", "pipe"] });
+        let stderr = "";
+        child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+        const exited = new Promise<number | null>((resolve) => child.on("close", resolve));
+        return { child, stderr: () => stderr, stop: async () => { child.kill("SIGKILL"); await exited; } };
+    }
+    const events = () => fake.requests.map((r) => (r.body as { input: { hook_event_name: string } }).input.hook_event_name);
+    const stamps: number[] = [];
+
+    it("exits 1 without the variables Antigravity gives its commands, naming them and not their values", async () => {
+        const result = await runHook(["antigravity", "--wait", "--endpoint", fake.endpoint], "", { ANTIGRAVITY_CONVERSATION_ID: "conv-9", ANTIGRAVITY_CSRF_TOKEN: SECRET });
+        expect(result.code).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toContain("ANTIGRAVITY_AGENTAPI_EXE, ANTIGRAVITY_LS_ADDRESS not set");
+        expect(result.stderr).not.toContain(SECRET);
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    it("hands each wake to agentapi send-message once, reports it, and goes on waiting after timeouts", async () => {
+        const agy = fakeAgy([0]);
+        let waits = 0;
+        fake.respond = (body) => {
+            const input = body.input as { hook_event_name: string };
+            if (input.hook_event_name !== "BackgroundWait") return { raw: JSON.stringify({ output: null }) };
+            waits++;
+            return { raw: JSON.stringify({ output: waits === 2 ? { wake: "line one\nline \"two\" & more", dispatchId: "d1" } : { timeout: true } }), delayMs: waits > 3 ? 60_000 : 0 };
+        };
+        const waiter = startWaiter(env(agy.exe));
+        expect(await waitFor(() => waits >= 4, 10_000)).toBe(true);
+        await waiter.stop();
+        expect(agy.calls()).toEqual([["agentapi", "send-message", "conv-9", "line one\nline \"two\" & more"]]);
+        expect(events().slice(0, 4)).toEqual(["BackgroundWait", "BackgroundWait", "WakeResult", "BackgroundWait"]);
+        expect(fake.requests[2].body).toEqual({ client: "antigravity", input: { hook_event_name: "WakeResult", session_id: "conv-9", dispatch_id: "d1", ok: true } });
+        expect(fake.requests[0].body).toEqual({ client: "antigravity", input: { hook_event_name: "BackgroundWait", session_id: "conv-9" } });
+        expect(JSON.stringify(fake.requests)).not.toContain(SECRET);       // the credentials never reach the host
+        expect(waiter.stderr()).toBe("");
+    }, 20_000);
+
+    it("backs off after a null answer, a refusing host and a failed send, doubling the delay", async () => {
+        const agy = fakeAgy([1]);
+        stamps.length = 0;
+        let n = 0;
+        fake.respond = (body) => {
+            const input = body.input as { hook_event_name: string };
+            if (input.hook_event_name !== "BackgroundWait") return { raw: JSON.stringify({ output: null }) };
+            stamps.push(Date.now());
+            n++;
+            if (n === 1) return { raw: JSON.stringify({ output: null }) };                                  // session not known yet
+            if (n === 2) return { status: 400, raw: JSON.stringify({ ok: false, error: "Invalid hook request" }) }; // an older host
+            if (n === 3) return { raw: JSON.stringify({ output: { wake: "hi", dispatchId: "d2" } }) };
+            return { raw: JSON.stringify({ output: { timeout: true } }), delayMs: 60_000 };
+        };
+        const waiter = startWaiter(env(agy.exe));
+        expect(await waitFor(() => n >= 4, 15_000)).toBe(true);
+        await waiter.stop();
+        const gaps = stamps.slice(1, 4).map((t, i) => t - stamps[i]);
+        expect(gaps[0]).toBeGreaterThanOrEqual(WAKE_RETRY_FIRST_DELAY_MS - 50);
+        expect(gaps[1]).toBeGreaterThanOrEqual(2 * WAKE_RETRY_FIRST_DELAY_MS - 50);
+        // The wake came after the delay was reset by it; its failed send waits the first delay again.
+        expect(gaps[2]).toBeGreaterThanOrEqual(WAKE_RETRY_FIRST_DELAY_MS - 50);
+        expect(gaps[2]).toBeLessThan(2 * WAKE_RETRY_FIRST_DELAY_MS);
+        expect(fake.requests.find((r) => (r.body as { input: { hook_event_name: string } }).input.hook_event_name === "WakeResult")?.body)
+            .toEqual({ client: "antigravity", input: { hook_event_name: "WakeResult", session_id: "conv-9", dispatch_id: "d2", ok: false } });
+        expect(agy.calls()).toEqual([["agentapi", "send-message", "conv-9", "hi"]]);
+        expect(waiter.stderr()).toContain("agentapi send-message failed (exit code 1)");
+        expect(waiter.stderr()).not.toContain(SECRET);
+    }, 30_000);
+
+    it("reports a wake to the host that sent it, found by discovery, and does not send it again when the report fails", async () => {
+        const agy = fakeAgy([0]);
+        // The cached host is gone; discovery finds the fake daemon, which sends the wake.
+        const home = path.join(dir, "home");
+        fs.mkdirSync(path.join(home, ".n2n-nexus"), { recursive: true });
+        fs.writeFileSync(path.join(home, ".n2n-nexus", "discovered-endpoint"), `http://127.0.0.1:${await closedPort()}\n`);
+        const udp = dgram.createSocket({ type: "udp4", reuseAddr: true });
+        await new Promise<void>((resolve) => udp.bind(0, () => resolve()));
+        const reply = Buffer.from(JSON.stringify({ service: "n2n-nexus", version: "test", host: "0.0.0.0", port: Number(new URL(fake.endpoint).port) }));
+        udp.on("message", (msg, rinfo) => { if (msg.toString("utf8") === DISCOVERY_QUERY) udp.send(reply, rinfo.port, rinfo.address); });
+        let waits = 0;
+        fake.respond = (body) => {
+            const input = body.input as { hook_event_name: string };
+            if (input.hook_event_name === "WakeResult") return { status: 500, raw: JSON.stringify({ ok: false, error: "boom" }) };
+            waits++;
+            return { raw: JSON.stringify({ output: waits === 1 ? { wake: "found you", dispatchId: "d3" } : { timeout: true } }), delayMs: waits > 1 ? 60_000 : 0 };
+        };
+        const waiter = startWaiter(env(agy.exe, { HOME: home, USERPROFILE: home, NEXUS_DISCOVERY_PORT: String(udp.address().port) }), "discover");
+        try {
+            expect(await waitFor(() => waits >= 2, 15_000)).toBe(true);
+        } finally {
+            await waiter.stop();
+            udp.close();
+        }
+        expect(events()).toEqual(["BackgroundWait", "WakeResult", "BackgroundWait"]);
+        expect(fake.requests[1].body).toEqual({ client: "antigravity", input: { hook_event_name: "WakeResult", session_id: "conv-9", dispatch_id: "d3", ok: true } });
+        expect(agy.calls()).toEqual([["agentapi", "send-message", "conv-9", "found you"]]);
+    }, 30_000);
+
+    it("finds the executable a .cmd wrapper runs agentapi with", () => {
+        const wrapper = path.join(dir, "agentapi.cmd");
+        fs.writeFileSync(wrapper, `@echo off\r\n"C:\\Program Files\\Antigravity\\agy.exe" agentapi %*\r\n`);
+        expect(agentapiProgram(wrapper)).toBe("C:\\Program Files\\Antigravity\\agy.exe");
+        fs.writeFileSync(wrapper, `@echo off\r\n"%~dp0bin\\agy.exe" agentapi %*\r\n`);
+        expect(agentapiProgram(wrapper)).toBe(path.join(dir, "bin\\agy.exe"));
+        fs.writeFileSync(wrapper, "@echo off\r\nexit 1\r\n");
+        expect(agentapiProgram(wrapper)).toBeNull();
+        expect(agentapiProgram("/opt/agy/agy")).toBe("/opt/agy/agy");
+    });
 });
 
 describe("n2n-nexus hook, conversation title", () => {

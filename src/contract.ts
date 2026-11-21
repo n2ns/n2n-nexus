@@ -5,7 +5,7 @@
  * zod or the MCP SDK. The values come from contract/hook.json, which the host
  * (n2n-nexus-host) embeds too.
  *
- * Identity: every Claude Code / Codex / pi conversation is one agent session with
+ * Identity: every Claude Code / Codex / pi / Antigravity conversation is one agent session with
  * id `<client>:<client session id>`. Hooks create and update sessions; tool
  * calls name their session through a {@link Caller} built from the MCP
  * request's `_meta`, never from model-supplied arguments.
@@ -19,7 +19,7 @@ const contract = JSON.parse(fs.readFileSync(new URL("../contract/hook.json", imp
 /** Protocol version of this client; the host reports its own in GET /health. */
 export const CONTRACT_VERSION: number = contract.contractVersion;
 
-export const HOOK_CLIENTS = contract.clients as readonly ["claude", "codex", "pi"];
+export const HOOK_CLIENTS = contract.clients as readonly ["claude", "codex", "pi", "antigravity"];
 export type HookClient = typeof HOOK_CLIENTS[number];
 
 export function isHookClient(value: unknown): value is HookClient {
@@ -33,17 +33,21 @@ export function isHookClient(value: unknown): value is HookClient {
  * (a sub-agent carries its parent's session id). pi sends no per-call
  * metadata: the adapter names the processes above it, nearest first (pi
  * starts it through npx and a shell), and its machine; the pi extension
- * reports the pi process's session with every hook event.
+ * reports the pi process's session with every hook event. Antigravity:
+ * `_meta["antigravity.google/conversation_id"]`, the conversation id its hooks
+ * report as `conversationId` (not the root conversation's id).
  */
 export type Caller =
     | { client: "claude"; toolUseId: string }
     | { client: "codex"; sessionId: string }
+    | { client: "antigravity"; sessionId: string }
     | { client: "pi"; clientPids: number[]; machine: { hostname: string; platform: string; environment: string } };
 
 /** MCP clientInfo names the adapter maps to a hook client. */
 export const CLIENT_INFO_NAMES: Record<HookClient, string> = contract.clientInfoNames;
 export const CLAUDE_TOOL_USE_META_KEY: string = contract.meta.claudeToolUseKey;
 export const CODEX_SESSION_META_KEY: string = contract.meta.codexSessionKey;
+export const ANTIGRAVITY_CONVERSATION_META_KEY: string = contract.meta.antigravityConversationKey;
 
 /**
  * Hook stdin fields the host uses. The hook command forwards only these (plus

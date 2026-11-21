@@ -66,6 +66,9 @@ type Agents struct {
 	toolAnnounced map[string][]string
 	// toolMeetings records the boundary before news announced only by tools.
 	toolMeetings map[string]map[string]int64
+	// inEvent is the session whose own hook event runs now: its background waits,
+	// which an Antigravity event leaves open, deliver nothing meanwhile.
+	inEvent string
 }
 
 // dispatch is one wake handed to a client (backgroundWait), kept so that a
@@ -392,7 +395,7 @@ func (a *Agents) logErr(what string, err error) {
 // waitForMessages holds a listening Stop hook: until something not notified
 // yet arrives (then the stop is blocked with it), the wait runs out, or the
 // hook's client goes away (mu held).
-func (a *Agents) waitForMessages(ctx context.Context, sessionID string) *waiter {
+func (a *Agents) waitForMessages(ctx context.Context, client, sessionID string) *waiter {
 	w := &waiter{session: sessionID}
 	finish := func(out map[string]any) { a.endWait(w, out) }
 	stopWaiting := func() {
@@ -431,7 +434,7 @@ func (a *Agents) waitForMessages(ctx context.Context, sessionID string) *waiter 
 			return
 		}
 		a.logErr("listening stop", a.setStatus(sessionID, "working"))
-		finish(blockOutput(text))
+		finish(blockOutput(client, text))
 	}
 	a.startWait(ctx, w)
 	return w
@@ -474,7 +477,7 @@ func (a *Agents) backgroundWait(ctx context.Context, sessionID string) *waiter {
 			stopWaiting()
 			return
 		}
-		if s.Status == "working" || a.listeningStop(sessionID) {
+		if s.Status == "working" || a.listeningStop(sessionID) || a.inEvent == sessionID {
 			return
 		}
 		if s.Status == "idle" {
@@ -948,13 +951,22 @@ func (a *Agents) introduce(sessionID string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func contextOutput(event, text string) map[string]any {
+// contextOutput is what a hook prints to add text to the conversation: Antigravity
+// injects it as a system message step, the other clients read additionalContext.
+func contextOutput(client, event, text string) map[string]any {
 	if text == "" {
 		return nil
+	}
+	if client == "antigravity" {
+		return map[string]any{"injectSteps": []any{map[string]any{"systemMessage": map[string]any{"systemMessage": text}}}}
 	}
 	return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": text}}
 }
 
-func blockOutput(reason string) map[string]any {
+// blockOutput is what a Stop hook prints to continue the turn with reason.
+func blockOutput(client, reason string) map[string]any {
+	if client == "antigravity" {
+		return map[string]any{"decision": "continue", "reason": reason}
+	}
 	return map[string]any{"decision": "block", "reason": reason}
 }

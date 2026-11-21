@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { runInstall } from "../src/cli/install.js";
+import { antigravityHookCommand, parseAntigravityHookCommand } from "../src/cli/hook-command.js";
 
 // install launches claude / codex through spawnClientSync; these tests never run the real clients.
 vi.mock("../src/cli/client-command.js", () => ({ spawnClientSync: vi.fn(() => ({ status: 0, stdout: "", stderr: "" })) }));
@@ -19,6 +20,8 @@ beforeEach(() => {
     fs.writeFileSync(entry, "process.stdout.write(JSON.stringify({ args: process.argv.slice(2), input: require('node:fs').readFileSync(0, 'utf8') }));");
     vi.stubEnv("CODEX_HOME", dir);
     vi.stubEnv("CLAUDE_CONFIG_DIR", dir);
+    vi.stubEnv("HOME", dir);
+    vi.stubEnv("USERPROFILE", dir);
 });
 
 afterEach(() => {
@@ -71,4 +74,24 @@ describe("Codex Windows hooks", () => {
         expect(result.status, result.stderr).toBe(0);
         expect(JSON.parse(result.stdout)).toEqual({ args: ["hook", "codex", "--endpoint", endpoint], input });
     }, 30_000); // Windows PowerShell can take seconds to start on a CI runner
+});
+
+describe("Antigravity Windows hooks", () => {
+    it("encodes every argument, quotes and cmd metacharacters included, so that it reads back unchanged", () => {
+        for (const event of ["SessionStart", "PreInvocation", "Stop"]) {
+            const command = antigravityHookCommand(process.execPath, entry, event, endpoint, "win32");
+            expect(command).toMatch(/^powershell -NoProfile -NonInteractive -EncodedCommand [A-Za-z0-9+/=]+$/);
+            expect(parseAntigravityHookCommand(command)).toEqual({ node: process.execPath, entry, event, endpoint });
+        }
+    });
+
+    it.runIf(process.platform === "win32")("runs the installed command through cmd /c, as Antigravity does, with literal arguments and stdin", () => {
+        expect(runInstall({ action: "install", client: "antigravity", node: process.execPath, entry, endpoint })).toBe(0);
+        const hooks = JSON.parse(fs.readFileSync(path.join(dir, ".gemini", "config", "hooks.json"), "utf8")) as Record<string, Record<string, Array<{ command: string }>>>;
+        const command = hooks["n2n-nexus"].Stop[0].command;
+        const input = JSON.stringify({ hookEventName: "Stop", conversationId: "installation-test" });
+        const result = spawnSync(process.env.comspec || "cmd.exe", ["/d", "/c", command], { encoding: "utf8", input, windowsVerbatimArguments: true });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual({ args: ["hook", "antigravity", "Stop", "--endpoint", endpoint], input });
+    }, 30_000);
 });

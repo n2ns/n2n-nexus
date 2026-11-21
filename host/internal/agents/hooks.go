@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/n2ns/n2n-nexus/host/internal/api"
@@ -156,15 +157,28 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		}
 	}
 	// Before the expiry check: what that finds for this session reaches the event itself,
-	// not a background wait that the event ends anyway.
-	if event != "Stop" {
+	// not a background wait that the event ends anyway. An Antigravity waiter outlives
+	// turns: its waits stay open and deliver nothing while the session is working.
+	if event != "Stop" && client != "antigravity" {
 		a.cancelBackgroundWaits(id)
+	}
+	// The waits left open do not deliver until the event is handled: what it finds is its own.
+	if event != "Stop" {
+		a.inEvent = id
+		defer func() { a.inEvent = "" }()
 	}
 	if err := a.expireAll(now); err != nil {
 		return nil, nil, err
 	}
-	// The client reports the conversation's title with these events only.
-	if event == "SessionStart" || event == "UserPromptSubmit" || event == "Stop" {
+	// The client reports the conversation's title with these events only;
+	// Antigravity's is the first prompt of its SessionStart, set once.
+	if client == "antigravity" {
+		if title, _ := input["title"].(string); title != "" && event == "SessionStart" {
+			if err := a.setClientTitleOnce(id, title); err != nil {
+				return nil, nil, err
+			}
+		}
+	} else if event == "SessionStart" || event == "UserPromptSubmit" || event == "Stop" {
 		if title, _ := input["title"].(string); title != "" {
 			if err := a.setClientTitle(id, title); err != nil {
 				return nil, nil, err
@@ -174,11 +188,16 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 
 	switch event {
 	case "SessionStart":
-		if err := a.setStatus(id, "idle"); err != nil {
+		// An Antigravity waiter's wait outlives the event: the session stays reachable.
+		status := "idle"
+		if len(a.backgroundWaits(id)) > 0 {
+			status = "listening"
+		}
+		if err := a.setStatus(id, status); err != nil {
 			return nil, nil, err
 		}
 		text, err := a.introduce(id)
-		return contextOutput("SessionStart", text), nil, err
+		return contextOutput(client, "SessionStart", text), nil, err
 	case "UserPromptSubmit":
 		delete(a.toolAnnounced, id)
 		delete(a.toolMeetings, id)
@@ -194,7 +213,12 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		} else {
 			text, err = a.notifyAll(id, a.o.Contract.Hook.Texts.NotifyClosing)
 		}
-		return contextOutput("UserPromptSubmit", text), nil, err
+		// An Antigravity conversation is woken only by the waiter the model starts: say when
+		// none is open. A turn a wake began needs no reminder: its waiter delivered the wake.
+		if err == nil && client == "antigravity" && !woken && len(a.backgroundWaits(id)) == 0 {
+			text = strings.TrimLeft(text+"\n"+a.o.Contract.Hook.Texts.WaiterReminder, "\n")
+		}
+		return contextOutput(client, "UserPromptSubmit", text), nil, err
 	case "PreToolUse":
 		if toolUseID, _ := input["tool_use_id"].(string); toolUseID != "" {
 			if err := a.bindToolUse(toolUseID, id, now); err != nil {
@@ -208,9 +232,9 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 		}
 		// A tool call can be a sub-agent's, whose context the conversation never sees: nothing is marked read.
 		text, err := a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing, markNone)
-		return contextOutput("PostToolUse", text), nil, err
+		return contextOutput(client, "PostToolUse", text), nil, err
 	case "Stop":
-		return a.stop(ctx, id, input)
+		return a.stop(ctx, client, id, input)
 	case "SessionEnd":
 		delete(a.toolAnnounced, id)
 		delete(a.toolMeetings, id)
@@ -227,7 +251,7 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 	return nil, nil, nil
 }
 
-func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map[string]any, *waiter, error) {
+func (a *Agents) stop(ctx context.Context, client, id string, input map[string]any) (map[string]any, *waiter, error) {
 	now := a.o.Clock.Now()
 	toolAnnounced := a.toolAnnounced[id]
 	toolMeetings := a.toolMeetings[id]
@@ -247,7 +271,7 @@ func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map
 			if err := a.setStatus(id, "working"); err != nil {
 				return nil, nil, err
 			}
-			return blockOutput(text), nil, nil
+			return blockOutput(client, text), nil, nil
 		}
 	} else if len(toolAnnounced) > 0 || len(toolMeetings) > 0 {
 		// The Stop of a continued turn holds nothing, so the messages that only tool calls announced
@@ -270,7 +294,7 @@ func (a *Agents) stop(ctx context.Context, id string, input map[string]any) (map
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, a.waitForMessages(ctx, id), nil
+		return nil, a.waitForMessages(ctx, client, id), nil
 	}
 	// A background wait keeps the session reachable: it counts as listening, and the wake lets it check now.
 	status := "idle"

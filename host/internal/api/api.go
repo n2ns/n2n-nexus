@@ -428,6 +428,8 @@ func parseCaller(raw json.RawMessage) *Caller {
 		return &Caller{Client: "claude", ToolUseID: c.ToolUseID}
 	case c.Client == "codex" && c.SessionID != "":
 		return &Caller{Client: "codex", SessionID: c.SessionID}
+	case c.Client == "antigravity" && c.SessionID != "":
+		return &Caller{Client: "antigravity", SessionID: c.SessionID}
 	case c.Client == "pi" && len(c.ClientPIDs) > 0 && len(c.ClientPIDs) <= maxCallerPIDs && c.Machine != nil && c.Machine.Hostname != "":
 		for _, pid := range c.ClientPIDs {
 			if pid <= 0 {
@@ -450,8 +452,8 @@ func (s *Server) serveHook(w http.ResponseWriter, r *http.Request) {
 		Client string         `json:"client"`
 		Input  map[string]any `json:"input"`
 	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Input == nil || (req.Client != "claude" && req.Client != "codex" && req.Client != "pi") {
-		writeError(w, &httpError{status: 400, message: "Invalid hook request: expected {client: \"claude\" | \"codex\" | \"pi\", input: object}"})
+	if err := json.Unmarshal(body, &req); err != nil || req.Input == nil || (req.Client != "claude" && req.Client != "codex" && req.Client != "pi" && req.Client != "antigravity") {
+		writeError(w, &httpError{status: 400, message: "Invalid hook request: expected {client: \"claude\" | \"codex\" | \"pi\" | \"antigravity\", input: object}"})
 		return
 	}
 	// Hooks are limited per conversation and per address, apart from tool calls: a busy session cannot starve the others.

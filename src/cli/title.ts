@@ -23,7 +23,7 @@ const TRANSCRIPT_CHUNK_BYTES = 256 * 1024;
 const TITLE_BUDGET_MS = 50;
 
 /** Trimmed first line, at most MAX_TITLE_CHARS characters; undefined when nothing is left. */
-function cleanTitle(value: unknown): string | undefined {
+export function cleanTitle(value: unknown): string | undefined {
     if (typeof value !== "string") return undefined;
     const line = value.trim().split(/\r\n|\r|\n/)[0].trim();
     const chars = Array.from(line);
@@ -105,9 +105,12 @@ async function codexTitle(sessionId: unknown): Promise<string | undefined> {
     }
 }
 
-/** The title of the conversation `input` (the hook's stdin) belongs to, or undefined (always for pi, which has no source for one); never throws. */
+/**
+ * The title of the conversation `input` (the hook's stdin) belongs to, or undefined (always for pi, which has
+ * no source for one, and for Antigravity, whose title is its first prompt, see hook.ts); never throws.
+ */
 export async function readTitle(client: HookClient, input: Record<string, unknown>): Promise<string | undefined> {
-    if (client === "pi") return undefined;
+    if (client === "pi" || client === "antigravity") return undefined;
     let timer: NodeJS.Timeout | undefined;
     const budget = new Promise<undefined>((resolve) => { timer = setTimeout(resolve, TITLE_BUDGET_MS, undefined); });
     const read = client === "claude" ? claudeTitle(input.transcript_path) : codexTitle(input.session_id);

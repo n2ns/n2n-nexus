@@ -2,14 +2,14 @@
 
 [中文版](INSTALL_zh.md)
 
-This guide installs n2n-nexus so that your AI coding sessions (Claude Code, Codex and pi) can share projects and documents and message each other. Once it is installed, the [User guide](USER_GUIDE.md) covers using it.
+This guide installs n2n-nexus so that your AI coding sessions (Claude Code, Codex, pi and Google Antigravity) can share projects and documents and message each other. Once it is installed, the [User guide](USER_GUIDE.md) covers using it.
 
 ## What you install
 
 | Part | What it is | Where |
 |---|---|---|
 | `n2n-nexus-host` | The host: one program that keeps all shared data and passes messages between sessions. Run it on one machine. | Windows, macOS or Linux |
-| `n2n-nexus` (npm) | The client: the MCP server your AI clients start, plus the hooks that tell the host which conversation is which. | Every machine with Claude Code, Codex or pi |
+| `n2n-nexus` (npm) | The client: the MCP server your AI clients start, plus the hooks that tell the host which conversation is which. | Every machine with Claude Code, Codex, pi or Antigravity |
 
 ## 1. Install the host
 
@@ -43,7 +43,7 @@ Start it in one of two ways:
 
 On Linux the tray needs a desktop with StatusNotifierItem (AppIndicator) support; on a server, use `service install`. Where the service and the start-at-login entry are registered on each OS: [Architecture](ARCHITECTURE.md#tray-and-service-per-os).
 
-## 3. Install the client for Claude Code, Codex and pi
+## 3. Install the client for Claude Code, Codex, pi and Antigravity
 
 Requires Node.js 22.14+ on the 22.x release line, or Node.js 23.6+.
 
@@ -52,6 +52,7 @@ npm i -g n2n-nexus@latest
 n2n-nexus install claude     # ~/.claude/settings.json and CLAUDE.md (or in $CLAUDE_CONFIG_DIR) + claude mcp add --scope user
 n2n-nexus install codex      # ~/.codex/hooks.json (or $CODEX_HOME) + codex mcp add
 n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts (or in $PI_CODING_AGENT_DIR) + pi mcp add
+n2n-nexus install antigravity  # ~/.gemini/config/hooks.json and rules/n2n-nexus.md, the waiter's permission grants + agy mcp add
 n2n-nexus doctor             # checks everything, including that the host answers
 ```
 
@@ -64,9 +65,10 @@ The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so 
 - The hooks and the MCP server command use an absolute Node path, because GUI clients started from the Dock (such as Claude Desktop) do not read your shell's `PATH`. The MCP server command is `"<node>" "<npx>" -y n2n-nexus@latest mcp`, with npm's npx found next to that Node (or next to the Node a version manager's shim runs); it also sets `PATH` to a folder whose `node` is that Node, followed by the system folders (`/usr/bin` and `/bin`; on Windows `System32` and the Windows folder), so the package npx starts finds Node. By default `install` writes the `node` found on `PATH` when it is the same file as the Node running `install` (for example `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `~/.local/bin/node` or a version manager's stable entry point), and otherwise the real path of the running Node. `install` prints the path it wrote as `Node: <path>`.
 - macOS with the Claude desktop app: `n2n-nexus install claude` is all the app's Code tab needs; it reads the same `~/.claude.json` and hooks as the `claude` CLI. Do not also add n2n-nexus to the app's `claude_desktop_config.json`: the app then bridges that server into every Code tab in place of the one Claude Code starts, and the bridge drops the conversation identity, so direct messages fail with "This call carries no agent session". If the entry is there, remove it, restart the desktop app and start a new Code tab conversation ([User guide, section 2](USER_GUIDE.md#2-claude-desktop-app)).
 - Pass `--node <path>` to choose the Node path yourself. It must exist, be executable and satisfy the `engines` range in package.json (`^22.14.0 || >=23.6.0`); otherwise `install` exits with code 1 and writes nothing.
-- After upgrading Node: if `install` warned that the Node path contains a version directory (Homebrew `Cellar`, nvm, fnm, Volta, asdf, `node-v<version>`), run `n2n-nexus install <claude|codex|pi>` again after each upgrade, or pass `--node` with a stable path.
+- After upgrading Node: if `install` warned that the Node path contains a version directory (Homebrew `Cellar`, nvm, fnm, Volta, asdf, `node-v<version>`), run `n2n-nexus install <claude|codex|pi|antigravity>` again after each upgrade, or pass `--node` with a stable path.
 - Supported on Linux, WSL and macOS; Codex hooks also support Windows PowerShell.
 - pi has no hook configuration: `install pi` writes the extension `n2n-nexus.ts` into pi's global extensions folder (`~/.pi/agent/extensions`, or `$PI_CODING_AGENT_DIR/extensions`). It runs the hook command on pi's session start, prompt, tool result (of the calls the model makes; a call a `codemode` script makes is covered by the script's own result), end of run and shutdown, and after each run starts the background wait; a wake is sent to pi as the next user message. pi attaches no metadata to MCP tool calls, so the MCP server started by pi names the processes above it (pi starts it through npx and a shell) and its machine, and the host finds the session the nearest pi process among them reported last. Start pi again (or run `/reload`) afterwards. A run the user aborts is not continued, and `/reload` keeps the session. An extension file of that name that n2n-nexus did not write is left alone: `install pi` refuses and `uninstall pi` skips it.
+- Google Antigravity (the IDE and the `agy` CLI): `install antigravity` needs `agy` on `PATH`. It writes the named hook `n2n-nexus` into `~/.gemini/config/hooks.json` (SessionStart, PreInvocation and Stop; other named hooks are kept), the rule `~/.gemini/config/rules/n2n-nexus.md` (`trigger: always_on`), and the permission grant `command(n2n-nexus hook antigravity --wait)` (with ` --endpoint <url>` when given) into the IDE's `~/.gemini/config/config.json` (`userSettings.globalPermissionGrants.allow`) and the CLI's `~/.gemini/antigravity-cli/settings.json` (`permissions.allow`), keeping every other grant and setting; then it registers the MCP server with `agy mcp add`. It does not change the sandbox, the model or the permission mode. Antigravity has no hook that can wait in the background, so the model starts the message waiter, `n2n-nexus hook antigravity --wait`, as a background command when an `[n2n-nexus]` notice says it is not running, as the rule tells it; the waiter wakes the idle conversation through `agy agentapi send-message`. That command must resolve on `PATH` (the global npm install). Idle waking depends on the model following the rule, and on a permission policy that lets the grant run the command; without a running waiter the conversation still gets its messages at its next prompt, between model calls and at the end of a turn. A resumed conversation starts its waiter again at its next prompt. On Windows each hook command is `powershell -NoProfile -NonInteractive -EncodedCommand …`, because Antigravity runs hooks through `cmd /c`. A rule file of that name that n2n-nexus did not write is left alone: `install antigravity` refuses and `uninstall antigravity` skips it. Start a new Antigravity conversation afterwards.
 
 ## 4. Turn on the Codex hooks (one-time, required)
 
@@ -136,7 +138,7 @@ IPv6 discovery keeps the HTTP address family: a host bound to `::` on this machi
 
 ## 7. Check the installation
 
-`n2n-nexus doctor [claude|codex|pi]` checks that the Node path and the entry script in the installed hook commands, and the Node path and npx in the MCP command, still exist and run, that Claude Code's background wait hook has this client's timeout (an older install wrote a shorter one), that Codex trusts the Codex hooks (asking Codex itself), and that the host they talk to answers with the client's contract version; it exits with code 1 when a check fails. It checks both the hooks' endpoints and the MCP registration's `env.NEXUS_ENDPOINT`; one healthy endpoint cannot hide a failure at the other.
+`n2n-nexus doctor [claude|codex|pi|antigravity]` checks that the Node path and the entry script in the installed hook commands, and the Node path and npx in the MCP command, still exist and run, that Claude Code's background wait hook has this client's timeout (an older install wrote a shorter one), that Codex trusts the Codex hooks (asking Codex itself), that Antigravity has the n2n-nexus rule naming the waiter command, the waiter's grant in both settings files and `n2n-nexus` on `PATH`, and that the host they talk to answers with the client's contract version; it exits with code 1 when a check fails. It checks both the hooks' endpoints and the MCP registration's `env.NEXUS_ENDPOINT`; one healthy endpoint cannot hide a failure at the other.
 
 ## 8. Upgrading
 
@@ -147,7 +149,7 @@ Upgrade the host and the client on every machine to the same release: a host and
 
 ## 9. Uninstalling
 
-`n2n-nexus uninstall <claude|codex|pi>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it) and leaves the rest of the configuration alone.
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it), for Antigravity the rule file, the named hook and the waiter's grants first, and leaves the rest of the configuration alone. Open Antigravity conversations keep their message waiter until they are closed.
 
 ```bash
 n2n-nexus uninstall claude

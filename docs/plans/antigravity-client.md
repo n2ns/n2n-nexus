@@ -1,6 +1,6 @@
 # Plan: Google Antigravity as a fourth client
 
-Status: proposed, not implemented　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
+Status: implemented (§8 phases 1–4, 2026-11-21); end-to-end acceptance (§7.2) outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
 
 ## 1. Goal
 
@@ -111,8 +111,8 @@ Host (`host/internal/agents`):
 - **Output per client.**
   - Pass the client through both immediate Stop delivery in `hooks.go` and held listening-Stop delivery in `agents.go`; for `antigravity`, `contextOutput` returns `{"injectSteps":[{"systemMessage":{"systemMessage": text}}]}` and `blockOutput` returns `{"decision":"continue","reason": text}`.
   - The client prints `{}` when the host's output is null.
-- **Waiter reminder.** On the forwarded `UserPromptSubmit` of an `antigravity` session that has no background wait open, including the first prompt after resume without SessionStart, the host appends `texts.waiterReminder` to the injected text.
-- **Waits are not cancelled.** For `antigravity` sessions the host does not call `cancelBackgroundWaits` on events: the waiter outlives turns. Its requests already deliver nothing while the session is `working` or a listening Stop hook waits.
+- **Waiter reminder.** On the forwarded `UserPromptSubmit` of an `antigravity` session that has no background wait open, including the first prompt after resume without SessionStart, the host appends `texts.waiterReminder` to the injected text. A turn a wake just began gets no reminder: the waiter that delivered the wake is alive and asks again after reporting it.
+- **Waits are not cancelled.** For `antigravity` sessions the host does not call `cancelBackgroundWaits` on events: the waiter outlives turns. Its requests already deliver nothing while the session is `working` or a listening Stop hook waits; they also deliver nothing while one of the session's own hook events is handled, so what that event's expiry check finds reaches the event. A SessionStart with an open wait leaves the session `listening`.
 - **No SessionEnd.** Antigravity has no such event, so a session goes offline through `staleSessionMs` as now. The waiter's requests keep a session that is not `working` from going stale; a `working` session is kept alive by its own events, so one whose Stop was lost still goes stale.
 
 Registered events and timeouts:
@@ -172,7 +172,7 @@ Keep Antigravity-specific named-hook/rule/grant merge and removal helpers next t
 
 ## 6. Code changes
 
-These are implementation targets; no Antigravity support has been added by this plan update.
+Implemented on 2026-11-21 in these files; the Antigravity installer helpers are in `src/cli/antigravity.ts`, and the Antigravity caller tests in `tests/adapter_identity.test.ts` (both protocol eras).
 
 | Area | Files and responsibility |
 |---|---|
@@ -218,11 +218,13 @@ If agentapi accepts a message but a model does not reply within the observation 
 
 ## 8. Implementation order and commit boundaries
 
-This update authorizes documentation only. The following phases preserve the planned implementation boundaries for a later authorized implementation; it does not commit, push, deploy or release anything now.
+The implementation followed these phases. Pushing, package versions, tags and release delivery are separate decisions of the user.
 
 1. Contract, database migration and host changes (§4.1–4.3), with migration, Go and HTTP conformance coverage.
 2. Client identity, hook normalization and persistent waiter (§4.2–4.4), with client and both-era MCP tests.
 3. Installation, uninstallation and doctor (§4.5), with temporary-configuration and Windows command tests.
+
+Phases 1–3 landed in one commit: the client reads the client list from `contract/hook.json` at run time (`doctor` iterates it), so the contract change of phase 1 fails the client checks until phases 2 and 3 are in.
 4. Final repository-wide documentation consistency check (§5–6) and the complete automated gate (§7.1).
 5. Installed Linux/WSL CLI and Windows IDE end-to-end acceptance (§7.2), reported as separate results.
 

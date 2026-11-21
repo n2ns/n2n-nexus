@@ -1,5 +1,5 @@
 /**
- * Where Claude Code, Codex and pi keep their configuration. Node built-ins only:
+ * Where Claude Code, Codex, pi and Antigravity keep their configuration. Node built-ins only:
  * the hook command uses this to read a Codex conversation's title.
  */
 import os from "node:os";
@@ -16,3 +16,6 @@ export const codexHome = (): string => process.env.CODEX_HOME || path.join(os.ho
 
 /** pi's agent directory (extensions, mcp.json, settings.json): PI_CODING_AGENT_DIR, else ~/.pi/agent. */
 export const piAgentDir = (): string => process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+
+/** Antigravity's configuration (config/ for the IDE and the CLI, antigravity-cli/ for the CLI's own settings): ~/.gemini. */
+export const geminiDir = (): string => path.join(os.homedir(), ".gemini");

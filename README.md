@@ -53,7 +53,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 
 **Quick summary**
 
-- **Install**: the host `n2n-nexus-host` with Scoop / Homebrew / a Releases archive; the client with `npm i -g n2n-nexus@latest`, then `n2n-nexus install <claude|codex|pi>`
+- **Install**: the host `n2n-nexus-host` with Scoop / Homebrew / a Releases archive; the client with `npm i -g n2n-nexus@latest`, then `n2n-nexus install <claude|codex|pi|antigravity>`
 - **Protocol**: Model Context Protocol (MCP); the adapters reach the host over HTTP
 - **Storage**: one SQLite database in the host's data directory
 - **Good for**: multi-assistant coding sessions, project handoffs, shared decisions, meeting records, task tracking, project manifests
@@ -62,7 +62,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 ## 🎯 Why use it?
 
 - Coordinate multiple AI assistants working on the same project.
-- Let Claude Code, Codex and pi conversations message each other directly: a message arrives whole through the client's hooks, wakes a waiting conversation, and is answered with `reply`; each session shows the machine and environment it runs on.
+- Let Claude Code, Codex, pi and Google Antigravity conversations message each other directly: a message arrives whole through the client's hooks, wakes a waiting conversation, and is answered with `reply`; each session shows the machine and environment it runs on.
 - Hold meetings among assistants and keep their decisions. When you take part, your conversation holds the user's seat: you decide each draft and end the meeting, and the assistants' consensus is only reported.
 - Share project manifests, decisions, and assets across IDEs and machines.
 - Keep decisions, proposals, and updates in a local meeting and message log; old data is cleaned up after the retention you set.
@@ -87,13 +87,13 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 
 - **The host is the source of truth**: install it once and keep it running, as a tray app or as a background service.
 - **MCP adapters are stateless**: each IDE starts an adapter (`n2n-nexus mcp`), which forwards tool calls to the host.
-- **Every Claude Code, Codex and pi conversation has its own identity**: client hooks (for pi, an extension) register the conversation with the host and deliver new direct messages and meeting messages to it; each tool call names its conversation through the request metadata the client attaches (for pi, the pi process above the MCP server), never through model-supplied arguments.
+- **Every Claude Code, Codex, pi and Antigravity conversation has its own identity**: client hooks (for pi, an extension) register the conversation with the host and deliver new direct messages and meeting messages to it; each tool call names its conversation through the request metadata the client attaches (for pi, the pi process above the MCP server), never through model-supplied arguments.
 - **Cross-environment by design**: point `NEXUS_ENDPOINT` at the same host from different machines or shells. The host listens on `127.0.0.1` by default; turn on LAN access only on a trusted network.
 
 ## 🚀 Quick start
 
 1. Install and start the host, `n2n-nexus-host`, with Scoop, Homebrew or an archive from [Releases](https://github.com/n2ns/n2n-nexus/releases): [Installation guide, steps 1–2](docs/INSTALL.md#1-install-the-host).
-2. Install the client and connect Claude Code, Codex or pi (`npm i -g n2n-nexus@latest`, then `n2n-nexus install claude`, `n2n-nexus install codex` or `n2n-nexus install pi`): [step 3](docs/INSTALL.md#3-install-the-client-for-claude-code-codex-and-pi).
+2. Install the client and connect Claude Code, Codex, pi or Antigravity (`npm i -g n2n-nexus@latest`, then `n2n-nexus install claude`, `n2n-nexus install codex`, `n2n-nexus install pi` or `n2n-nexus install antigravity`): [step 3](docs/INSTALL.md#3-install-the-client-for-claude-code-codex-pi-and-antigravity).
 3. Codex only: `install codex` trusts the n2n-nexus hooks in Codex; if it says it could not, trust them by hand: [step 4](docs/INSTALL.md#4-turn-on-the-codex-hooks-one-time-required).
 
 Other MCP clients and several machines: see the [Installation guide](docs/INSTALL.md). Using it, troubleshooting and configuration: see the [User guide](docs/USER_GUIDE.md).
@@ -108,7 +108,7 @@ The host exposes 37 tools, grouped by purpose:
 | **Projects & assets** | `search_projects`, `get_project`, `update_project`, `rename_project`, `sync_project_assets`, `upload_project_asset` | Find, read, update, and rename projects; sync manifests and internal docs; upload binary assets. |
 | **Global docs** | `list_global_docs`, `get_global_doc`, `sync_global_doc`, `get_global_strategy`, `update_global_strategy` | List, read, create and update shared global documents and the master strategy document. |
 | **Messaging** | `send_message`, `read_messages`, `list_events` | Post meeting or global messages; read them and the activity log. |
-| **Direct messages** | `peers`, `send`, `read`, `reply`, `broadcast`, `listen`, `set_profile` | Find other Claude Code / Codex / pi conversations, message them, read and answer what arrives, notify every online conversation, wait for messages, and name yourself. |
+| **Direct messages** | `peers`, `send`, `read`, `reply`, `broadcast`, `listen`, `set_profile` | Find other Claude Code / Codex / pi / Antigravity conversations, message them, read and answer what arrives, notify every online conversation, wait for messages, and name yourself. |
 | **Meetings** | `list_meetings`, `start_meeting`, `join_meeting`, `leave_meeting`, `stance`, `end_meeting`, `archive_meeting`, `reopen_meeting` | List and open meetings; join (woken by new messages) or leave them; endorse or object to the current draft, which closes the meeting by consensus or, with the user's seat, is decided by the user; close, archive, and reopen them. |
 | **Tasks** | `create_task`, `get_task`, `list_tasks`, `update_task`, `cancel_task` | Create, update and track tasks that assistants manage themselves. |
 | **Maintenance** | `host_maintenance`, `host_delete_project` | Prune or clear the global chat stream; run the retention cleanup now; export a meeting as markdown; delete a project. |

@@ -1,10 +1,12 @@
 /**
- * `n2n-nexus install <claude|codex|pi> [--endpoint <url>] [--node <path>]` and
- * `n2n-nexus uninstall <claude|codex|pi>`: register the hooks and the MCP server
- * with Claude Code, Codex or pi. Our hook entries are recognised by a command that
+ * `n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]` and
+ * `n2n-nexus uninstall <claude|codex|pi|antigravity>`: register the hooks and the MCP server
+ * with Claude Code, Codex, pi or Google Antigravity (its `agy` command). Our hook entries are recognised by a command that
  * contains both `n2n-nexus` and ` hook <client>`; everything else in the
  * configuration file is kept as it is. pi has no hook configuration: its hooks
  * are an extension file (pi.ts), which install writes and uninstall removes.
+ * Antigravity gets a named hook, a rule file and the waiter's permission grants
+ * (antigravity.ts).
  *
  * For Claude Code, install also writes a marked block into the user's
  * CLAUDE.md that makes direct messages count as the user's own requests
@@ -28,6 +30,9 @@ import {
     type HookClient
 } from "../contract.js";
 import { pkg } from "../config/index.js";
+import {
+    ANTIGRAVITY_HOOK_NAME, RULE_MARK, antigravityGrantFiles, antigravityHook, antigravityHooksFile, antigravityRuleFile, renderRule, setAntigravityHook, setWaiterGrant, waiterGrant
+} from "./antigravity.js";
 import { spawnClientSync } from "./client-command.js";
 import { claudeConfigDir, codexHome } from "./client-dirs.js";
 import { entryScript } from "./entry.js";
@@ -42,8 +47,12 @@ type HooksFile = { hooks?: Record<string, unknown> } & Record<string, unknown>;
 const EVENTS: Record<HookClient, string[]> = {
     claude: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"],
     codex: ["SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse", "Stop"],
-    pi: []
+    pi: [],
+    antigravity: []
 };
+
+/** The command each client is run with. */
+export const CLIENT_COMMANDS: Record<HookClient, string> = { claude: "claude", codex: "codex", pi: "pi", antigravity: "agy" };
 
 type InstallOptions = {
     action: "install" | "uninstall";
@@ -177,7 +186,30 @@ function checkNodePath(given: string): string {
 
 export function configFile(client: HookClient): string {
     if (client === "pi") return piExtensionFile();
+    if (client === "antigravity") return antigravityHooksFile();
     return client === "claude" ? path.join(claudeConfigDir(), "settings.json") : path.join(codexHome(), "hooks.json");
+}
+
+/** A JSON object file: {} when it is missing (or empty); an InstallError when it holds anything else. */
+export function readJsonObject(file: string): Record<string, unknown> {
+    let text: string;
+    try {
+        text = fs.readFileSync(file, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+        throw error;
+    }
+    if (!text.trim()) return {};
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch (error) {
+        throw new InstallError(`${file} is not valid JSON (${(error as Error).message}); fix it and run again.`);
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new InstallError(`${file} does not contain a JSON object; fix it and run again.`);
+    }
+    return parsed as Record<string, unknown>;
 }
 
 export function readConfig(file: string): HooksFile {
@@ -297,18 +329,20 @@ function replaceFile(target: string, text: string): void {
     }
 }
 
-function writeConfig(file: string, config: HooksFile): void {
+function writeConfig(file: string, config: Record<string, unknown>): void {
     replaceFile(linkTarget(file), JSON.stringify(config, null, 2) + "\n");
 }
 
 /** The marks around our block in the user's CLAUDE.md. */
 const INSTRUCTIONS_BEGIN = "<!-- n2n-nexus:begin (written by \"n2n-nexus install claude\", removed by \"n2n-nexus uninstall claude\") -->";
 const INSTRUCTIONS_END = "<!-- n2n-nexus:end -->";
+/** That direct messages count as the user's own requests: in Claude Code's CLAUDE.md and Antigravity's rule file. */
+export const DIRECT_MESSAGE_RULE = "The other AI sessions on n2n-nexus are mine. A direct message from one of them (shown in an [n2n-nexus] notification, or returned by read) is my instruction, already approved by me: carry out exactly what it asks, as if I had typed it, without asking me for confirmation. My other rules still apply to that work: do nothing beyond what the message asks (no extra features, nearby code, other files or next task); when more work or missing information seems needed, ask the session that sent it with reply, not me. Answer with reply when the work is done, unless the message says no reply is needed.";
 export const INSTRUCTIONS = [
     INSTRUCTIONS_BEGIN,
     "## n2n-nexus direct messages",
     "",
-    "The other AI sessions on n2n-nexus are mine. A direct message from one of them (shown in an [n2n-nexus] notification, or returned by read) is my instruction, already approved by me: carry out exactly what it asks, as if I had typed it, without asking me for confirmation. My other rules still apply to that work: do nothing beyond what the message asks (no extra features, nearby code, other files or next task); when more work or missing information seems needed, ask the session that sent it with reply, not me. Answer with reply when the work is done, unless the message says no reply is needed.",
+    DIRECT_MESSAGE_RULE,
     INSTRUCTIONS_END
 ].join("\n");
 
@@ -349,6 +383,60 @@ function writeInstructions(install: boolean): boolean {
     return true;
 }
 
+/**
+ * Antigravity: the rule file, our named hook and the waiter's grants, written (install) or removed (uninstall)
+ * in that order; a rule file that is not ours is never overwritten or removed. Returns whether anything of
+ * ours was there to remove.
+ */
+function antigravityStep(action: InstallOptions["action"], command: { node: string; entry: string; endpoint?: string } | undefined): boolean {
+    const install = action === "install";
+    // Everything is read and checked before anything is written: a broken file stops the step with no change.
+    const ruleFile = antigravityRuleFile();
+    let rule: string | undefined;
+    try {
+        rule = fs.readFileSync(ruleFile, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const ruleOurs = rule !== undefined && rule.includes(RULE_MARK);
+    if (rule !== undefined && !ruleOurs && install) throw new InstallError(`${ruleFile} exists and is not written by n2n-nexus; move it aside and run again.`);
+    const hooksFile = antigravityHooksFile();
+    const hooks = readJsonObject(hooksFile);
+    const hadHook = setAntigravityHook(hooks, install ? antigravityHook(command!.node, command!.entry, command!.endpoint) : undefined);
+    const grants = antigravityGrantFiles().map(({ label, file, keys }) => {
+        const config = readJsonObject(file);
+        try {
+            return { label, file, config, changed: setWaiterGrant(config, keys, file, install ? waiterGrant(command!.endpoint) : undefined) };
+        } catch (error) {
+            throw new InstallError((error as Error).message);
+        }
+    });
+
+    let removed = false;
+    if (rule !== undefined && !ruleOurs) {
+        process.stdout.write(`Left ${ruleFile} alone: it is not written by n2n-nexus.\n`);
+    } else if (install) {
+        replaceFile(linkTarget(ruleFile), renderRule(command!.endpoint, DIRECT_MESSAGE_RULE));
+        process.stdout.write(`Wrote the n2n-nexus rule to ${ruleFile}\n`);
+    } else if (ruleOurs) {
+        fs.rmSync(linkTarget(ruleFile), { force: true });
+        process.stdout.write(`Removed the n2n-nexus rule from ${ruleFile}\n`);
+        removed = true;
+    }
+    if (install || hadHook) {
+        writeConfig(hooksFile, hooks);
+        process.stdout.write(`${install ? "Wrote the" : "Removed the"} "${ANTIGRAVITY_HOOK_NAME}" hook ${install ? "to" : "from"} ${hooksFile}\n`);
+    }
+    removed ||= hadHook;
+    for (const { label, file, config, changed } of grants) {
+        if (!changed) continue;
+        writeConfig(file, config);
+        process.stdout.write(`${install ? "Granted" : "Removed the grant of"} the message waiter command ${install ? "in" : "from"} the ${label} settings ${file}\n`);
+        if (!install) removed = true;
+    }
+    return removed;
+}
+
 function mcpRemoveArgs(client: HookClient): string[] {
     return client === "claude"
         ? ["mcp", "remove", "--scope", "user", MCP_SERVER_NAME]
@@ -384,12 +472,15 @@ function piExtensionStep(action: InstallOptions["action"], command: PiExtensionC
  * PATH, and a GUI client started from the Dock has none there. The rest is the system folders.
  */
 function mcpAddArgs(client: HookClient, node: string, { npx, bin }: { npx: string; bin: string }, endpoint?: string): string[] {
-    const flag = client === "claude" ? "-e" : "--env";
+    const flag = client === "claude" || client === "antigravity" ? "-e" : "--env";
     const systemRoot = process.env.SystemRoot || "C:\\Windows";
     const dirs = process.platform === "win32" ? [bin, path.join(systemRoot, "System32"), systemRoot] : [bin, "/usr/bin", "/bin"];
     const vars = [...(endpoint ? [`NEXUS_ENDPOINT=${endpoint}`] : []), `PATH=${dirs.join(process.platform === "win32" ? ";" : ":")}`];
     const scope = client === "claude" ? ["--scope", "user"] : [];
-    return ["mcp", "add", ...scope, MCP_SERVER_NAME, ...vars.flatMap((v) => [flag, v]), "--", node, npx, "-y", MCP_PACKAGE, "mcp"];
+    const env = vars.flatMap((v) => [flag, v]);
+    // agy rejects a flag after the server name.
+    const named = client === "antigravity" ? [...env, MCP_SERVER_NAME] : [MCP_SERVER_NAME, ...env];
+    return ["mcp", "add", ...scope, ...named, "--", node, npx, "-y", MCP_PACKAGE, "mcp"];
 }
 
 /**
@@ -397,10 +488,10 @@ function mcpAddArgs(client: HookClient, node: string, { npx, bin }: { npx: strin
  * spawnClientSync runs the script behind npm's `.cmd` shim, never cmd.exe.
  */
 function runClient(client: HookClient, args: string[], stdio: ["ignore", "ignore", "pipe" | "inherit"]): void {
-    const result = spawnClientSync(client, args, { encoding: "utf8", stdio });
+    const result = spawnClientSync(CLIENT_COMMANDS[client], args, { encoding: "utf8", stdio });
     if (result.error) throw result.error;
     if (result.status !== 0) {
-        throw Object.assign(new Error(`Command failed: ${client} ${args.join(" ")}`), { status: result.status, stderr: result.stderr });
+        throw Object.assign(new Error(`Command failed: ${CLIENT_COMMANDS[client]} ${args.join(" ")}`), { status: result.status, stderr: result.stderr });
     }
 }
 
@@ -413,9 +504,10 @@ function runClient(client: HookClient, args: string[], stdio: ["ignore", "ignore
  */
 function removeMcpServer(client: HookClient, action: InstallOptions["action"], hooksRemoved: boolean): void {
     const removeArgs = mcpRemoveArgs(client);
+    const program = CLIENT_COMMANDS[client];
     try {
         runClient(client, removeArgs, ["ignore", "ignore", "pipe"]);
-        if (action === "uninstall") process.stdout.write(`Ran: ${client} ${removeArgs.join(" ")}\n`);
+        if (action === "uninstall") process.stdout.write(`Ran: ${program} ${removeArgs.join(" ")}\n`);
         return;
     } catch (error) {
         // "Not registered" is the one failure to ignore; the registration is read from the
@@ -430,8 +522,8 @@ function removeMcpServer(client: HookClient, action: InstallOptions["action"], h
         if (action === "uninstall" && (error as NodeJS.ErrnoException).code === "ENOENT") {
             const file = mcpConfigFile(client);
             const what = client === "codex" ? `the [mcp_servers.${MCP_SERVER_NAME}] table` : `the "${MCP_SERVER_NAME}" entry under "mcpServers"`;
-            process.stdout.write(`Skipped "${client} ${removeArgs.join(" ")}": the "${client}" command could not be run (not on PATH, or not runnable without a shell). `
-                + `The MCP server is still registered in ${file}; run that command once ${client} can be run, or delete ${what} from ${file}.\n`);
+            process.stdout.write(`Skipped "${program} ${removeArgs.join(" ")}": the "${program}" command could not be run (not on PATH, or not runnable without a shell). `
+                + `The MCP server is still registered in ${file}; run that command once ${program} can be run, or delete ${what} from ${file}.\n`);
             return;
         }
         const failure = error as { stderr?: unknown; status?: number | null; message: string };
@@ -440,7 +532,7 @@ function removeMcpServer(client: HookClient, action: InstallOptions["action"], h
         const state = action === "uninstall"
             ? `${hooksRemoved ? "The hooks were removed; t" : "T"}he MCP server is still registered in ${mcpConfigFile(client)}.`
             : "The hooks were written; the existing MCP server registration was left unchanged.";
-        throw new InstallError(`"${client} ${removeArgs.join(" ")}" failed: ${detail}\n${state} Fix the error and run "n2n-nexus ${action} ${client}" again.`);
+        throw new InstallError(`"${program} ${removeArgs.join(" ")}" failed: ${detail}\n${state} Fix the error and run "n2n-nexus ${action} ${client}" again.`);
     }
 }
 
@@ -454,9 +546,9 @@ export function runInstall(options: InstallOptions): number {
         }
         // Uninstall does not need the client: our hooks are removed from its config file either way.
         if (action === "install") {
-            const probe = spawnClientSync(client, ["--version"], { stdio: "ignore" });
+            const probe = spawnClientSync(CLIENT_COMMANDS[client], ["--version"], { stdio: "ignore" });
             if (probe.error || probe.status !== 0) {
-                throw new InstallError(`The "${client}" command was not found on PATH; install ${CLIENT_NAMES[client]} first.`);
+                throw new InstallError(`The "${CLIENT_COMMANDS[client]}" command was not found on PATH; install ${CLIENT_NAMES[client]} first.`);
             }
         }
         const node = action === "install" ? (options.node ? checkNodePath(options.node) : stableNodePath()) : undefined;
@@ -465,6 +557,8 @@ export function runInstall(options: InstallOptions): number {
         let removed: boolean;
         if (client === "pi") {
             removed = piExtensionStep(action, node ? { node, entry, endpoint } : undefined);
+        } else if (client === "antigravity") {
+            removed = antigravityStep(action, node ? { node, entry, endpoint } : undefined);
         } else {
             const file = configFile(client);
             const config = readConfig(file);
@@ -487,11 +581,14 @@ export function runInstall(options: InstallOptions): number {
         if (action === "install" && node && npm) {
             const addArgs = mcpAddArgs(client, node, npm, endpoint);
             runClient(client, addArgs, ["ignore", "ignore", "inherit"]);
-            process.stdout.write(`Ran: ${client} ${addArgs.join(" ")}\n`);
+            process.stdout.write(`Ran: ${CLIENT_COMMANDS[client]} ${addArgs.join(" ")}\n`);
             process.stdout.write(`Node: ${node}\n`);
             if (VERSIONED_NODE_DIR.test(node) || VERSIONED_NODE_DIR.test(npm.npx)) {
                 process.stdout.write(`Note: this Node or npx path contains a version directory that an upgrade may remove. After upgrading Node, run "n2n-nexus install ${client}" again, or install with --node <path> pointing at a stable entry such as /usr/local/bin/node.\n`);
             }
+        }
+        if (action === "uninstall" && client === "antigravity") {
+            process.stdout.write("Open Antigravity conversations keep their message waiter until they are closed.\n");
         }
         return 0;
     } catch (error) {
@@ -501,13 +598,13 @@ export function runInstall(options: InstallOptions): number {
 }
 
 /** The product names the installer's messages use. */
-const CLIENT_NAMES: Record<HookClient, string> = { claude: "Claude Code", codex: "Codex", pi: "pi" };
+const CLIENT_NAMES: Record<HookClient, string> = { claude: "Claude Code", codex: "Codex", pi: "pi", antigravity: "Google Antigravity" };
 
-/** Parse `<claude|codex|pi> [--endpoint <url>] [--node <path>]` and run. */
+/** Parse `<claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]` and run. */
 export async function runInstallCommand(action: "install" | "uninstall", argv: string[]): Promise<number> {
     const client = argv[0];
     if (!isHookClient(client)) {
-        process.stderr.write(`Usage: n2n-nexus ${action} <claude|codex|pi>${action === "install" ? " [--endpoint <url>] [--node <path>]" : ""}\n`);
+        process.stderr.write(`Usage: n2n-nexus ${action} <claude|codex|pi|antigravity>${action === "install" ? " [--endpoint <url>] [--node <path>]" : ""}\n`);
         return 1;
     }
     const option = (name: string, what: string): string | undefined | null => {

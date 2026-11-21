@@ -1,7 +1,7 @@
 /**
- * Where Claude Code, Codex and pi keep their MCP server registrations, and how to
- * read the n2n-nexus entry: `~/.claude.json` (user scope), `$CODEX_HOME/config.toml`
- * and pi's `mcp.json`. `claude mcp get` is not used for this because it
+ * Where Claude Code, Codex, pi and Antigravity keep their MCP server registrations, and how to
+ * read the n2n-nexus entry: `~/.claude.json` (user scope), `$CODEX_HOME/config.toml`,
+ * pi's `mcp.json` and `~/.gemini/config/mcp_config.json` (which `agy mcp add` writes). `claude mcp get` is not used for this because it
  * looks in every scope, not only the user scope that install writes to, and
  * it starts the server for a health check.
  */
@@ -9,12 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { MCP_SERVER_NAME, type HookClient } from "../contract.js";
-import { claudeJsonDir, codexHome, piAgentDir } from "./client-dirs.js";
+import { claudeJsonDir, codexHome, geminiDir, piAgentDir } from "./client-dirs.js";
 
 /** Where the client keeps the MCP server command. */
 export function mcpConfigFile(client: HookClient): string {
     if (client === "claude") return path.join(claudeJsonDir(), ".claude.json");
     if (client === "pi") return path.join(piAgentDir(), "mcp.json");
+    if (client === "antigravity") return path.join(geminiDir(), "config", "mcp_config.json");
     return path.join(codexHome(), "config.toml");
 }
 
@@ -29,7 +30,9 @@ export function readMcpCommand(client: HookClient, file: string): McpCommand | u
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
         throw error;
     }
-    if (client === "claude" || client === "pi") {
+    if (client === "claude" || client === "pi" || client === "antigravity") {
+        // Antigravity creates its mcp_config.json empty.
+        if (client === "antigravity" && !text.trim()) return undefined;
         let parsed: unknown;
         try {
             parsed = JSON.parse(text);

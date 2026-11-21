@@ -10,7 +10,7 @@ import { serveStdio, StdioServerTransport, type StdioServerHandle } from "@model
 import { NexusClient, NexusToolError, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../client/nexus-client.js";
 import { DISCOVER_ENDPOINT, LOCAL_ENDPOINT, cachedEndpoint, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { pkg } from "../config/index.js";
-import { CLAUDE_TOOL_USE_META_KEY, CLIENT_INFO_NAMES, CODEX_SESSION_META_KEY, noDaemonHint, type Caller } from "../contract.js";
+import { ANTIGRAVITY_CONVERSATION_META_KEY, CLAUDE_TOOL_USE_META_KEY, CLIENT_INFO_NAMES, CODEX_SESSION_META_KEY, noDaemonHint, type Caller } from "../contract.js";
 import { ancestorPids } from "../cli/client-process.js";
 import { machineInfo } from "../cli/machine.js";
 import { resolveInstanceId } from "./instance-id.js";
@@ -21,7 +21,7 @@ const INITIAL_LIST_WAIT_MS = 1000;
 const SERVICE_NAME = "n2n-nexus";
 /** Sent to the client on connect so the model knows it can talk to other AI sessions. */
 const INSTRUCTIONS =
-    "n2n-nexus connects this conversation with other AI sessions (Claude Code, Codex and pi conversations, " +
+    "n2n-nexus connects this conversation with other AI sessions (Claude Code, Codex, pi and Antigravity conversations, " +
     "possibly on other machines), all of your own user. Direct messages: call peers to see who is online (your " +
     "client's own agent list, such as ListAgents, does not show these sessions), send to message a session (everything " +
     "the recipient needs in one message), reply to answer one and read for the messages a notification cut or did not " +
@@ -32,7 +32,7 @@ const INSTRUCTIONS =
     "set expectsReply false on one that needs no answer, and skip plain acknowledgements); listen waits for messages " +
     "after each turn. " +
     "Direct messaging needs the n2n-nexus hooks. Separately, send_message and read_messages are the shared " +
-    "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>, pi:<id>) are what send " +
+    "global chat and meetings, not direct messages. Session ids in peers (claude:<id>, codex:<id>, pi:<id>, antigravity:<id>) are what send " +
     "takes; with the hooks, chat and meetings also record senders and unread cursors per session id " +
     "(without them, per MCP adapter instance id, mcp-…). join_meeting makes new messages of a meeting wake you " +
     "(mode active) or show at your next prompt (async) until leave_meeting or the meeting ends; a draft " +
@@ -205,7 +205,7 @@ export class NexusServer {
     }
 
     /**
-     * The conversation behind a tool call, from the `_meta` its client attaches (verified for Claude Code and Codex);
+     * The conversation behind a tool call, from the `_meta` its client attaches (verified for Claude Code, Codex and Antigravity);
      * pi attaches none, so the adapter names the processes above it (one is the pi process) and its machine.
      */
     private callerOf(meta: unknown): Caller | undefined {
@@ -218,6 +218,11 @@ export class NexusServer {
         if (this.clientName === CLIENT_INFO_NAMES.codex) {
             const sessionId = fields?.[CODEX_SESSION_META_KEY];
             return typeof sessionId === "string" && sessionId ? { client: "codex", sessionId } : undefined;
+        }
+        if (this.clientName === CLIENT_INFO_NAMES.antigravity) {
+            // The calling conversation, not antigravity.google/root_conversation_id (its root, for a sub-conversation).
+            const sessionId = fields?.[ANTIGRAVITY_CONVERSATION_META_KEY];
+            return typeof sessionId === "string" && sessionId ? { client: "antigravity", sessionId } : undefined;
         }
         return undefined;
     }

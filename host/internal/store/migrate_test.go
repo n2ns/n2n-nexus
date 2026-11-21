@@ -322,7 +322,7 @@ func TestMigrationSessionExpiryKeepsActivityAndReferences(t *testing.T) {
 	}
 	defer s.Close()
 	for q, want := range map[string]int{
-		`PRAGMA user_version`:                           10,
+		`PRAGMA user_version`:                           11,
 		`PRAGMA foreign_keys`:                           1,
 		`SELECT COUNT(*) FROM pragma_foreign_key_check`: 0,
 		`SELECT COUNT(*) FROM agent_sessions WHERE stale_from = '' AND ((id = 'codex:a' AND status = 'idle' AND last_active_at = 'active-a') OR (id = 'pi:b' AND status = 'offline' AND last_active_at = 'active-b'))`: 2,
@@ -333,5 +333,114 @@ func TestMigrationSessionExpiryKeepsActivityAndReferences(t *testing.T) {
 		if err := s.DB.QueryRow(q).Scan(&got); err != nil || got != want {
 			t.Fatalf("%s: got %d, want %d: %v", q, got, want, err)
 		}
+	}
+}
+
+// 0011 rebuilds agent_sessions for the Antigravity client without losing a
+// session column or a row that refers to a session, and Antigravity sessions
+// can then be stored; an unknown client is still refused.
+func TestMigrationAntigravityClientKeepsSessions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(dir, FileName))+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() >= "0011" {
+			break
+		}
+		body, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+	}
+	for _, q := range []string{
+		`PRAGMA user_version = 10`,
+		`INSERT INTO agent_sessions (id, client, name, note, cwd, status, listening, created_at, last_active_at, title, title_source, hostname, platform, utc_offset, label, environment, stale_from)
+			VALUES ('claude:1', 'claude', 'claude@p#1', 'note-1', '/p', 'listening', 1, 'created-1', 'active-1', 'Work', 'self', 'box', 'wsl', 60, 'lab', 'Ubuntu', ''),
+			       ('codex:2', 'codex', 'codex@p#2', '', '/q', 'offline', 0, 'created-2', 'active-2', 'T', 'client', 'box', 'linux', 0, '', '', 'idle'),
+			       ('pi:3', 'pi', 'pi@p#3', '', '/r', 'idle', 0, 'created-3', 'active-3', '', '', 'mac', 'darwin', -300, '', '', '')`,
+		`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply) VALUES ('m1', 'claude:1', 'codex:2', 'hi', 'unread', 't', 't', 1)`,
+		`INSERT INTO broadcasts (id, from_id, text, created_at, expires_at, expects_reply) VALUES ('b1', 'pi:3', 'all', 't', 't', 0)`,
+		`INSERT INTO broadcast_deliveries (broadcast_id, to_id, status, wake) VALUES ('b1', 'claude:1', 'unread', 0)`,
+		`INSERT INTO pi_client_pids (machine, client_pid, session_id, updated_at) VALUES ('mac', 42, 'pi:3', 't')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for q, want := range map[string]int{
+		`PRAGMA user_version`:                           11,
+		`PRAGMA foreign_keys`:                           1,
+		`SELECT COUNT(*) FROM pragma_foreign_key_check`: 0,
+		`SELECT COUNT(*) FROM agent_sessions WHERE id = 'claude:1' AND client = 'claude' AND name = 'claude@p#1' AND note = 'note-1' AND cwd = '/p' AND status = 'listening' AND listening = 1 AND created_at = 'created-1' AND last_active_at = 'active-1' AND title = 'Work' AND title_source = 'self' AND hostname = 'box' AND platform = 'wsl' AND utc_offset = 60 AND label = 'lab' AND environment = 'Ubuntu' AND stale_from = ''`: 1,
+		`SELECT COUNT(*) FROM agent_sessions WHERE id = 'codex:2' AND status = 'offline' AND title_source = 'client' AND stale_from = 'idle'`: 1,
+		`SELECT COUNT(*) FROM agent_sessions WHERE id = 'pi:3' AND platform = 'darwin' AND utc_offset = -300`:                                 1,
+		`SELECT COUNT(*) FROM agent_messages WHERE id = 'm1' AND from_id = 'claude:1' AND to_id = 'codex:2'`:                                  1,
+		`SELECT COUNT(*) FROM broadcast_deliveries WHERE broadcast_id = 'b1' AND to_id = 'claude:1'`:                                          1,
+		`SELECT COUNT(*) FROM pi_client_pids WHERE session_id = 'pi:3' AND client_pid = 42`:                                                   1,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_agent_sessions_name'`:                                        1,
+	} {
+		var got int
+		if err := s.DB.QueryRow(q).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s: got %d, want %d: %v", q, got, want, err)
+		}
+	}
+	if _, err := s.DB.Exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset)
+		VALUES ('antigravity:4', 'antigravity', 'antigravity@p#4', '/p', 'idle', 't', 't', 'box', 'linux', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset)
+		VALUES ('other:5', 'other', 'other@p#5', '/p', 'idle', 't', 't', 'box', 'linux', 0)`); err == nil {
+		t.Fatal("a session of an unknown client was stored")
+	}
+	// Foreign keys hold against the rebuilt table.
+	if _, err := s.DB.Exec(`INSERT INTO agent_messages (id, from_id, to_id, text, status, created_at, expires_at, expects_reply) VALUES ('m2', 'antigravity:4', 'nobody', 'x', 'unread', 't', 't', 0)`); err == nil {
+		t.Fatal("a message to an unknown session was stored")
+	}
+	s.Close()
+
+	// Reopening does not apply the migration again.
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var n int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM agent_sessions`).Scan(&n); err != nil || n != 4 {
+		t.Fatalf("sessions after reopening: %d %v", n, err)
+	}
+}
+
+// A fresh database runs every migration and accepts every client.
+func TestMigrationFreshDatabaseAcceptsAntigravity(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, client := range []string{"claude", "codex", "pi", "antigravity"} {
+		if _, err := s.DB.Exec(`INSERT INTO agent_sessions (id, client, name, cwd, status, created_at, last_active_at, hostname, platform, utc_offset)
+			VALUES (?, ?, ?, '/p', 'idle', 't', 't', 'box', 'linux', 0)`, client+":1", client, client+"@p#1"); err != nil {
+			t.Fatalf("%s: %v", client, err)
+		}
+	}
+	var v int
+	if err := s.DB.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != 11 {
+		t.Fatalf("user_version %d %v", v, err)
 	}
 }

@@ -3,6 +3,9 @@
  * install, doctor and the Codex trust check recognise and read it again:
  * `"<node>" "<entry>" hook <client>[ --endpoint <url>]`, and for Codex on
  * Windows also a PowerShell form (`commandWindows`) of the same arguments.
+ * Antigravity's commands name their event (`hook antigravity <Event>`); on
+ * Windows, where Antigravity runs a hook through `cmd /c`, it is the PowerShell
+ * form passed as `-EncodedCommand`, which cmd.exe does not parse.
  */
 import type { HookClient } from "../contract.js";
 
@@ -14,6 +17,36 @@ export function hookCommand(node: string, entry: string, client: HookClient, end
 /** The PowerShell form Codex runs on Windows (`commandWindows`): `& '<node>' '<entry>' 'hook' '<client>' ...`. */
 export function windowsHookCommand(node: string, entry: string, client: HookClient, endpoint?: string): string {
     return `& ${[node, entry, "hook", client, ...(endpoint ? ["--endpoint", endpoint] : [])].map((arg) => `'${arg.replace(/['‘’]/g, "$&$&")}'`).join(" ")}`;
+}
+
+const psArgs = (args: string[]) => `& ${args.map((arg) => `'${arg.replace(/['‘’]/g, "$&$&")}'`).join(" ")}`;
+const ENCODED = /^powershell -NoProfile -NonInteractive -EncodedCommand ([A-Za-z0-9+/=]+)$/;
+
+/** Antigravity's hook command for `event`: the Unix form, or on Windows `powershell ... -EncodedCommand <UTF-16LE base64 of the PowerShell form>`. */
+export function antigravityHookCommand(node: string, entry: string, event: string, endpoint?: string, platform: NodeJS.Platform = process.platform): string {
+    const extra = endpoint ? ["--endpoint", endpoint] : [];
+    if (platform !== "win32") return `"${node}" "${entry}" hook antigravity ${[event, ...extra].join(" ")}`;
+    const script = psArgs([node, entry, "hook", "antigravity", event, ...extra]);
+    return `powershell -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, "utf16le").toString("base64")}`;
+}
+
+/** The arguments of an Antigravity hook command in either form, or undefined when it is not one of ours. */
+export function parseAntigravityHookCommand(command: string): { node: string; entry: string; event: string; endpoint?: string } | undefined {
+    const encoded = ENCODED.exec(command)?.[1];
+    let args: string[];
+    if (encoded) {
+        const script = Buffer.from(encoded, "base64").toString("utf16le");
+        if (!script.startsWith("& ")) return undefined;
+        args = [...script.slice(2).matchAll(/'((?:[^'‘’]|['‘’]{2})*)'/g)].map((m) => m[1].replace(/(['‘’])\1/g, "$1"));
+    } else {
+        const m = /^"([^"]+)" "([^"]+)" (.*)$/.exec(command);
+        if (!m) return undefined;
+        args = [m[1], m[2], ...m[3].split(" ")];
+    }
+    const [node, entry, hook, client, event, ...rest] = args;
+    if (hook !== "hook" || client !== "antigravity" || !entry?.includes("n2n-nexus") || !event) return undefined;
+    const endpoint = rest[0] === "--endpoint" ? rest[1] : undefined;
+    return { node, entry, event, ...(endpoint ? { endpoint } : {}) };
 }
 
 /** Whether a hook entry from the client configuration is one of ours for `client`. */

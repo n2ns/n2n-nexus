@@ -1,12 +1,14 @@
 /**
- * `n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]`: forward one client
+ * `n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]` and
+ * `n2n-nexus hook antigravity <Event>|--wait [--endpoint <url>]`: forward one client
  * hook event to the daemon and print its output, or with `--wait` run the
  * background wait that wakes an idle conversation. Runs on every tool call, so
  * it loads only node built-ins (no MCP SDK or zod; node:sqlite only to read a
  * Codex conversation's title, see title.ts), and every failure
  * is silent: exit 0 with nothing on stdout, so the client carries on unaffected.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -17,7 +19,7 @@ import { NexusClient, NexusTransportError, REQUEST_TIMEOUT_CODE } from "../clien
 import { DISCOVER_ENDPOINT, configuredEndpoint, resolveEndpoint } from "../client/discovery.js";
 import { SHELL_NAMES, hookClientPid, parsePid, processAlive } from "./client-process.js";
 import { machineInfo } from "./machine.js";
-import { readTitle } from "./title.js";
+import { cleanTitle, readTitle } from "./title.js";
 
 /** Errors after which a discovered daemon is looked up again: it was never reached, so resending is safe. */
 const UNREACHABLE_CODES = new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "ETIMEDOUT", "EADDRNOTAVAIL"]);
@@ -42,8 +44,41 @@ function argValue(argv: string[], name: string): string | undefined {
 /** The client named by `<client> [--endpoint <url>]` and the configured endpoint; throws on an unknown client. */
 function clientAndEndpoint(argv: string[]): { client: HookClient; configured: string } {
     const client = argv[0];
-    if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude, codex or pi)`);
+    if (!isHookClient(client)) throw new Error(`unknown client "${client ?? ""}" (expected claude, codex, pi or antigravity)`);
     return { client, configured: configuredEndpoint(argValue(argv, "--endpoint")) };
+}
+
+/**
+ * An Antigravity hook's input (camelCase, `n2n-nexus hook antigravity <Event>`) as the
+ * fields the host reads, or undefined for an event the host has nothing to do with.
+ * The event is the registered argument, else the input's `hookEventName`.
+ * PreInvocation starts each model call: the first of a turn (`invocationNum` 0) is
+ * its prompt, later ones are mid-turn like a tool result. A Stop that continues a
+ * Stop's continuation has `executionNum` above 0.
+ */
+export function antigravityInput(argv: string[], stdin: Record<string, unknown>): Record<string, unknown> | undefined {
+    const event = argv[1] && !argv[1].startsWith("--") ? argv[1] : stdin.hookEventName;
+    const input: Record<string, unknown> = {};
+    if (typeof stdin.conversationId === "string") input.session_id = stdin.conversationId;
+    const workspace = Array.isArray(stdin.workspacePaths) ? stdin.workspacePaths.find((p): p is string => typeof p === "string" && p !== "") : undefined;
+    const cwd = workspace ?? (typeof stdin.cwd === "string" && stdin.cwd ? stdin.cwd : undefined);
+    if (cwd !== undefined) input.cwd = cwd;
+    switch (event) {
+        case "SessionStart": {
+            input.hook_event_name = "SessionStart";
+            const title = cleanTitle(stdin.lastUserInput);
+            if (title !== undefined) input.title = title;
+            return input;
+        }
+        case "PreInvocation":
+            input.hook_event_name = typeof stdin.invocationNum === "number" && stdin.invocationNum > 0 ? "PostToolUse" : "UserPromptSubmit";
+            return input;
+        case "Stop":
+            input.hook_event_name = "Stop";
+            input.stop_hook_active = typeof stdin.executionNum === "number" && stdin.executionNum > 0;
+            return input;
+    }
+    return undefined;
 }
 
 /** Returns the text to print on stdout ("" for nothing); throws on any failure. */
@@ -52,15 +87,24 @@ async function forward(argv: string[]): Promise<string> {
 
     const stdin: unknown = JSON.parse(await readStdin());
     if (!isPlainObject(stdin)) throw new Error("hook input is not a JSON object");
-    const input: Record<string, unknown> = {};
-    for (const field of HOOK_INPUT_FIELDS) {
-        if (Object.prototype.hasOwnProperty.call(stdin, field)) input[field] = stdin[field];
+    // Antigravity reads `{}` as "nothing to add".
+    const nothing = client === "antigravity" ? "{}\n" : "";
+    let input: Record<string, unknown> = {};
+    if (client === "antigravity") {
+        const mapped = antigravityInput(argv, stdin);
+        if (!mapped) return nothing;
+        input = mapped;
+    } else {
+        for (const field of HOOK_INPUT_FIELDS) {
+            if (Object.prototype.hasOwnProperty.call(stdin, field)) input[field] = stdin[field];
+        }
+        // The title is read only where the host updates it, not on the frequent tool events.
+        if (typeof stdin.hook_event_name === "string" && TITLE_EVENTS.has(stdin.hook_event_name)) {
+            const title = await readTitle(client, stdin);
+            if (title !== undefined) input.title = title;
+        }
     }
-    // The title is read only where the host updates it, not on the frequent tool events.
-    if (typeof stdin.hook_event_name === "string" && TITLE_EVENTS.has(stdin.hook_event_name)) {
-        const title = await readTitle(client, stdin);
-        if (title !== undefined) input.title = title;
-    }
+    const event = input.hook_event_name;
     // Every event says where the conversation runs; the host refuses one without it.
     input.machine = machineInfo();
     // A pi process names itself (--client-pid, its extension passes it): tool calls from it find the session.
@@ -69,8 +113,8 @@ async function forward(argv: string[]): Promise<string> {
         if (pid !== undefined) input.client_pid = pid;
     }
     // SessionEnd must finish within Codex's 3 s hook limit (discovery included): a short budget and a single attempt.
-    const sessionEnd = stdin.hook_event_name === "SessionEnd";
-    const timeoutMs = stdin.hook_event_name === "Stop" ? HOOK_STOP_REQUEST_TIMEOUT_MS : sessionEnd ? SESSION_END_REQUEST_TIMEOUT_MS : HOOK_REQUEST_TIMEOUT_MS;
+    const sessionEnd = event === "SessionEnd";
+    const timeoutMs = event === "Stop" ? HOOK_STOP_REQUEST_TIMEOUT_MS : sessionEnd ? SESSION_END_REQUEST_TIMEOUT_MS : HOOK_REQUEST_TIMEOUT_MS;
 
     /** Send to `endpoint`; nothing listening there is reported with what to do about it. */
     const send = async (endpoint: string): Promise<HookResponse> => {
@@ -90,7 +134,7 @@ async function forward(argv: string[]): Promise<string> {
         // The cached daemon is gone: look again, and fall back to the local endpoint if none answers.
         // A timed-out Stop may have been waiting for messages on purpose, so only other events count a timeout.
         const code = error instanceof NexusTransportError ? error.code ?? "" : "";
-        const unreachable = UNREACHABLE_CODES.has(code) || (code === REQUEST_TIMEOUT_CODE && stdin.hook_event_name !== "Stop");
+        const unreachable = UNREACHABLE_CODES.has(code) || (code === REQUEST_TIMEOUT_CODE && event !== "Stop");
         if (configured !== DISCOVER_ENDPOINT || !unreachable || sessionEnd) throw error;
         const found = await resolveEndpoint(configured, { fresh: true });
         if (found === endpoint) throw error;
@@ -99,7 +143,7 @@ async function forward(argv: string[]): Promise<string> {
 
     if (!isPlainObject(response) || !("output" in response)) throw new Error("invalid response from n2n-nexus-host");
     const { output } = response;
-    if (output === null) return "";
+    if (output === null) return nothing;
     if (!isPlainObject(output)) throw new Error("invalid output from n2n-nexus-host");
     return JSON.stringify(output) + "\n";
 }
@@ -180,6 +224,7 @@ export function nextQueueRetry(delay: number): number | null {
  */
 async function runWait(argv: string[]): Promise<number> {
     const { client, configured } = clientAndEndpoint(argv);
+    if (client === "antigravity") return runAntigravityWait(configured);
     // claude -p (unattended) waits for this hook before it exits, and nobody would see a woken turn.
     if (client === "claude" && process.env.CLAUDE_CODE_SESSION_ATTENDED === "0") return 0;
     let sessionId = argValue(argv, "--session");
@@ -221,6 +266,79 @@ async function runWait(argv: string[]): Promise<number> {
         // Unknown result (no report): the host keeps the wake, and waiting again would deliver nothing.
         if (ok || !reported || delay === null || Date.now() + delay >= deadline) return 0;
         await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+}
+
+/** What the Antigravity waiter needs, which Antigravity gives the commands its model runs (not its hooks). */
+export const ANTIGRAVITY_WAIT_ENV = ["ANTIGRAVITY_CONVERSATION_ID", "ANTIGRAVITY_AGENTAPI_EXE", "ANTIGRAVITY_LS_ADDRESS", "ANTIGRAVITY_CSRF_TOKEN"] as const;
+
+/**
+ * The program that runs `agentapi` for ANTIGRAVITY_AGENTAPI_EXE: the file itself, or for a
+ * `.bat` / `.cmd` wrapper the executable its `"<exe>" agentapi %*` line names (never through
+ * cmd.exe); null when a wrapper names none.
+ */
+export function agentapiProgram(file: string): string | null {
+    const ext = path.extname(file).toLowerCase();
+    if (ext !== ".bat" && ext !== ".cmd") return file;
+    const exe = /"([^"]+)"\s+agentapi\s+%\*/i.exec(fs.readFileSync(file, "utf8"))?.[1];
+    if (!exe) return null;
+    const relative = /^%~?dp0%?\\?/i;
+    return relative.test(exe) ? path.join(path.dirname(file), exe.replace(relative, "")) : exe;
+}
+
+/**
+ * `n2n-nexus hook antigravity --wait`, which the model of an Antigravity conversation starts
+ * as a background command (the n2n-nexus rule says how) and never stops: Antigravity starts a
+ * turn when it ends. It asks the host for a wake for the conversation again and again; a null
+ * answer (the session is not known to this host yet) and a host that cannot be reached or
+ * refuses are retried after a delay that doubles from WAKE_RETRY_FIRST_DELAY_MS up to
+ * WAKE_RETRY_MAX_DELAY_MS. A wake is handed to `agentapi send-message <conversation> <text>`,
+ * which starts a turn, and reported (WAKE_RESULT_EVENT) to the host that sent it; after a failed
+ * send the same delay comes first. An accepted send is never repeated: it says Antigravity took
+ * the message, not that the model answered. The credentials in the environment go to agentapi
+ * only, never to the host, and are never printed. Missing variables: exit 1.
+ */
+async function runAntigravityWait(configured: string): Promise<number> {
+    const missing = ANTIGRAVITY_WAIT_ENV.filter((name) => !process.env[name]);
+    if (missing.length > 0) {
+        process.stderr.write(`[n2n-nexus] hook --wait: ${missing.join(", ")} not set. Start this command as a background command of the Antigravity conversation, as the n2n-nexus rule says.\n`);
+        return 1;
+    }
+    const conversationId = process.env.ANTIGRAVITY_CONVERSATION_ID!;
+    const agentapi = agentapiProgram(process.env.ANTIGRAVITY_AGENTAPI_EXE!);
+    if (!agentapi) {
+        process.stderr.write("[n2n-nexus] hook --wait: ANTIGRAVITY_AGENTAPI_EXE names a wrapper without an agentapi command line.\n");
+        return 1;
+    }
+    const note = (message: string) => process.stderr.write(`[n2n-nexus] hook --wait: ${message.replace(/\s+/g, " ").slice(0, 300)}\n`);
+    let delay = WAKE_RETRY_FIRST_DELAY_MS;
+    const pause = async () => {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = Math.min(delay * 2, WAKE_RETRY_MAX_DELAY_MS);
+    };
+    for (;;) {
+        let wake: Wake | null;
+        try {
+            wake = await waitForWake("antigravity", conversationId, configured, Infinity);
+        } catch (error) {
+            note(error instanceof Error ? error.message : String(error));
+            wake = null;
+        }
+        if (wake === null) {
+            await pause();
+            continue;
+        }
+        delay = WAKE_RETRY_FIRST_DELAY_MS;
+        // Never through a shell: the text comes from another session and spans several lines.
+        const sent = spawnSync(agentapi, ["agentapi", "send-message", conversationId, wake.text], { stdio: "ignore", windowsHide: true });
+        const ok = !sent.error && sent.status === 0;
+        await new NexusClient({ endpoint: wake.endpoint })
+            .hook({ client: "antigravity", input: { hook_event_name: WAKE_RESULT_EVENT, session_id: conversationId, dispatch_id: wake.dispatchId, ok } }, HOOK_REQUEST_TIMEOUT_MS)
+            .catch(() => undefined);
+        if (!ok) {
+            note(`agentapi send-message failed (${sent.error ? (sent.error as NodeJS.ErrnoException).code ?? sent.error.message : `exit code ${sent.status}`}); waiting again`);
+            await pause();
+        }
     }
 }
 

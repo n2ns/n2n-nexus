@@ -59,7 +59,7 @@ export const ERRORS = readContract<{ contractVersion: number; maxBodyBytes: numb
 
 export type HttpResponse<T> = { status: number; headers: http.IncomingHttpHeaders; body: string; payload: T };
 export type ToolReply<T> = { ok: boolean; result?: T; error?: string };
-export type Caller = { client: "claude"; toolUseId: string } | { client: "codex"; sessionId: string } | { client: "pi"; clientPids: number[]; machine: { hostname: string; platform: string; environment: string } };
+export type Caller = { client: "claude"; toolUseId: string } | { client: "codex" | "antigravity"; sessionId: string } | { client: "pi"; clientPids: number[]; machine: { hostname: string; platform: string; environment: string } };
 
 /** A request body sent as is instead of JSON-encoded. */
 export class RawBody {

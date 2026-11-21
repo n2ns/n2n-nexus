@@ -6,7 +6,8 @@ import { ENTRY, REPO, runCliSync } from "./helpers/cli.js";
 import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/executable.js";
 
 import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
-import { isOurCodexHook } from "../src/cli/hook-command.js";
+import { antigravityHookCommand, isOurCodexHook, parseAntigravityHookCommand } from "../src/cli/hook-command.js";
+import { RULE_MARK } from "../src/cli/antigravity.js";
 import { PI_EXTENSION_MARK, readPiExtension, writePiExtension } from "../src/cli/pi.js";
 
 // Runs the built CLI (built by the globalSetup).
@@ -14,10 +15,12 @@ const TMP = path.join(REPO, "tests", "tmp", "install");
 const NODE = process.execPath;
 const command = (client: string, endpoint?: string, node = NODE) => `"${node}" "${ENTRY}" hook ${client}${endpoint ? ` --endpoint ${endpoint}` : ""}`;
 /** The `<client> mcp add` arguments install runs for `"<node>" "<npx>" -y n2n-nexus@latest mcp`. */
-const mcpAdd = (client: "claude" | "codex" | "pi", node = NODE, endpoint?: string) => {
-    const flag = client === "claude" ? "-e" : "--env";
+const mcpAdd = (client: "claude" | "codex" | "pi" | "antigravity", node = NODE, endpoint?: string) => {
+    const flag = client === "claude" || client === "antigravity" ? "-e" : "--env";
     const vars = [...(endpoint ? [`NEXUS_ENDPOINT=${endpoint}`] : []), `PATH=${(process.platform === "win32" ? [npxFor(node).bin, path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : [npxFor(node).bin, "/usr/bin", "/bin"]).join(path.delimiter)}`];
-    return [client, "mcp", "add", ...(client === "claude" ? ["--scope", "user"] : []), "n2n-nexus", ...vars.flatMap((v) => [flag, v]), "--", node, npxFor(node).npx, "-y", "n2n-nexus@latest", "mcp"];
+    const env = vars.flatMap((v) => [flag, v]);
+    if (client === "antigravity") return ["agy", "mcp", "add", ...env, "n2n-nexus", "--", node, npxFor(node).npx, "-y", "n2n-nexus@latest", "mcp"];
+    return [client, "mcp", "add", ...(client === "claude" ? ["--scope", "user"] : []), "n2n-nexus", ...env, "--", node, npxFor(node).npx, "-y", "n2n-nexus@latest", "mcp"];
 };
 const codexWindowsCommand = (endpoint?: string) => `& ${[NODE, ENTRY, "hook", "codex", ...(endpoint ? ["--endpoint", endpoint] : [])].map((arg) => `'${arg.replace(/['\u2018\u2019]/g, "$&$&")}'`).join(" ")}`;
 
@@ -82,7 +85,7 @@ if (args[0] === "app-server") {
 
 function run(args: string[], env: NodeJS.ProcessEnv = {}) {
     return runCliSync(args, {
-        env: { SystemRoot: process.env.SystemRoot, PATH: [bin, path.join(bin, "node")].join(path.delimiter), HOME: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, CALLS_LOG: callsLog, ...env }
+        env: { SystemRoot: process.env.SystemRoot, PATH: [bin, path.join(bin, "node")].join(path.delimiter), HOME: dir, USERPROFILE: dir, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexHome, PI_CODING_AGENT_DIR: piAgentDir, CALLS_LOG: callsLog, ...env }
     });
 }
 
@@ -142,6 +145,7 @@ beforeEach(() => {
     fakeCli("claude");
     fakeCli("codex");
     fakeCli("pi");
+    fakeCli("agy");
 }, 60_000); // removing the previous tree and writing the fake CLIs is slow on Windows runners
 
 afterAll(() => {
@@ -579,6 +583,125 @@ describe("install pi", () => {
         expect(removed.code).toBe(0);
         expect(removed.stdout).toContain(`Left ${extension()} alone`);
         expect(fs.readFileSync(extension(), "utf8")).toBe("export default function () {}\n");
+    });
+});
+
+describe("install antigravity", () => {
+    const gemini = () => path.join(dir, ".gemini");
+    const hooksFile = () => path.join(gemini(), "config", "hooks.json");
+    const ruleFile = () => path.join(gemini(), "config", "rules", "n2n-nexus.md");
+    const ideFile = () => path.join(gemini(), "config", "config.json");
+    const cliFile = () => path.join(gemini(), "antigravity-cli", "settings.json");
+    const grant = (endpoint?: string) => `command(n2n-nexus hook antigravity --wait${endpoint ? ` --endpoint ${endpoint}` : ""})`;
+    const hookFor = (endpoint?: string) => Object.fromEntries((["SessionStart", "PreInvocation", "Stop"] as const).map((event) =>
+        [event, [{ type: "command", command: antigravityHookCommand(NODE, ENTRY, event, endpoint), timeout: event === "Stop" ? 600 : 10 }]]));
+    const otherHook = { "my-guard": { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "guard.sh", timeout: 5 }] }] } };
+    const cliSettings = { permissions: { allow: ["mcp(other/tool)"], deny: ["command(rm)"] }, enableTerminalSandbox: true, agentMode: "x" };
+    const ideConfig = { userSettings: { globalPermissionGrants: { allow: ["command(ls)"] }, autoExecutionPolicy: "off" } };
+    function writeUserFiles(): void {
+        fs.mkdirSync(path.dirname(hooksFile()), { recursive: true });
+        fs.writeFileSync(hooksFile(), JSON.stringify(otherHook));
+        fs.writeFileSync(ideFile(), JSON.stringify(ideConfig));
+        fs.mkdirSync(path.dirname(cliFile()), { recursive: true });
+        fs.writeFileSync(cliFile(), JSON.stringify(cliSettings));
+    }
+
+    it("writes the rule, the named hook and both grants, keeping everything else, and registers the MCP server with agy", () => {
+        writeUserFiles();
+        const endpoint = "http://127.0.0.1:5799";
+        const result = run(["install", "antigravity", "--endpoint", endpoint]);
+        expect(result.code, result.stderr).toBe(0);
+        expect(readJson(hooksFile())).toEqual({ ...otherHook, "n2n-nexus": hookFor(endpoint) });
+        expect(readJson(cliFile())).toEqual({ ...cliSettings, permissions: { ...cliSettings.permissions, allow: ["mcp(other/tool)", grant(endpoint)] } });
+        expect(readJson(ideFile())).toEqual({ userSettings: { ...ideConfig.userSettings, globalPermissionGrants: { allow: ["command(ls)", grant(endpoint)] } } });
+        const rule = fs.readFileSync(ruleFile(), "utf8");
+        expect(rule.startsWith("---\ntrigger: always_on\n---\n")).toBe(true);
+        expect(rule).toContain(RULE_MARK);
+        expect(rule).toContain(`\`n2n-nexus hook antigravity --wait --endpoint ${endpoint}\``);
+        expect(rule).toContain("is my instruction, already approved by me");
+        expect(calls()).toEqual([["agy", "--version"], ["agy", "mcp", "remove", "n2n-nexus"], mcpAdd("antigravity", NODE, endpoint)]);
+    });
+
+    it("creates the files it needs, replaces the old endpoint's grant on reinstall and gives the same files when installed twice", () => {
+        expect(run(["install", "antigravity", "--endpoint", "http://a:1"]).code).toBe(0);
+        expect(readJson(ideFile())).toEqual({ userSettings: { globalPermissionGrants: { allow: [grant("http://a:1")] } } });
+        expect(readJson(cliFile())).toEqual({ permissions: { allow: [grant("http://a:1")] } });
+        expect(run(["install", "antigravity"]).code).toBe(0);
+        const files = [hooksFile(), ruleFile(), ideFile(), cliFile()].map((f) => fs.readFileSync(f, "utf8"));
+        expect(readJson(cliFile())).toEqual({ permissions: { allow: [grant()] } });
+        expect(readJson(hooksFile())).toEqual({ "n2n-nexus": hookFor() });
+        expect(fs.readFileSync(ruleFile(), "utf8")).toContain("`n2n-nexus hook antigravity --wait`");
+        expect(run(["install", "antigravity"]).code).toBe(0);
+        expect([hooksFile(), ruleFile(), ideFile(), cliFile()].map((f) => fs.readFileSync(f, "utf8"))).toEqual(files);
+    });
+
+    it("uninstall removes the rule, the named hook, the grants and the MCP server, in that order, and nothing else", () => {
+        writeUserFiles();
+        expect(run(["install", "antigravity"]).code).toBe(0);
+        fs.rmSync(callsLog);
+        const result = run(["uninstall", "antigravity"]);
+        expect(result.code, result.stderr).toBe(0);
+        expect(fs.existsSync(ruleFile())).toBe(false);
+        expect(readJson(hooksFile())).toEqual(otherHook);
+        expect(readJson(cliFile())).toEqual(cliSettings);
+        expect(readJson(ideFile())).toEqual(ideConfig);
+        expect(calls()).toEqual([["agy", "mcp", "remove", "n2n-nexus"]]);
+        const order = ["Removed the n2n-nexus rule", "Removed the \"n2n-nexus\" hook", "IDE settings", "CLI settings", "Ran: agy mcp remove", "keep their message waiter"]
+            .map((text) => result.stdout.indexOf(text));
+        expect(order.every((i, n) => i >= 0 && (n === 0 || i > order[n - 1]))).toBe(true);
+    });
+
+    it("refuses to overwrite a rule file that n2n-nexus did not write, writing nothing, and uninstall leaves it", () => {
+        fs.mkdirSync(path.dirname(ruleFile()), { recursive: true });
+        fs.writeFileSync(ruleFile(), "my rule\n");
+        const result = run(["install", "antigravity"]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain("exists and is not written by n2n-nexus");
+        expect(fs.existsSync(hooksFile())).toBe(false);
+        expect(fs.existsSync(cliFile())).toBe(false);
+        expect(calls()).toEqual([["agy", "--version"]]);
+        const removed = run(["uninstall", "antigravity"]);
+        expect(removed.code).toBe(0);
+        expect(removed.stdout).toContain(`Left ${ruleFile()} alone`);
+        expect(fs.readFileSync(ruleFile(), "utf8")).toBe("my rule\n");
+    });
+
+    it("refuses a grant list that is not an array, writing nothing, and stops before mcp add when mcp remove fails while registered", () => {
+        fs.mkdirSync(path.dirname(cliFile()), { recursive: true });
+        fs.writeFileSync(cliFile(), JSON.stringify({ permissions: { allow: "everything" } }));
+        const broken = run(["install", "antigravity"]);
+        expect(broken.code).toBe(1);
+        expect(broken.stderr).toContain(`"permissions.allow" in ${cliFile()} is not an array`);
+        expect(readJson(cliFile())).toEqual({ permissions: { allow: "everything" } });
+        expect(fs.existsSync(hooksFile())).toBe(false);
+        expect(fs.existsSync(ruleFile())).toBe(false);
+
+        fs.rmSync(cliFile());
+        fs.mkdirSync(path.join(gemini(), "config"), { recursive: true });
+        fs.writeFileSync(path.join(gemini(), "config", "mcp_config.json"), JSON.stringify({ mcpServers: { "n2n-nexus": { command: NODE, args: [] } } }));
+        fs.rmSync(callsLog, { force: true });
+        const failed = run(["install", "antigravity"], { FAIL_REMOVE: "1" });
+        expect(failed.code).toBe(1);
+        expect(failed.stderr).toContain('"agy mcp remove n2n-nexus" failed: cannot write config: EACCES');
+        expect(calls().map((c) => c.slice(0, 3))).toEqual([["agy", "--version"], ["agy", "mcp", "remove"]]);
+    });
+
+    it("refuses to install when agy is not on PATH", () => {
+        fs.rmSync(executablePath(path.join(bin, "agy")));
+        const result = run(["install", "antigravity"]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('The "agy" command was not found on PATH; install Google Antigravity first.');
+        expect(fs.existsSync(gemini())).toBe(false);
+    });
+
+    it("writes the Windows hook command as PowerShell's -EncodedCommand, which reads back to the same arguments", () => {
+        const node = "C:\\Program Files\\nodejs\\node.exe";
+        const entry = "C:\\Users\\O'Brien\\AppData\\Roaming\\npm\\node_modules\\n2n-nexus\\build\\index.js";
+        const command = antigravityHookCommand(node, entry, "Stop", "http://h:1", "win32");
+        const encoded = /^powershell -NoProfile -NonInteractive -EncodedCommand (\S+)$/.exec(command)?.[1];
+        expect(Buffer.from(encoded!, "base64").toString("utf16le")).toBe(`& '${node}' '${entry.replace("'", "''")}' 'hook' 'antigravity' 'Stop' '--endpoint' 'http://h:1'`);
+        expect(parseAntigravityHookCommand(command)).toEqual({ node, entry, event: "Stop", endpoint: "http://h:1" });
+        expect(parseAntigravityHookCommand(antigravityHookCommand(NODE, ENTRY, "PreInvocation"))).toEqual({ node: NODE, entry: ENTRY, event: "PreInvocation" });
     });
 });
 

@@ -22,7 +22,7 @@
           │ HTTP（NEXUS_ENDPOINT — 可跨环境配置）
    ┌──────┼──────┐
    ▼      ▼      ▼
-MCP-A  MCP-B  MCP-C      hooks（Claude Code / Codex / pi）
+MCP-A  MCP-B  MCP-C      hooks（Claude Code / Codex / pi / Antigravity）
 (Win)  (WSL)  (VM)       每个客户端事件调用一次 POST /api/hook
 n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 ```
@@ -30,7 +30,7 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 两个程序共用一份协议：
 
 - **`n2n-nexus-host`**（Go，`host/`）：保存全部数据、工具定义和业务逻辑。从 GitHub Releases、Homebrew 或 Scoop 安装。
-- **`n2n-nexus`**（TypeScript，npm，`src/`）：只有客户端——MCP 适配器（`mcp`）、hook 命令（`hook`）、为 Claude Code、Codex 和 pi 执行的 `install` / `uninstall`，以及 `doctor`。不含存储，也不含服务器。
+- **`n2n-nexus`**（TypeScript，npm，`src/`）：只有客户端——MCP 适配器（`mcp`）、hook 命令（`hook`）、为 Claude Code、Codex、pi 和 Google Antigravity 执行的 `install` / `uninstall`，以及 `doctor`。不含存储，也不含服务器。
 - **`contract/`** 是两边协议的唯一来源：`tools.json`（每个工具的名称、标题、说明、annotations、输入和输出 JSON Schema）、`hook.json`（hook 字段、`_meta` 键名、局域网发现查询串、时限、上限、通知文本）、`errors.json`（接口、错误格式、状态码）。host 嵌入这些文件，客户端运行时读取 `hook.json`，`tests/conformance/` 里的一致性测试用它们检验 host。`GET /health` 返回 host 的 `contractVersion`，`n2n-nexus doctor` 拿它和客户端的版本比较。
 
 ### 核心原则
@@ -63,11 +63,11 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
   └─ stdin 关闭 → 停止重试、关闭、退出
 ```
 
-适配器的实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份）取自该连接上第一次见到的客户端名，来源是请求 `_meta` 中的 `io.modelcontextprotocol/clientInfo`（2026-07-28）或 `initialize`（2025 代），`NEXUS_INSTANCE_ID` / `--id` 可固定。每次工具调用都以 `instanceId` 带上它。装了 hooks 时，聊天和会议调用改为按对话识别（`caller`，经 hook 的 toolUseId 绑定、Codex 会话 ID，或 pi 适配器上面各级进程的 ID 和所在机器解析），所以共用一个实例的多个对话各有自己的未读游标。
+适配器的实例 ID（没装 hooks 的客户端调用聊天和会议工具时的身份）取自该连接上第一次见到的客户端名，来源是请求 `_meta` 中的 `io.modelcontextprotocol/clientInfo`（2026-07-28）或 `initialize`（2025 代），`NEXUS_INSTANCE_ID` / `--id` 可固定。每次工具调用都以 `instanceId` 带上它。装了 hooks 时，聊天和会议调用改为按对话识别（`caller`，经 hook 的 toolUseId 绑定、Codex 会话 ID、Antigravity 对话 ID，或 pi 适配器上面各级进程的 ID 和所在机器解析），所以共用一个实例的多个对话各有自己的未读游标。
 
 ### 对话与 hooks
 
-每个 Claude Code、Codex 或 pi 对话是一个会话，ID 为 `claude:<会话 ID>`、`codex:<会话 ID>` 或 `pi:<会话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。pi 没有 hook 配置：`n2n-nexus install pi` 写入一个 pi 扩展，在 pi 的 `session_start`（SessionStart）、`before_agent_start`（UserPromptSubmit）、`tool_result`（PostToolUse；由别的工具发起的调用除外，例如 `codemode` 脚本里调用的 MCP 工具，这样通知跟着模型读到的那个结果走）、`agent_settled`（Stop）和 `session_shutdown`（SessionEnd）时运行 `n2n-nexus hook pi --client-pid <pi 进程>`；host 按机器记下每个 pi 进程最近报告的会话（`pi_client_pids`），因为 pi 调用 MCP 工具时不带自己的会话：适配器按由近到远报上它上面的各级进程和所在机器，其中最近的一个登记过的就是它的 pi 进程。被 Stop 接着跑的一轮不发 UserPromptSubmit（同一轮，和 Claude Code 一样），用户中断的一轮不发 Stop，`/reload` 不发 SessionEnd。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（`hostname`：macOS 上取 `scutil --get ComputerName` 的电脑名，它由用户设置、不随网络变化，其他系统取去掉 `.local` 的主机名；`platform`：用 `/proc/version` 区分 `wsl` 和 `linux`；`environment`：WSL 发行版名，取自 `WSL_DISTRO_NAME`，因为同一台 Windows 上的发行版共用它的主机名；以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器或 WSL 发行版上的会话常常工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题（Claude Code 和 Codex；pi 没有可读的标题）；出任何错误都以退出码 0 退出，stdout 不输出，stderr 写一行（`[n2n-nexus] hook: …`），所以 host 不在也不会卡住客户端。
+每个 Claude Code、Codex、pi 或 Antigravity 对话是一个会话，ID 为 `claude:<会话 ID>`、`codex:<会话 ID>`、`pi:<会话 ID>` 或 `antigravity:<对话 ID>`，直接使用客户端自己分配的 ID。`n2n-nexus install <claude|codex>` 写入的 hooks 会在 SessionStart、UserPromptSubmit、PostToolUse、Stop、SessionEnd（Claude Code 还有只匹配 n2n-nexus 工具的 PreToolUse）时运行 `n2n-nexus hook <client>`。pi 没有 hook 配置：`n2n-nexus install pi` 写入一个 pi 扩展，在 pi 的 `session_start`（SessionStart）、`before_agent_start`（UserPromptSubmit）、`tool_result`（PostToolUse；由别的工具发起的调用除外，例如 `codemode` 脚本里调用的 MCP 工具，这样通知跟着模型读到的那个结果走）、`agent_settled`（Stop）和 `session_shutdown`（SessionEnd）时运行 `n2n-nexus hook pi --client-pid <pi 进程>`；host 按机器记下每个 pi 进程最近报告的会话（`pi_client_pids`），因为 pi 调用 MCP 工具时不带自己的会话：适配器按由近到远报上它上面的各级进程和所在机器，其中最近的一个登记过的就是它的 pi 进程。被 Stop 接着跑的一轮不发 UserPromptSubmit（同一轮，和 Claude Code 一样），用户中断的一轮不发 Stop，`/reload` 不发 SessionEnd。Google Antigravity（IDE 和 `agy` CLI）：`n2n-nexus install antigravity` 把命名 hook `n2n-nexus` 写进 `~/.gemini/config/hooks.json`，在 SessionStart、PreInvocation 和 Stop 时运行 `n2n-nexus hook antigravity <事件>`。hook 命令把 Antigravity 的 camelCase 输入换成 host 读取的字段：`conversationId` 是会话 ID，第一个工作区路径（没有时用 `cwd`）是工作目录；一轮里第一次模型调用前的 PreInvocation（`invocationNum` 为 0）是 UserPromptSubmit，之后的是 PostToolUse（轮次中途的新消息，不标记已读）；`executionNum` 大于 0 的 Stop 是被续跑过的 Stop（`stop_hook_active`）。事件取自注册时写入的参数，因为较早的 Antigravity 版本在标准输入里不带事件名。标题取对话第一次 SessionStart 的 `lastUserInput`，只设一次。host 按 Antigravity 能读的格式回应它的 hooks：追加上下文用 `{"injectSteps":[{"systemMessage":{"systemMessage": 文本}}]}`，让 Stop 续跑用 `{"decision":"continue","reason": 文本}`；没有内容时 hook 打印 `{}`。Antigravity 没有 SessionEnd：它的会话靠 30 分钟超时变为离线，会话不在工作时，运行中的等待器（见下文）会推迟这个超时。hook 命令把事件里用于识别的字段转发给 `POST /api/hook`，并打印 host 的回应；每个事件都附上对话所在的机器（`hostname`：macOS 上取 `scutil --get ComputerName` 的电脑名，它由用户设置、不随网络变化，其他系统取去掉 `.local` 的主机名；`platform`：用 `/proc/version` 区分 `wsl` 和 `linux`；`environment`：WSL 发行版名，取自 `WSL_DISTRO_NAME`，因为同一台 Windows 上的发行版共用它的主机名；以及 `utcOffset`），host 要求必须有，存进会话并显示在名字后面，因为不同机器或 WSL 发行版上的会话常常工作目录都一样；在 SessionStart、UserPromptSubmit 和 Stop 时还附上对话标题（Claude Code 和 Codex；pi 没有可读的标题）；出任何错误都以退出码 0 退出，stdout 不输出，stderr 写一行（`[n2n-nexus] hook: …`），所以 host 不在也不会卡住客户端。
 
 ```
 客户端事件 ──▶ n2n-nexus hook ──▶ POST /api/hook ──▶ 会话状态、通知
@@ -76,7 +76,7 @@ UserPromptSubmit / PostToolUse ◀── additionalContext ◀─┤  "2 unread 
 Stop                           ◀── decision: block   ◀─┘  每次结束前一次，或待命时消息一到就返回
 ```
 
-工具调用的对话身份不经过模型参数。适配器从请求的 `_meta` 里读取：Claude Code 带 `claudecode/toolUseId`，由调用前刚运行的 PreToolUse hook 绑定到对话（已实测：调用会等 hook 结束）；Codex 带 `sessionId`；pi 两者都不带，所以适配器按由近到远报上它上面的各级进程和所在机器（`clientPids`、`machine`）。适配器把它作为 `caller` 放进 `POST /api/tools/call`。身份是对话而不是适配器进程，所以适配器重启、恢复对话、子代理都沿用同一身份，一个适配器也能同时服务多个 Codex 对话。
+工具调用的对话身份不经过模型参数。适配器从请求的 `_meta` 里读取：Claude Code 带 `claudecode/toolUseId`，由调用前刚运行的 PreToolUse hook 绑定到对话（已实测：调用会等 hook 结束）；Codex 带 `sessionId`；Antigravity（`clientInfo` 为 `antigravity-client`）带 `antigravity.google/conversation_id`，即发起调用的对话（子对话还会带上其根对话的 `antigravity.google/root_conversation_id`，不使用）；pi 两者都不带，所以适配器按由近到远报上它上面的各级进程和所在机器（`clientPids`、`machine`）。适配器把它作为 `caller` 放进 `POST /api/tools/call`。身份是对话而不是适配器进程，所以适配器重启、恢复对话、子代理都沿用同一身份，一个适配器也能同时服务多个 Codex 或 Antigravity 对话。
 
 通知带上每条消息的完整正文（一条通知里的正文合计截到 `notifyTextChars`，即 5000 个字符；被截断的消息用 `read` 读全文），请求随 hook 注入的上下文或 Stop 的理由送到模型面前，Claude Code 把它当作 hook 反馈来看待，而不只是工具结果。通知只陈述事实：发送方、正文、要不要回复、怎么回复（Claude Code 会话还给出工具全名）；不声明任何授权，因为客户端自己的提示把 hook 输出说成"不是用户输入"，hook 文本里的授权声明只会和它打架。Claude Code 只在用户自己的指令要求时才照其他会话的消息去做，所以 `install claude` 会在用户级 `CLAUDE.md` 里加一段写明这一点的标记内容，授权只来自那里。完整显示的消息在提醒驱动这一轮时（Stop、待命、后台唤醒；唤醒失败会恢复为未读，但消息到达的同时用户按下 Esc、客户端没读到的 Stop 文本会连同消息一起丢失）标为已读，无需回复的消息随提示词显示时也标为已读。随提示词显示、需要回复的消息，以及工具调用后显示的所有消息（那段上下文可能是子代理的，对话本身看不到），仍为未读，直到 `reply` 回复它或 `read` 读取它，本轮结束时 Stop 照样为它拦住一次；被 Stop 续上的一轮，它的 Stop 什么也不拦，所以只在工具调用后显示过、此时仍未读的消息在这里重新算作未提醒，由待命等待或后台等待送达一次。待命中的 Stop hook 最长挂起 590 秒，消息一到立即返回；客户端杀掉 hook（用户按 Esc）或 host 关闭时结束等待。系统仍采用可信本地 host 边界，这不是身份认证机制：同一系统用户下的所有进程都被视为可信，可以冒充任何对话；需要互相隔离的代理应以不同的系统用户运行，各自使用自己的 host（见[安全文档](SECURITY_zh.md#安全模型)中的本地信任模型）。精确契约见[工具参考](TOOLS_REFERENCE_zh.md#对话之间的直接消息)。
 
@@ -111,13 +111,21 @@ Stop                           ◀── decision: block   ◀─┘  每次结�
 - 每次 AI 回复都会再次叫醒对方，所以会话之间不用有人输入就能一轮轮处理对方的请求。要设上限，就在 `settings.json` 里设置 `maxAutoTurns`（默认 0，不限制）：host 会统计从用户上次输入以来的自动轮次（被叫醒、listen 等待、因消息被拦下不结束），达到这个数后不再自动继续；叫醒后一分钟内的那次用户提交视为被叫醒的那一轮开始，不清零计数。超过上限的消息会等用户下次输入时再提醒。会议新消息不计数，也不受上限限制：会议一直进行到被结束为止。
 - 自动轮次的计数只按时间区分"被叫醒的那一轮"和"用户输入"。如果一次唤醒没有真正开始新的一轮（例如 Codex 对话没加载），而用户在那一分钟内亲自输入，这次输入不清零计数，用户下一次输入才会清零。如果被叫醒的那一轮晚于一分钟才开始（例如用户之后才点开的 Codex 对话），它的提交会清零计数。两种情况都不会丢消息，也不会让会话在无人参与时无限循环。
 
+Antigravity 没有能在后台等待的 hook，所以它的等待器是一条由模型启动的命令。`install antigravity` 写入规则 `~/.gemini/config/rules/n2n-nexus.md`（`trigger: always_on`），并在 IDE 和 CLI 的权限设置里授权命令 `n2n-nexus hook antigravity --wait`（带上安装时的 `--endpoint`）。Antigravity 会话转发来的 UserPromptSubmit 时，如果没有打开的后台等待，host 会追加 `waiterReminder`（"The n2n-nexus message waiter of this conversation is not running. Start it as described in the n2n-nexus rule."）；由唤醒开始的一轮除外，因为那次唤醒就是它的等待器送达的。模型随后把等待器作为后台命令（`run_command`）启动。等待器读取 `ANTIGRAVITY_CONVERSATION_ID`、`ANTIGRAVITY_AGENTAPI_EXE`、`ANTIGRAVITY_LS_ADDRESS` 和 `ANTIGRAVITY_CSRF_TOKEN`，这些变量 Antigravity 只给模型运行的命令（不给 hooks 或 MCP 服务器）；缺少时以退出码 1 退出并说明缺哪些，不打印任何值。之后它一直用 BackgroundWait 请求唤醒：命令结束时 Antigravity 会开始新的一轮，所以它没有截止时间。得到 null（host 还不认识这个会话）、连不上 host 或被 host 拒绝时，1 秒后重试，每次加倍，最长 5 分钟。唤醒交给 `<agentapi 程序> agentapi send-message <对话 ID> <通知>`，不经过 shell（`.bat` / `.cmd` 包装脚本则取其 `"<exe>" agentapi %*` 行里的程序），等待器再把 `WakeResult` 报告给发出这次唤醒的 host。成功退出表示 Antigravity 接收了消息，不表示模型已经回复，所以已接收的唤醒不会重发。发送失败时 host 撤销这次唤醒，等待器按同样的间隔延迟后再请求。凭据只交给 agentapi，从不发给 host。Antigravity 会话自己的事件不会结束它的后台等待；会话在工作、有 listening Stop hook 在等，或会话自己的 hook 事件正在处理时，这些等待不投递。同一个对话有多个等待器时，每次唤醒只交给其中一个，其余的待命。已知限制：
+
+- `agy` 重启后恢复的对话在下一次提示运行 PreInvocation、模型启动等待器之前没有等待器；只打开恢复的对话并不能让它可达。这不需要 SessionStart。
+- 等待器由模型按规则启动。不遵守规则的模型会让对话没有空闲叫醒；hooks、Stop 投递和 listen 仍然有效。权限策略拒绝这条授权命令时效果相同：install 不改沙箱或权限模式。
+- 等待器是一个运行中的后台任务，所以模型一轮结束后 Antigravity 的 `fullyIdle` 可能仍为 false。等待器运行时，曾观察到 `stream-json` 输出把之后的更新缓存到命令结束；hooks 和对话记录可以证明被叫醒的轮次已经运行。
+- 接收消息和模型完成工作是两回事：曾有一次唤醒已被接收，但模型生成了几分钟仍没有可见回复。这一观察不构成重复发送或修改模型设置的理由。
+- 卸载前启动的等待器会继续投递，直到它们所在的 `agy` 退出。
+
 ---
 
 ## 💾 数据持久化
 
 全部数据都在 host 数据目录里的一个 SQLite 文件 `nexus.db` 中，同一目录下还有 `settings.json` 和 `host.lock`（各系统的位置见[使用手册](USER_GUIDE_zh.md#数据和日志)）。
 
-- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql` 到 `0010_session_stale_from.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。前两个文件各包含一个模块的初始表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；之后每次改表结构都新增一个编号文件（目前是 `0003` 到 `0010`），当前表结构是它们合在一起的结果。
+- **表结构**：嵌入 host 的编号迁移脚本（`host/internal/store/migrations/0001_core.sql` 到 `0011_antigravity_client.sql`）在启动时按序执行，每个文件一个事务；版本号存在 `PRAGMA user_version`。版本高于 host 的数据库会被拒绝，提示升级 host，或在版本说明要求时删除 `nexus.db`。前两个文件各包含一个模块的初始表结构（`0001_core.sql`：internal/core；`0002_agents.sql`：internal/agents）；之后每次改表结构都新增一个编号文件（目前是 `0003` 到 `0011`），当前表结构是它们合在一起的结果。
 - **表**：`projects`（manifest 的标量字段各占一列，结构化字段存 JSON，内部文档存文本）、`project_relations` 和 `project_assets`（资产内容存 BLOB；两者都随项目改名、删除级联）、`global_strategy`、`global_docs`、`meetings`（带 `status`、`is_default` 和用户席位）、`meeting_messages`（用 `seq` 按会议编号）、`meeting_members`（谁参加、以什么方式、已提醒到哪里）、`meeting_approvers`（会议当前稿的必需认可人）、`meeting_stances`（每个成员对提案的表态）、`decisions`、`global_messages`、`events`、`tasks`、`read_cursors`（每个读者在全局聊天和各会议里读到哪里，以及它上一次在会议里发言是否因未读被拒），以及对话用的 `agent_sessions`、`agent_messages`、`broadcasts` 和 `broadcast_deliveries`（每次广播一行、每个收件方一行；`agent_inbox` 视图把直接消息和送达记录合成一个收件箱）、`agent_notices`、`agent_idle_subscriptions`、`tool_use_bindings`、`pi_client_pids`（每台机器上每个 pi 进程最近报告的会话），以及 `hooked_instances`（调用时解析出过对话的适配器实例，用于聊天和会议的身份识别）。
 - **事务**：每个写操作一个事务，多行修改（会议消息，开始 / 结束 / 重开会议，项目改名）要么全部生效，要么都不生效。数据库使用 WAL 模式，开启 `foreign_keys`，忙等超时 5 秒，只用一个连接。
 - **只有 host 打开数据库**。MCP 适配器和 hooks 都走 HTTP。

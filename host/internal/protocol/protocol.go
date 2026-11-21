@@ -167,6 +167,7 @@ type Hook struct {
 		StanceReminder          string `json:"stanceReminder"`
 		StanceWaiting           string `json:"stanceWaiting"`
 		NoAgentSessionError     string `json:"noAgentSessionError"`
+		WaiterReminder          string `json:"waiterReminder"`
 	} `json:"texts"`
 }
 

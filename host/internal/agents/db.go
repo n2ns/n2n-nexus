@@ -281,6 +281,20 @@ func (a *Agents) setClientTitle(id, title string) error {
 	return err
 }
 
+// setClientTitleOnce stores the client's title, cut as setClientTitle does, only
+// while the session has none: neither an earlier one from the client nor its own.
+func (a *Agents) setClientTitleOnce(id, title string) error {
+	title = oneLine(title)
+	if r := []rune(title); len(r) > a.o.Contract.Hook.Limits.MaxTitleChars {
+		title = string(r[:a.o.Contract.Hook.Limits.MaxTitleChars])
+	}
+	if title == "" {
+		return nil
+	}
+	_, err := a.db().ExecContext(bg, "UPDATE agent_sessions SET title = ?, title_source = 'client' WHERE id = ? AND title_source = ''", title, id)
+	return err
+}
+
 // updateProfile sets name, note, title and/or label; a name another non-offline session uses is the caller's error.
 // A non-empty title is the session's own (the client's no longer replaces it); "" clears it and lets the client's apply again.
 func (a *Agents) updateProfile(id string, name, note, title, label *string) (*session, error) {

@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Google Antigravity (the IDE and the `agy` CLI) as a fourth client. `n2n-nexus install antigravity` writes the named hook `n2n-nexus` into `~/.gemini/config/hooks.json` (SessionStart, PreInvocation, Stop), the rule `~/.gemini/config/rules/n2n-nexus.md` and the grant `command(n2n-nexus hook antigravity --wait)` into the IDE's and the CLI's permission settings, keeping every other hook, grant and setting, and registers the MCP server with `agy mcp add`; `uninstall antigravity` removes them, and `doctor antigravity` checks them and that `n2n-nexus` is on `PATH`. Each conversation is the session `antigravity:<conversation id>`; tool calls name it with `_meta["antigravity.google/conversation_id"]`. Messages arrive at the start of a turn, between model calls and at the end of a turn; an idle conversation is woken by the message waiter `n2n-nexus hook antigravity --wait`, which the model starts as a background command when a notice says it is not running, and which hands a wake to `agy agentapi send-message`. Idle waking depends on the model following the rule; end-to-end checks with the installed client (the Linux/WSL CLI and the Windows IDE) are still to be done. Host: hook requests and callers accept `antigravity`, Antigravity hooks get Antigravity's output shapes, the title is the first prompt and is set once, and the waiter's waits outlive turns. Migration `0011_antigravity_client.sql` adds the client to the sessions table and keeps every session and message. Contract version stays at 5; Claude Code, Codex and pi work unchanged with the new host, and Antigravity needs both the new host and the new client.
+
 ## [0.13.4] - 2026-11-21
 
 Host-only release (`host-v0.13.4`); the npm client stays at 0.13.3 and contract version stays at 5. Upgrade the host and keep `nexus.db`: migration 0010 runs automatically and preserves existing data. Older hosts cannot open the upgraded database.

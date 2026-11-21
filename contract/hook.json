@@ -3,16 +3,19 @@
   "clients": [
     "claude",
     "codex",
-    "pi"
+    "pi",
+    "antigravity"
   ],
   "clientInfoNames": {
     "claude": "claude-code",
     "codex": "codex-mcp-client",
-    "pi": "pi"
+    "pi": "pi",
+    "antigravity": "antigravity-client"
   },
   "meta": {
     "claudeToolUseKey": "claudecode/toolUseId",
-    "codexSessionKey": "sessionId"
+    "codexSessionKey": "sessionId",
+    "antigravityConversationKey": "antigravity.google/conversation_id"
   },
   "mcpServerName": "n2n-nexus",
   "discoveryQuery": "n2n-nexus/discover",
@@ -108,7 +111,8 @@
     "proposedEnd": "Proposed end of the meeting (only the user's seat ends it): %s",
     "stanceReminder": "Meeting \"%s\" (%s) waits for your stance on draft #%d: call stance with meetingId and messageId %d, endorse or object (with a reason). No other reply needed.",
     "stanceWaiting": "Meeting \"%s\" (%s): draft #%d still waits for the stance of %s. No reply needed.",
-    "noAgentSessionError": "This call carries no agent session, so direct messaging cannot tell who you are. It needs the n2n-nexus hooks (n2n-nexus install <claude|codex|pi>, then a new conversation) and the MCP server registered as 'n2n-nexus'. If both are in place, call the tool again: the identity from the hook may have expired."
+    "noAgentSessionError": "This call carries no agent session, so direct messaging cannot tell who you are. It needs the n2n-nexus hooks (n2n-nexus install <claude|codex|pi|antigravity>, then a new conversation) and the MCP server registered as 'n2n-nexus'. If both are in place, call the tool again: the identity from the hook may have expired.",
+    "waiterReminder": "[n2n-nexus] The n2n-nexus message waiter of this conversation is not running. Start it as described in the n2n-nexus rule."
   },
   "schemas": {
     "hookRequest": {
@@ -119,7 +123,8 @@
           "enum": [
             "claude",
             "codex",
-            "pi"
+            "pi",
+            "antigravity"
           ]
         },
         "input": {
@@ -168,6 +173,22 @@
           "properties": {
             "client": {
               "const": "codex"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "client",
+            "sessionId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "client": {
+              "const": "antigravity"
             },
             "sessionId": {
               "type": "string",

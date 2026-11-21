@@ -11,11 +11,12 @@
 import { expect } from "vitest";
 import { HOOK, type Host, type HttpResponse, type ToolReply } from "./harness.js";
 
-export type HookClient = "claude" | "codex" | "pi";
+export type HookClient = "claude" | "codex" | "pi" | "antigravity";
 export type HookOutput = {
     decision?: string;
     reason?: string;
     hookSpecificOutput?: { hookEventName: string; additionalContext: string };
+    injectSteps?: { systemMessage: { systemMessage: string } }[];
     wake?: string;
     dispatchId?: string;
     timeout?: boolean;
@@ -92,6 +93,9 @@ export function agentKit(host: Host) {
     const codexTool = <T>(sessionId: string, tool: string, args: Record<string, unknown> = {}) =>
         host.callTool<T>(tool, args, "i2", { client: "codex", sessionId });
 
+    const antigravityTool = <T>(sessionId: string, tool: string, args: Record<string, unknown> = {}) =>
+        host.callTool<T>(tool, args, "i3", { client: "antigravity", sessionId });
+
     async function send(fromCodex: string, to: string, text: string, notifyWhenIdle = false): Promise<string> {
         const res = await codexTool<{ messageId: string }>(fromCodex, "send", { to, text, notifyWhenIdle });
         expect(res.status, res.body).toBe(200);
@@ -120,7 +124,7 @@ export function agentKit(host: Host) {
         touched.clear();
     }
 
-    return { hookRaw, hook, openHook, claudeTool, codexTool, send, sessions, profile, status, endSessions };
+    return { hookRaw, hook, openHook, claudeTool, codexTool, antigravityTool, send, sessions, profile, status, endSessions };
 }
 
 /** Session ids unique to one test: ids()("a") gives "t<n>-a". */
@@ -130,3 +134,5 @@ export function ids() {
 }
 
 export const context = (out: HookOutput) => out?.hookSpecificOutput?.additionalContext ?? "";
+/** The text an Antigravity hook output injects as a system message step. */
+export const injected = (out: HookOutput) => out?.injectSteps?.[0]?.systemMessage.systemMessage ?? "";

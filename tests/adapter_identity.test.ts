@@ -91,6 +91,19 @@ for (const stateless of [false, true]) {
             expect(caller.machine).toEqual({ hostname, platform, environment });
         });
 
+        it("names an Antigravity caller by its conversation id, not the root conversation's, and invents none", async () => {
+            await fakeDaemon();
+            const client = await connect("antigravity-client", stateless);
+            expect((await callEcho(client, { "antigravity.google/conversation_id": "conv-a" })).caller)
+                .toEqual({ client: "antigravity", sessionId: "conv-a" });
+            // A second conversation through the same adapter, a sub-conversation naming its root.
+            expect((await callEcho(client, { "antigravity.google/conversation_id": "conv-b", "antigravity.google/root_conversation_id": "conv-a" })).caller)
+                .toEqual({ client: "antigravity", sessionId: "conv-b" });
+            for (const meta of [{}, { "antigravity.google/conversation_id": "" }, { "antigravity.google/conversation_id": 7 }, { "antigravity.google/root_conversation_id": "conv-a" }, { sessionId: "conv-a" }]) {
+                expect(await callEcho(client, meta), JSON.stringify(meta)).not.toHaveProperty("caller");
+            }
+        });
+
         it("sends no caller for other clients or when the identifying _meta is missing", async () => {
             await fakeDaemon();
             const other = await connect("Cursor", stateless);

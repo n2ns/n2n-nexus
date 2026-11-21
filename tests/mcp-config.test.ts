@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { readMcpCommand } from "../src/cli/mcp-config.js";
+import { mcpConfigFile, readMcpCommand } from "../src/cli/mcp-config.js";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-mcp-config-"));
 const file = path.join(dir, "config.toml");
@@ -69,5 +69,18 @@ args = ["other.js"]
             command: String.raw`C:\Program Files\nodejs\node.exe`,
             args: [String.raw`C:\nexus\index.js`, "mcp"]
         });
+    });
+});
+
+describe("readMcpCommand Antigravity JSON", () => {
+    it("reads ~/.gemini/config/mcp_config.json as agy mcp add writes it, and an empty file as no registration", () => {
+        expect(mcpConfigFile("antigravity")).toBe(path.join(os.homedir(), ".gemini", "config", "mcp_config.json"));
+        const json = path.join(dir, "mcp_config.json");
+        fs.writeFileSync(json, "");
+        expect(readMcpCommand("antigravity", json)).toBeUndefined();
+        fs.writeFileSync(json, JSON.stringify({ mcpServers: { "n2n-nexus": { args: ["/npx", "-y", "n2n-nexus@latest", "mcp"], command: "/node", disabled: false, env: { NEXUS_ENDPOINT: "http://h:1", PATH: "/usr/bin" } } } }));
+        expect(readMcpCommand("antigravity", json)).toEqual({ command: "/node", args: ["/npx", "-y", "n2n-nexus@latest", "mcp"], endpoint: "http://h:1" });
+        fs.writeFileSync(json, JSON.stringify({ mcpServers: {} }));
+        expect(readMcpCommand("antigravity", json)).toBeUndefined();
     });
 });
