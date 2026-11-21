@@ -96,7 +96,8 @@ function grantList(config: Json, keys: string[], file: string, create: boolean):
 
 /**
  * Remove the grants install wrote (for any endpoint) and, when `grant` is given, add it; returns whether
- * the configuration changed. Every other grant stays in its place.
+ * the configuration changed. Every other grant stays in its place. A removal that empties the list
+ * removes the list and the objects above it that it leaves empty.
  */
 export function setWaiterGrant(config: Json, keys: string[], file: string, grant: string | undefined): boolean {
     const list = grantList(config, keys, file, grant !== undefined);
@@ -105,7 +106,18 @@ export function setWaiterGrant(config: Json, keys: string[], file: string, grant
     const kept = list.filter((g) => !isOurGrant(g));
     if (grant !== undefined) kept.push(grant);
     list.splice(0, list.length, ...kept);
-    return JSON.stringify(list) !== before;
+    const changed = JSON.stringify(list) !== before;
+    // A removal that empties the list also removes it and the objects it leaves empty: what install created to hold it.
+    if (changed && grant === undefined && list.length === 0) {
+        const parents = keys.slice(0, -1).reduce<Json[]>((acc, key) => [...acc, acc[acc.length - 1][key] as Json], [config]);
+        for (let i = keys.length - 1; i >= 0; i--) {
+            const holder = parents[i];
+            const value = holder[keys[i]];
+            if (Array.isArray(value) ? value.length > 0 : isObject(value) && Object.keys(value).length > 0) break;
+            delete holder[keys[i]];
+        }
+    }
+    return changed;
 }
 
 /** The grants in `config` at `keys` (none when the list is missing or malformed). */

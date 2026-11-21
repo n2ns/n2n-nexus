@@ -420,21 +420,36 @@ function antigravityStep(action: InstallOptions["action"], command: { node: stri
         process.stdout.write(`Wrote the n2n-nexus rule to ${ruleFile}\n`);
     } else if (ruleOurs) {
         fs.rmSync(linkTarget(ruleFile), { force: true });
+        removeEmptyDir(path.dirname(ruleFile));
         process.stdout.write(`Removed the n2n-nexus rule from ${ruleFile}\n`);
         removed = true;
     }
+    // A file that held nothing but our parts goes with them.
+    const writeOrRemove = (file: string, config: Record<string, unknown>) => {
+        if (!install && Object.keys(config).length === 0) fs.rmSync(linkTarget(file), { force: true });
+        else writeConfig(file, config);
+    };
     if (install || hadHook) {
-        writeConfig(hooksFile, hooks);
+        writeOrRemove(hooksFile, hooks);
         process.stdout.write(`${install ? "Wrote the" : "Removed the"} "${ANTIGRAVITY_HOOK_NAME}" hook ${install ? "to" : "from"} ${hooksFile}\n`);
     }
     removed ||= hadHook;
     for (const { label, file, config, changed } of grants) {
         if (!changed) continue;
-        writeConfig(file, config);
+        writeOrRemove(file, config);
         process.stdout.write(`${install ? "Granted" : "Removed the grant of"} the message waiter command ${install ? "in" : "from"} the ${label} settings ${file}\n`);
         if (!install) removed = true;
     }
     return removed;
+}
+
+/** Remove `dir` when it is empty; a folder that holds anything, or is gone, stays as it is. */
+function removeEmptyDir(dir: string): void {
+    try {
+        if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+    } catch {
+        // already gone, or not readable: leave it
+    }
 }
 
 function mcpRemoveArgs(client: HookClient): string[] {

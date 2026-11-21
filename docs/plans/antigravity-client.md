@@ -230,7 +230,7 @@ If agentapi accepts a message but a model does not reply within the observation 
 | Idle wakes | Two wakes, replies with `reply` after 21 s and 12 s; one waiter process throughout; listening after each turn. |
 | Host restart | Host stopped for about 20 s and restarted on the same data: the waiter reconnected and the session was listening 9 s after the host answered; the next wake made the model `send` (not reply) a message, received after 16 s. |
 | Exit | Ending `agy` ended its waiter and MCP adapter. |
-| Uninstall | Rule, hook, grants and MCP registration removed; it left an empty `permissions.allow`, an empty `hooks.json` and an empty `rules/` folder that install had created. |
+| Uninstall | Rule, hook, grants and MCP registration removed; it left an empty `permissions.allow`, an empty `hooks.json` and an empty `rules/` folder that install had created. Fixed afterwards: uninstall now removes a grant list, settings file, `hooks.json` or `rules/` folder that nothing else is left in. |
 | stream-json input | While the waiter ran, a second user prompt written to stdin was not processed, and no `result` event came for the first prompt: with a live background command, stream-json is unusable for further user input, not only for output. |
 
 Not covered by this run: the interactive CLI, resume without SessionStart, a listening Stop, two Antigravity conversations, a real Claude Code peer, and the Windows IDE.

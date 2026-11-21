@@ -149,7 +149,7 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 9. 卸载
 
-`n2n-nexus uninstall <claude|codex|pi|antigravity>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删）；Antigravity 先删除规则文件、命名 hook 和等待器的授权；配置里的其他内容不动。已打开的 Antigravity 对话会保留它们的消息等待器，直到对话关闭。
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删）；Antigravity 先删除规则文件、命名 hook 和等待器的授权（授权列表、设置文件、`hooks.json` 或 `rules` 目录里没有别的内容时连同它们一起删）；配置里的其他内容不动。已打开的 Antigravity 对话会保留它们的消息等待器，直到对话关闭。
 
 ```bash
 n2n-nexus uninstall claude

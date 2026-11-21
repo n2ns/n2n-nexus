@@ -651,6 +651,24 @@ describe("install antigravity", () => {
         expect(order.every((i, n) => i >= 0 && (n === 0 || i > order[n - 1]))).toBe(true);
     });
 
+    it("uninstall also removes what install created only to hold its parts: emptied grant lists, objects and files, an empty hooks.json and rules folder", () => {
+        // A user's settings without a grant list: the list install added goes again; the user's own keys stay.
+        fs.mkdirSync(path.dirname(cliFile()), { recursive: true });
+        fs.writeFileSync(cliFile(), JSON.stringify({ trustedWorkspaces: ["/w"] }));
+        expect(run(["install", "antigravity"]).code).toBe(0);
+        expect(run(["uninstall", "antigravity"]).code).toBe(0);
+        expect(readJson(cliFile())).toEqual({ trustedWorkspaces: ["/w"] });
+        // Files and folders install created for its parts alone are gone.
+        expect(fs.existsSync(ideFile())).toBe(false);
+        expect(fs.existsSync(hooksFile())).toBe(false);
+        expect(fs.existsSync(path.dirname(ruleFile()))).toBe(false);
+        // A rules folder that holds other files stays.
+        expect(run(["install", "antigravity"]).code).toBe(0);
+        fs.writeFileSync(path.join(path.dirname(ruleFile()), "mine.md"), "x");
+        expect(run(["uninstall", "antigravity"]).code).toBe(0);
+        expect(fs.existsSync(path.join(path.dirname(ruleFile()), "mine.md"))).toBe(true);
+    });
+
     it("refuses to overwrite a rule file that n2n-nexus did not write, writing nothing, and uninstall leaves it", () => {
         fs.mkdirSync(path.dirname(ruleFile()), { recursive: true });
         fs.writeFileSync(ruleFile(), "my rule\n");

@@ -149,7 +149,7 @@ Upgrade the host and the client on every machine to the same release: a host and
 
 ## 9. Uninstalling
 
-`n2n-nexus uninstall <claude|codex|pi|antigravity>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it), for Antigravity the rule file, the named hook and the waiter's grants first, and leaves the rest of the configuration alone. Open Antigravity conversations keep their message waiter until they are closed.
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it), for Antigravity the rule file, the named hook and the waiter's grants first (with a grant list, a settings file, `hooks.json` or the `rules` folder that nothing else is left in), and leaves the rest of the configuration alone. Open Antigravity conversations keep their message waiter until they are closed.
 
 ```bash
 n2n-nexus uninstall claude
