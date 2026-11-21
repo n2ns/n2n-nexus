@@ -119,6 +119,7 @@ Antigravity has no hook that can wait in the background, so its waiter is a comm
 - The waiter is a running background task, so Antigravity's `fullyIdle` can stay false after a model turn ends. With a live waiter, `stream-json` output was observed to buffer later updates until the command ends, and a further user prompt on its stdin was not processed; hooks and the transcript show the woken turns ran. Use the interactive CLI or the IDE.
 - Accepting a message and finishing the model's work are separate: one observed wake was accepted, but the model generated for minutes without a visible reply. That observation does not justify a duplicate send or a model-setting change.
 - Waiters started before an uninstall keep delivering until their `agy` exits.
+- Install grants only the waiter command, not the n2n-nexus MCP tools. Under a permission policy that asks for review (`toolPermission=request-review`), print mode (`agy -p`, `stream-json`) soft-denies an MCP tool call and the turn does not finish; the interactive CLI and the IDE ask the user instead.
 
 ---
 
