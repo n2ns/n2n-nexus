@@ -4,11 +4,13 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
-## [未发布]
+## [0.14.0] - 2026-11-21
+
+将 host 和客户端升级到 0.14.0（协议版本仍为 5）。保留 `nexus.db`：迁移 0011 自动执行并保留现有数据；旧版 host 无法打开升级后的数据库。Claude Code、Codex 和 pi 无需重新安装。Google Antigravity 需执行 `n2n-nexus install antigravity`，并新开一个 Antigravity 对话。
 
 ### 新增
 
-- Google Antigravity（IDE 和 `agy` CLI）作为第四种客户端。`n2n-nexus install antigravity` 把命名 hook `n2n-nexus` 写进 `~/.gemini/config/hooks.json`（SessionStart、PreInvocation、Stop），写入规则 `~/.gemini/config/rules/n2n-nexus.md`，并把授权 `command(n2n-nexus hook antigravity --wait)` 加进 IDE 和 CLI 的权限设置，其他 hook、授权和设置都保留，然后用 `agy mcp add` 注册 MCP 服务器；`uninstall antigravity` 删除这些内容，`doctor antigravity` 检查它们以及 `PATH` 上能否找到 `n2n-nexus`。每个对话是会话 `antigravity:<对话 ID>`；工具调用用 `_meta["antigravity.google/conversation_id"]` 指明它。消息在一轮开始、模型调用之间和一轮结束时送达；空闲的对话由消息等待器 `n2n-nexus hook antigravity --wait` 叫醒：通知说它没有运行时模型把它作为后台命令启动，它把唤醒交给 `agy agentapi send-message`。空闲叫醒取决于模型是否遵守规则；用安装后的客户端进行的端到端检查（Linux/WSL CLI 和 Windows IDE）尚未进行。host：hook 请求和调用方接受 `antigravity`，Antigravity 的 hooks 得到 Antigravity 的输出格式，标题取第一句提示且只设一次，等待器的等待跨轮次保持。迁移 `0011_antigravity_client.sql` 在会话表中加入该客户端，保留所有会话和消息。协议版本仍为 5；Claude Code、Codex 和 pi 无需改动即可使用新 host，Antigravity 需要新 host 和新客户端。
+- Google Antigravity（IDE 和 `agy` CLI）作为第四种客户端。`n2n-nexus install antigravity` 把命名 hook `n2n-nexus` 写进 `~/.gemini/config/hooks.json`（SessionStart、PreInvocation、Stop），写入规则 `~/.gemini/config/rules/n2n-nexus.md`，并把授权 `command(n2n-nexus hook antigravity --wait)` 加进 IDE 和 CLI 的权限设置，其他 hook、授权和设置都保留，然后用 `agy mcp add` 注册 MCP 服务器；`uninstall antigravity` 删除这些内容，`doctor antigravity` 检查它们以及 `PATH` 上能否找到 `n2n-nexus`。每个对话是会话 `antigravity:<对话 ID>`；工具调用用 `_meta["antigravity.google/conversation_id"]` 指明它。消息在一轮开始、模型调用之间和一轮结束时送达；空闲的对话由消息等待器 `n2n-nexus hook antigravity --wait` 叫醒：通知说它没有运行时模型把它作为后台命令启动，它把唤醒交给 `agy agentapi send-message`。空闲叫醒取决于模型是否遵守规则；CLI 已在 Linux/WSL 上做过端到端检查（交互模式和 `stream-json`、两个 Antigravity 对话、Claude Code 对端、恢复对话、host 重启）；Windows IDE 尚未检查。host：hook 请求和调用方接受 `antigravity`，Antigravity 的 hooks 得到 Antigravity 的输出格式，标题取第一句提示且只设一次，等待器的等待跨轮次保持。迁移 `0011_antigravity_client.sql` 在会话表中加入该客户端，保留所有会话和消息。协议版本仍为 5；Claude Code、Codex 和 pi 无需改动即可使用新 host，Antigravity 需要新 host 和新客户端。
 
 ## [0.13.4] - 2026-11-21
 
