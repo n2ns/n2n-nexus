@@ -1,6 +1,6 @@
 # Plan: Google Antigravity as a fourth client
 
-Status: implemented (§8 phases 1–4, 2026-11-21); Linux/WSL CLI end-to-end runs (stream-json and interactive) recorded in §7.3 and §7.4; a real Claude Code peer and Windows IDE acceptance outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
+Status: implemented (§8 phases 1–4, 2026-11-21); Linux/WSL CLI end-to-end runs (stream-json and interactive) recorded in §7.3 to §7.5; Windows IDE acceptance outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
 
 ## 1. Goal
 
@@ -249,6 +249,18 @@ Same setup as §7.3 (separate host built from this repository, user's `~/.gemini
 | Uninstall | As in §7.3, with every waiter already gone. |
 
 Not covered: a real Claude Code or Codex peer, and the Windows IDE.
+
+### 7.5 Claude Code peer: 2026-11-21
+
+Claude Code 2.1.330 in print mode (`claude -p`) with `--setting-sources project`, `--settings` holding the hooks `install claude` writes (pointed at the test host), `--mcp-config` with this repository's adapter and `--strict-mcp-config`, so no user setting was read or changed; one interactive `agy` conversation A as in §7.4.
+
+| Check | Result |
+|---|---|
+| Claude → Antigravity | Claude's `send` was attributed to `claude:<session id>` (PreToolUse binding) and woke A. |
+| Antigravity → Claude | A replied 27 s later (`reply_to` set). Claude's print-mode session had ended (`claude -p` does not keep a background wait: unattended), so the reply waited unread. |
+| Claude's next prompt | `claude -p --resume <session>` got the reply through its UserPromptSubmit hook and answered with its text without a tool call; the message was marked read. |
+
+Not covered: idle waking of an interactive Claude Code conversation by Antigravity (the Claude side of that is unchanged by this work), and the Windows IDE.
 
 ## 8. Implementation order and commit boundaries
 
