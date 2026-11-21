@@ -1,6 +1,6 @@
 # Plan: Google Antigravity as a fourth client
 
-Status: implemented (§8 phases 1–4, 2026-11-21); Linux/WSL CLI end-to-end run recorded in §7.3; interactive CLI, resume and Windows IDE acceptance outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
+Status: implemented (§8 phases 1–4, 2026-11-21); Linux/WSL CLI end-to-end runs (stream-json and interactive) recorded in §7.3 and §7.4; a real Claude Code peer and Windows IDE acceptance outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
 
 ## 1. Goal
 
@@ -234,6 +234,21 @@ If agentapi accepts a message but a model does not reply within the observation 
 | stream-json input | While the waiter ran, a second user prompt written to stdin was not processed, and no `result` event came for the first prompt: with a live background command, stream-json is unusable for further user input, not only for output. |
 
 Not covered by this run: the interactive CLI, resume without SessionStart, a listening Stop, two Antigravity conversations, a real Claude Code peer, and the Windows IDE.
+
+### 7.4 Linux/WSL interactive CLI run: 2026-11-21
+
+Same setup as §7.3 (separate host built from this repository, user's `~/.gemini` backed up and restored byte for byte with its file modes, the n2n-nexus MCP tools granted for the invocation only), with two interactive `agy` conversations A and B driven through a pseudo-terminal and a Codex session simulated over HTTP.
+
+| Check | Result |
+|---|---|
+| Start | Both conversations started their waiter on the reminder (again after the sandbox configuration error, with `BypassSandbox: true`) and were listening after their first turn, one waiter each. |
+| Two Antigravity conversations | The peer woke A and asked it to message B; A sent, B was woken and replied to A (`reply_to` set), A was woken and forwarded the reply to the peer: 14 s A→B, 19 s B's reply, 6 s A's forward, 40 s in all. |
+| Listening Stop | B called `listen` on and ended its turn; its Stop was held, and a message 30 s later continued that turn (`Stop hook blocked termination: [n2n-nexus] 1 new direct message`); the reply came 9 s after sending. |
+| Exit | Ending A's `agy` ended A's waiter; B's kept running. |
+| Resume | `agy --conversation <A> -i …` resumed without SessionStart; the PreInvocation reminder followed Antigravity's own notice that background tasks had stopped, the model started a new waiter, and a wake 12 s later got its reply. |
+| Uninstall | As in §7.3, with every waiter already gone. |
+
+Not covered: a real Claude Code or Codex peer, and the Windows IDE.
 
 ## 8. Implementation order and commit boundaries
 
