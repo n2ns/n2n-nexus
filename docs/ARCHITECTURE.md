@@ -116,7 +116,7 @@ Antigravity has no hook that can wait in the background, so its waiter is a comm
 
 - A conversation resumed after `agy` restarted has no waiter until a prompt runs PreInvocation and the model starts it; opening a resumed conversation alone does not make it reachable. SessionStart is not needed for this.
 - The model starts the waiter because the rule says so. A model that does not follow the rule leaves the conversation without idle waking; the hooks, Stop delivery and listening still work. A permission policy that denies the granted command has the same effect: install does not change the sandbox or the permission mode.
-- The waiter is a running background task, so Antigravity's `fullyIdle` can stay false after a model turn ends. With a live waiter, `stream-json` output was observed to buffer later updates until the command ends; hooks and the transcript show the woken turns ran.
+- The waiter is a running background task, so Antigravity's `fullyIdle` can stay false after a model turn ends. With a live waiter, `stream-json` output was observed to buffer later updates until the command ends, and a further user prompt on its stdin was not processed; hooks and the transcript show the woken turns ran. Use the interactive CLI or the IDE.
 - Accepting a message and finishing the model's work are separate: one observed wake was accepted, but the model generated for minutes without a visible reply. That observation does not justify a duplicate send or a model-setting change.
 - Waiters started before an uninstall keep delivering until their `agy` exits.
 

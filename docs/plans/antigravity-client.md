@@ -1,6 +1,6 @@
 # Plan: Google Antigravity as a fourth client
 
-Status: implemented (§8 phases 1–4, 2026-11-21); end-to-end acceptance (§7.2) outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
+Status: implemented (§8 phases 1–4, 2026-11-21); Linux/WSL CLI end-to-end run recorded in §7.3; interactive CLI, resume and Windows IDE acceptance outstanding　|　Last evidence update: 2026-11-20　|　Current capability probes: agy 1.5.13, Linux/WSL CLI. Historical evidence: IDE 1.107.0 and agy 1.4.10, 2026-10-29. See §2 for the distinction; §3 preserves the user-decided design points.
 
 ## 1. Goal
 
@@ -215,6 +215,25 @@ Run the installed implementation in Linux/WSL CLI and, separately, Windows IDE. 
 - Uninstall in the documented order, preserve unrelated configuration, and confirm that a fresh conversation starts no waiter. Existing waiters may persist until their CLI closes; normal CLI exit must end the owned waiter. Verify cleanup by the PIDs created for the test.
 
 If agentapi accepts a message but a model does not reply within the observation window, record hook arrival, model-output evidence, the window and any test cancellation separately. Do not classify slow model generation as failed transport or add a resend workaround without a reproduced delivery failure. The four diagnostic timings in §2.1 are not acceptance deadlines.
+
+### 7.3 Linux/WSL CLI run: 2026-11-21
+
+`agy` 1.5.13, `stream-json`, model chosen by the account (Gemini 4 Neon High). A host built from this repository on a separate port with its own data directory; `install antigravity --endpoint <that host>` into the user's own `~/.gemini`; the MCP server pointed at this repository's build, because the published 0.13.3 has no Antigravity support; `n2n-nexus` on `PATH` from this repository's build; a Codex session simulated over HTTP as the peer. The user's files were backed up before and restored byte for byte afterwards.
+
+| Check | Result |
+|---|---|
+| Install, doctor | Rule, named hook, both grants written, other settings kept; doctor passed every check except the MCP form, which the test changed on purpose. |
+| SessionStart, title, reminder | Introduction and waiter reminder injected; the title was the first prompt. |
+| Waiter start under the user's policy | The model started the waiter without a confirmation. The first attempt failed with `sandbox configuration error: readonly C:\Users\…\config.toml: non-absolute file path` (the user's sandbox configuration); the model retried with `BypassSandbox: true` on its own, which Antigravity's safety monitor logged as not triggered. |
+| MCP tools under the user's policy | `toolPermission=request-review`: in print mode Antigravity soft-denied the MCP tool call (`soft-denying tool confirmation "McpTool"`), so that turn never ended. A second run granted the n2n-nexus tools for that invocation only (`--settings`, not saved). |
+| Identity | `peers` returned the conversation as `antigravity:<conversation id>`. |
+| Idle wakes | Two wakes, replies with `reply` after 21 s and 12 s; one waiter process throughout; listening after each turn. |
+| Host restart | Host stopped for about 20 s and restarted on the same data: the waiter reconnected and the session was listening 9 s after the host answered; the next wake made the model `send` (not reply) a message, received after 16 s. |
+| Exit | Ending `agy` ended its waiter and MCP adapter. |
+| Uninstall | Rule, hook, grants and MCP registration removed; it left an empty `permissions.allow`, an empty `hooks.json` and an empty `rules/` folder that install had created. |
+| stream-json input | While the waiter ran, a second user prompt written to stdin was not processed, and no `result` event came for the first prompt: with a live background command, stream-json is unusable for further user input, not only for output. |
+
+Not covered by this run: the interactive CLI, resume without SessionStart, a listening Stop, two Antigravity conversations, a real Claude Code peer, and the Windows IDE.
 
 ## 8. Implementation order and commit boundaries
 
