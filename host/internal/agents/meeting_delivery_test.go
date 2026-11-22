@@ -44,9 +44,10 @@ func TestFailedWakeRestoresAsyncMeetingNews(t *testing.T) {
 
 	h.hook("codex", testContract.Hook.WakeResultEvent, "b", wakeResult(out.str("dispatchId"), false))
 	again := h.openHook("codex", texts0BackgroundWait(), "b").wait(t)
-	contains(t, again.str("wake"), "wake with news")
-	contains(t, again.str("wake"), "Async news")
 	eq(t, h.wakes(id, "codex:b"), 0)
+	text := h.wokenText("b", again)
+	contains(t, text, "wake with news")
+	contains(t, text, "Async news")
 }
 
 func TestLeftAuthorReceivesStanceWithoutWaking(t *testing.T) {

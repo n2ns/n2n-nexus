@@ -143,7 +143,7 @@ func TestBroadcastWakesListeningSessionsOnly(t *testing.T) {
 	eq(t, h.codex("s", "broadcast", map[string]any{"text": "heads up", "wake": true}).status, 200)
 
 	// Listening: woken at once with it.
-	contains(t, waiting.wait(t).str("wake"), "heads up")
+	contains(t, h.wokenText("wait", waiting.wait(t)), "heads up")
 	// Only the listening session's delivery may wake.
 	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries WHERE wake = 1"), 1)
 	eq(t, h.count("SELECT COUNT(*) FROM broadcast_deliveries WHERE wake = 1 AND to_id = 'codex:wait'"), 1)

@@ -322,13 +322,13 @@ describe("POST /api/hook: background wait", () => {
 
     it("leaves delivery to a listening Stop hook while it waits, and takes over when that wait ends", async () => {
         const s = ids();
-        const r = `codex:${s("r")}`;
+        const r = `claude:${s("r")}`;
         await hook("codex", "SessionStart", s("s"));
-        await hook("codex", "UserPromptSubmit", s("r"));
-        await codexTool(s("r"), "listen", { on: true });
-        const background = openHook("codex", BACKGROUND_WAIT_EVENT, s("r"));   // registered first
+        await hook("claude", "UserPromptSubmit", s("r"));
+        await claudeTool(s("r"), "listen", { on: true });
+        const background = openHook("claude", BACKGROUND_WAIT_EVENT, s("r"));   // registered first
         expect(await status(r)).toBe("working");                                // a working session shows no sign of its wait: these requests give it time to arrive
-        const listening = openHook("codex", "Stop", s("r"), { stop_hook_active: false });
+        const listening = openHook("claude", "Stop", s("r"), { stop_hook_active: false });
         await until(async () => (await status(r)) === "listening");
         await send(s("s"), r, "for the listening stop");
         const stop = (await listening.response).payload.output;
@@ -338,8 +338,8 @@ describe("POST /api/hook: background wait", () => {
         expect((await background.response).payload.output).toEqual({ timeout: true });   // it did not take the message
 
         // The next listening Stop times out (LISTEN_MS); the client's next background wait delivers what arrives then.
-        await hook("codex", "Stop", s("r"), { stop_hook_active: true });
-        const again = openHook("codex", BACKGROUND_WAIT_EVENT, s("r"));
+        await hook("claude", "Stop", s("r"), { stop_hook_active: true });
+        const again = openHook("claude", BACKGROUND_WAIT_EVENT, s("r"));
         await until(async () => (await status(r)) === "listening");
         await send(s("s"), r, "for the background wait");
         const { payload } = await again.response;
@@ -387,12 +387,12 @@ describe("POST /api/hook: listen mode", () => {
     it("returns immediately with what arrived but was not notified before the wait began", async () => {
         const s = ids();
         await hook("codex", "SessionStart", s("s"));
-        await hook("codex", "SessionStart", s("r"));
-        await codexTool(s("r"), "listen", { on: true });
-        await send(s("s"), `codex:${s("r")}`, "during continuation");
-        const out = await hook("codex", "Stop", s("r"), { stop_hook_active: true });
+        await hook("claude", "SessionStart", s("r"));
+        await claudeTool(s("r"), "listen", { on: true });
+        await send(s("s"), `claude:${s("r")}`, "during continuation");
+        const out = await hook("claude", "Stop", s("r"), { stop_hook_active: true });
         expect(out?.reason).toContain("during continuation");
-        expect(await status(`codex:${s("r")}`)).toBe("working");
+        expect(await status(`claude:${s("r")}`)).toBe("working");
     });
 });
 

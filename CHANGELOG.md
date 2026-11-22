@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Codex conversations no longer show whole `[n2n-nexus]` notifications in the chat. The prompt of a woken turn is one line that says what is new, and the hook context of that prompt, which Codex does not show, brings the texts; a Stop that holds the turn (or a listening one) says what is new in one line, and the assistant gets the texts with `read` (`read_messages` for a meeting). Notices, which no tool returns, are still shown when they hold a Stop. A message a held Stop named and the assistant did not read is offered once more when that turn ends. Other clients are unchanged. Needs the new host.
+
 ## [0.14.0] - 2026-11-21
 
 Upgrade the host and client to 0.14.0 (contract version 5). Keep `nexus.db`: migration 0011 runs automatically and preserves existing data; older hosts cannot open the upgraded database. Claude Code, Codex and pi need no reinstall. For Google Antigravity, run `n2n-nexus install antigravity` and start a new Antigravity conversation.

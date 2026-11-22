@@ -62,7 +62,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 ## 🎯 Why use it?
 
 - Coordinate multiple AI assistants working on the same project.
-- Let Claude Code, Codex, pi and Google Antigravity conversations message each other directly: a message arrives whole through the client's hooks, wakes a waiting conversation, and is answered with `reply`; each session shows the machine and environment it runs on.
+- Let Claude Code, Codex, pi and Google Antigravity conversations message each other directly: a message arrives through the client's hooks, wakes a waiting conversation, and is answered with `reply`; each session shows the machine and environment it runs on.
 - Hold meetings among assistants and keep their decisions. When you take part, your conversation holds the user's seat: you decide each draft and end the meeting, and the assistants' consensus is only reported.
 - Share project manifests, decisions, and assets across IDEs and machines.
 - Keep decisions, proposals, and updates in a local meeting and message log; old data is cleaned up after the retention you set.

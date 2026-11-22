@@ -28,7 +28,8 @@ export type Profile = {
 
 export const { noticePrefix: NOTICE_PREFIX, notifyClosing: NOTIFY_CLOSING, stopClosing: STOP_CLOSING, statusNote: STATUS_NOTE,
     sessionStartClosing: SESSION_START_CLOSING, collaborationRules: COLLABORATION_RULES, messageTrustNote: MESSAGE_TRUST_NOTE, messageEnd: MESSAGE_END,
-    messageCut: MESSAGE_CUT, replyInstruction: REPLY_INSTRUCTION, readRest: READ_REST, replyTool: REPLY_TOOL, noAgentSessionError: NO_AGENT_SESSION_ERROR } = HOOK.texts;
+    messageCut: MESSAGE_CUT, replyInstruction: REPLY_INSTRUCTION, readRest: READ_REST, replyTool: REPLY_TOOL, noAgentSessionError: NO_AGENT_SESSION_ERROR,
+    briefMessages: BRIEF_MESSAGES, briefNotices: BRIEF_NOTICES, briefWake: BRIEF_WAKE, briefHold: BRIEF_HOLD } = HOOK.texts;
 export const BACKGROUND_WAIT_EVENT = HOOK.backgroundWaitEvent;
 /** A session's own name: <client>@<dir>#<the last 4 letters and digits of its client session id>. */
 export const nameOf = (client: HookClient, dir: string, sessionId: string, length = 4) =>
@@ -133,6 +134,8 @@ export function ids() {
     return (name: string) => `${prefix}-${name}`;
 }
 
+/** A contract text with its %s and %d filled in. */
+export const format = (text: string, ...args: (string | number)[]) => args.reduce<string>((t, arg) => t.replace(/%[sd]/, () => String(arg)), text);
 export const context = (out: HookOutput) => out?.hookSpecificOutput?.additionalContext ?? "";
 /** The text an Antigravity hook output injects as a system message step. */
 export const injected = (out: HookOutput) => out?.injectSteps?.[0]?.systemMessage.systemMessage ?? "";

@@ -15,41 +15,41 @@ func (h *harness) logTo(buf *bytes.Buffer) {
 	h.ag.o.Logger = log.New(buf, "", 0)
 }
 
-// wakeResult reports a delivery as the Codex background wait does after `codex queue`.
+// wakeResult reports a delivery as a background wait does.
 func wakeResult(dispatchID string, ok bool) map[string]any {
 	return map[string]any{"dispatch_id": dispatchID, "ok": ok, "cwd": nil}
 }
 
-// wokenCodex starts codex:s and codex:r (idle) and returns
+// wokenSession starts codex:s and claude:r (idle) and returns
 // the wake a background wait of r gets for a message from s and a notice.
-func wokenCodex(t *testing.T, h *harness) hookOutput {
+func wokenSession(t *testing.T, h *harness) hookOutput {
 	t.Helper()
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "SessionStart", "r")
-	h.hook("codex", "Stop", "r", stopActive)
-	eq(t, h.status("codex:r"), "idle")
-	waiting := h.openHook("codex", texts0BackgroundWait(), "r")
-	h.untilStatus("codex:r", "listening")
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "Stop", "r", stopActive)
+	eq(t, h.status("claude:r"), "idle")
+	waiting := h.openHook("claude", texts0BackgroundWait(), "r")
+	h.untilStatus("claude:r", "listening")
 	// A notice stored without waking anyone: the message below wakes the wait with both.
-	if _, err := h.ag.db().Exec("INSERT INTO agent_notices (session_id, text, created_at) VALUES ('codex:r', 'a notice for r', '2026-01-01T00:00:00.000Z')"); err != nil {
+	if _, err := h.ag.db().Exec("INSERT INTO agent_notices (session_id, text, created_at) VALUES ('claude:r', 'a notice for r', '2026-01-01T00:00:00.000Z')"); err != nil {
 		t.Fatal(err)
 	}
-	h.send("s", "codex:r", "ping", false)
+	h.send("s", "claude:r", "ping", false)
 	out := waiting.wait(t)
 	contains(t, out.str("wake"), "ping")
 	contains(t, out.str("wake"), "a notice for r")
 	if out.str("dispatchId") == "" {
 		t.Fatalf("wake without dispatchId: %v", out)
 	}
-	eq(t, h.status("codex:r"), "working")
+	eq(t, h.status("claude:r"), "working")
 	eq(t, h.notifiedCount(), 2)
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'read'"), 1) // shown whole in the wake
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'claude:r' AND status = 'read'"), 1) // shown whole in the wake
 	return out
 }
 
 func (h *harness) notifiedCount() int {
-	return h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND notified_at IS NOT NULL") +
-		h.count("SELECT COUNT(*) FROM agent_notices WHERE session_id = 'codex:r' AND notified_at IS NOT NULL")
+	return h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'claude:r' AND notified_at IS NOT NULL") +
+		h.count("SELECT COUNT(*) FROM agent_notices WHERE session_id = 'claude:r' AND notified_at IS NOT NULL")
 }
 
 func (h *harness) agentState(id string) (autoTurns int, woken, pending bool) {
@@ -61,35 +61,35 @@ func (h *harness) agentState(id string) (autoTurns int, woken, pending bool) {
 
 func TestWakeResultFailedUndoesTheWake(t *testing.T) {
 	h := start(t, listenWait(5*time.Second), maxTurns(2))
-	out := wokenCodex(t, h)
+	out := wokenSession(t, h)
 	contains(t, out.str("wake"), "Automatic turn 1 of 2")
-	turns, woken, pending := h.agentState("codex:r")
+	turns, woken, pending := h.agentState("claude:r")
 	eq(t, turns, 1)
 	eq(t, woken, true)
 	eq(t, pending, true)
-	before := h.session("codex:r").LastActiveAt
+	before := h.session("claude:r").LastActiveAt
 	var logged bytes.Buffer
 	h.logTo(&logged)
 
 	h.at(time.Minute)
-	if res := h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false)); res != nil {
+	if res := h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false)); res != nil {
 		t.Fatalf("WakeResult output: %v", res)
 	}
-	eq(t, h.status("codex:r"), "idle")
+	eq(t, h.status("claude:r"), "idle")
 	// The failed wake is in the host log, with the session, the wake and what is delivered again.
 	eq(t, strings.Count(logged.String(), "\n"), 1)
-	contains(t, logged.String(), "wake "+out.str("dispatchId")+" of codex:r was not delivered")
+	contains(t, logged.String(), "wake "+out.str("dispatchId")+" of claude:r was not delivered")
 	contains(t, logged.String(), "1 message(s) and 1 notice(s)")
 	eq(t, h.notifiedCount(), 0)
-	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'codex:r' AND status = 'unread' AND read_at IS NULL"), 1)
-	turns, woken, pending = h.agentState("codex:r")
+	eq(t, h.count("SELECT COUNT(*) FROM agent_messages WHERE to_id = 'claude:r' AND status = 'unread' AND read_at IS NULL"), 1)
+	turns, woken, pending = h.agentState("claude:r")
 	eq(t, turns, 0)
 	eq(t, woken, false)
 	eq(t, pending, false)
-	eq(t, h.session("codex:r").LastActiveAt, before) // a report, not activity
+	eq(t, h.session("claude:r").LastActiveAt, before) // a report, not activity
 
 	// The next background wait delivers the same message and notice again, as the first automatic turn.
-	again := h.openHook("codex", texts0BackgroundWait(), "r").wait(t)
+	again := h.openHook("claude", texts0BackgroundWait(), "r").wait(t)
 	contains(t, again.str("wake"), "ping")
 	contains(t, again.str("wake"), "a notice for r")
 	contains(t, again.str("wake"), "Automatic turn 1 of 2")
@@ -97,54 +97,54 @@ func TestWakeResultFailedUndoesTheWake(t *testing.T) {
 
 func TestWakeResultFailedAfterRealEventChangesNothing(t *testing.T) {
 	h := start(t, listenWait(5*time.Second), maxTurns(2))
-	out := wokenCodex(t, h)
-	h.hook("codex", "UserPromptSubmit", "r") // the woken turn started
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
-	eq(t, h.status("codex:r"), "working")
+	out := wokenSession(t, h)
+	h.hook("claude", "UserPromptSubmit", "r") // the woken turn started
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
+	eq(t, h.status("claude:r"), "working")
 	eq(t, h.notifiedCount(), 2)
-	turns, _, pending := h.agentState("codex:r")
+	turns, _, pending := h.agentState("claude:r")
 	eq(t, turns, 1)
 	eq(t, pending, false)
 }
 
 func TestWakeResultDelivered(t *testing.T) {
 	h := start(t, listenWait(5*time.Second), maxTurns(2))
-	out := wokenCodex(t, h)
+	out := wokenSession(t, h)
 	var logged bytes.Buffer
 	h.logTo(&logged)
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), true))
-	_, _, pending := h.agentState("codex:r")
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), true))
+	_, _, pending := h.agentState("claude:r")
 	eq(t, pending, false)
 	// A later failure report for the same wake is ignored: it was settled.
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
-	eq(t, h.status("codex:r"), "working")
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
+	eq(t, h.status("claude:r"), "working")
 	eq(t, logged.String(), "") // a delivered wake and an ignored report log nothing
 	eq(t, h.notifiedCount(), 2)
-	turns, _, _ := h.agentState("codex:r")
+	turns, _, _ := h.agentState("claude:r")
 	eq(t, turns, 1)
 }
 
 func TestWakeResultUnknownDispatchIgnored(t *testing.T) {
 	h := start(t, listenWait(5*time.Second))
-	out := wokenCodex(t, h)
+	out := wokenSession(t, h)
 	// A background wait held meanwhile (it does not deliver while the session is working).
-	waiting := h.openHook("codex", texts0BackgroundWait(), "r")
-	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("codex:r")) == 1 })
+	waiting := h.openHook("claude", texts0BackgroundWait(), "r")
+	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("claude:r")) == 1 })
 
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult("not-this-one", false))
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult("", false))
-	eq(t, h.status("codex:r"), "working")
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult("not-this-one", false))
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult("", false))
+	eq(t, h.status("claude:r"), "working")
 	eq(t, h.notifiedCount(), 2)
-	_, _, pending := h.agentState("codex:r")
+	_, _, pending := h.agentState("claude:r")
 	eq(t, pending, true)
 
 	// The matching report undoes the wake, and the held wait (not cancelled by the reports) delivers it again.
-	h.hook("codex", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
+	h.hook("claude", testContract.Hook.WakeResultEvent, "r", wakeResult(out.str("dispatchId"), false))
 	redelivered := waiting.wait(t)
 	contains(t, redelivered.str("wake"), "ping")
 	contains(t, redelivered.str("wake"), "a notice for r")
 	if redelivered.str("dispatchId") == out.str("dispatchId") {
 		t.Fatal("a new wake reused the dispatchId")
 	}
-	eq(t, h.status("codex:r"), "working")
+	eq(t, h.status("claude:r"), "working")
 }

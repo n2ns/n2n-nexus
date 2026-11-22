@@ -12,20 +12,20 @@ func TestContinuedMeetingToolNewsReachesListeningStop(t *testing.T) {
 	for _, id := range []string{"sender", "receiver"} {
 		h.hook("codex", "SessionStart", id)
 	}
-	h.meeting("m1", map[string]string{"codex:receiver": "active"})
+	h.meeting("m1", map[string]string{"claude:receiver": "active"})
 	h.postInMeeting("m1", "codex:sender", "initial")
-	eq(t, h.hook("codex", "Stop", "receiver", stopInactive).str("decision"), "block")
+	eq(t, h.hook("claude", "Stop", "receiver", stopInactive).str("decision"), "block")
 	h.postInMeeting("m1", "codex:sender", "read during the turn")
-	contains(t, h.hook("codex", "PostToolUse", "receiver").context(), "read during the turn")
-	h.exec(`UPDATE read_cursors SET last_read_id = ? WHERE instance_id = 'codex:receiver' AND context_id = 'm1'`, h.row("m1", 2))
+	contains(t, h.hook("claude", "PostToolUse", "receiver").context(), "read during the turn")
+	h.exec(`UPDATE read_cursors SET last_read_id = ? WHERE instance_id = 'claude:receiver' AND context_id = 'm1'`, h.row("m1", 2))
 	h.postInMeeting("m1", "codex:sender", "still unread")
-	contains(t, h.hook("codex", "PostToolUse", "receiver").context(), "still unread")
-	h.codex("receiver", "listen", map[string]any{"on": true})
-	result := h.hook("codex", "Stop", "receiver", stopActive).str("reason")
+	contains(t, h.hook("claude", "PostToolUse", "receiver").context(), "still unread")
+	h.claude("receiver", "listen", map[string]any{"on": true})
+	result := h.hook("claude", "Stop", "receiver", stopActive).str("reason")
 	contains(t, result, "still unread")
 	notContains(t, result, "read during the turn")
 	notContains(t, result, "initial")
-	eq(t, h.cursor("codex:receiver", "m1"), h.row("m1", 3))
+	eq(t, h.cursor("claude:receiver", "m1"), h.row("m1", 3))
 }
 
 // meeting creates an active meeting with members (id → mode), as the core tools would.
@@ -78,7 +78,7 @@ func TestMeetingNewsWakesActiveMembers(t *testing.T) {
 
 	// a's own message wakes b, not a; the async member c is not woken.
 	h.postInMeeting("m1", "codex:a", "first")
-	wake := waitB.wait(t).str("wake")
+	wake := h.wokenText("b", waitB.wait(t))
 	contains(t, wake, fmt.Sprintf(texts.MeetingNews, "Topic m1", "m1", 1, 1, 1)+"\n"+
 		fmt.Sprintf(texts.MeetingMessageHeader, 1, h.session("codex:a").Name, "x", "")+"\nfirst\n"+fmt.Sprintf(texts.MeetingMessageEnd, 1))
 	contains(t, wake, texts.MeetingClosing)
@@ -93,8 +93,8 @@ func TestMeetingNewsWakesActiveMembers(t *testing.T) {
 	// Two more while b works on the first: b's news is merged into one line at its next hook.
 	h.postInMeeting("m1", "codex:c", "second")
 	h.postInMeeting("m1", "codex:c", "third")
-	// a's wait was woken by the first of them at once.
-	contains(t, waitA.wait(t).str("wake"), fmt.Sprintf(texts.MeetingNews, "Topic m1", "m1", 1, 2, 2))
+	// a's wait was woken by the first of them at once; its prompt brings both.
+	contains(t, h.wokenText("a", waitA.wait(t)), fmt.Sprintf(texts.MeetingNews, "Topic m1", "m1", 2, 2, 3))
 	ctx := h.hook("codex", "PostToolUse", "b").context()
 	contains(t, ctx, fmt.Sprintf(texts.MeetingNews, "Topic m1", "m1", 2, 2, 3))
 	contains(t, ctx, "\nsecond\n")
@@ -177,7 +177,7 @@ func TestMeetingNewsPastTheAutoTurnLimit(t *testing.T) {
 	waiting := h.openHook("codex", texts0BackgroundWait(), "b")
 	h.untilStatus("codex:b", "listening")
 	h.send("a", "codex:b", "dm 1", false)
-	contains(t, waiting.wait(t).str("wake"), "dm 1")
+	contains(t, h.wokenText("b", waiting.wait(t)), "dm 1")
 	h.hook("codex", "Stop", "b", stopActive)
 
 	// Past the limit, a direct message waits, but meeting news still wakes, without the direct message.
@@ -186,9 +186,13 @@ func TestMeetingNewsPastTheAutoTurnLimit(t *testing.T) {
 	h.send("a", "codex:b", "dm 2", false)
 	h.postInMeeting("m1", "codex:a", "news")
 	wake := waiting.wait(t).str("wake")
-	contains(t, wake, "Topic m1")
-	notContains(t, wake, "dm 2")
-	eq(t, h.count(`SELECT COUNT(*) FROM agent_messages WHERE text = 'dm 2' AND notified_at IS NULL`), 1)
+	eq(t, wake, briefWake(fmt.Sprintf(texts.BriefMeeting, 1, "Topic m1", "m1")))
+	// Nor does the woken prompt bring it; the user's next prompt does.
+	ctx := h.hook("codex", "UserPromptSubmit", "b").context()
+	contains(t, ctx, "news")
+	notContains(t, ctx, "dm 2")
+	eq(t, h.count(`SELECT COUNT(*) FROM agent_messages WHERE text = 'dm 2' AND notified_at IS NULL AND status = 'unread'`), 1)
+	contains(t, h.hook("codex", "UserPromptSubmit", "b").context(), "dm 2")
 }
 
 func TestWakeResultFailedRestoresMeetingNews(t *testing.T) {
@@ -196,35 +200,35 @@ func TestWakeResultFailedRestoresMeetingNews(t *testing.T) {
 	for _, s := range []string{"a", "b"} {
 		h.hook("codex", "SessionStart", s)
 	}
-	h.hook("codex", "Stop", "b", stopActive)
-	h.meeting("m1", map[string]string{"codex:b": "active"})
-	waiting := h.openHook("codex", texts0BackgroundWait(), "b")
-	h.untilStatus("codex:b", "listening")
+	h.hook("claude", "Stop", "b", stopActive)
+	h.meeting("m1", map[string]string{"claude:b": "active"})
+	waiting := h.openHook("claude", texts0BackgroundWait(), "b")
+	h.untilStatus("claude:b", "listening")
 	h.postInMeeting("m1", "codex:a", "news")
 	out := waiting.wait(t)
-	eq(t, h.wakes("m1", "codex:b"), 1)
-	notified := h.count(`SELECT notified_id FROM meeting_members WHERE member_id = 'codex:b'`)
+	eq(t, h.wakes("m1", "claude:b"), 1)
+	notified := h.count(`SELECT notified_id FROM meeting_members WHERE member_id = 'claude:b'`)
 	if notified == 0 {
 		t.Fatal("watermark not moved")
 	}
-	eq(t, h.cursor("codex:b", "m1"), h.row("m1", 1))
-	h.hook("codex", h.ag.o.Contract.Hook.WakeResultEvent, "b", wakeResult(out.str("dispatchId"), false))
-	eq(t, h.wakes("m1", "codex:b"), 0)
-	eq(t, h.count(`SELECT notified_id FROM meeting_members WHERE member_id = 'codex:b'`), 0)
-	eq(t, h.cursor("codex:b", "m1"), 0)
-	again := h.openHook("codex", texts0BackgroundWait(), "b").wait(t)
+	eq(t, h.cursor("claude:b", "m1"), h.row("m1", 1))
+	h.hook("claude", h.ag.o.Contract.Hook.WakeResultEvent, "b", wakeResult(out.str("dispatchId"), false))
+	eq(t, h.wakes("m1", "claude:b"), 0)
+	eq(t, h.count(`SELECT notified_id FROM meeting_members WHERE member_id = 'claude:b'`), 0)
+	eq(t, h.cursor("claude:b", "m1"), 0)
+	again := h.openHook("claude", texts0BackgroundWait(), "b").wait(t)
 	contains(t, again.str("wake"), "Topic m1")
 }
 
 func TestDirectMessageKinds(t *testing.T) {
 	h := start(t, listenWait(2*time.Second))
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "SessionStart", "r")
-	h.hook("codex", "Stop", "r", stopActive)
+	h.hook("claude", "SessionStart", "r")
+	h.hook("claude", "Stop", "r", stopActive)
 	// A message that needs no reply still wakes an idle recipient: the sender does not decide.
-	waiting := h.openHook("codex", texts0BackgroundWait(), "r")
-	h.untilStatus("codex:r", "listening")
-	sent := h.codex("s", "send", map[string]any{"to": "codex:r", "text": "fyi done", "expectsReply": false})
+	waiting := h.openHook("claude", texts0BackgroundWait(), "r")
+	h.untilStatus("claude:r", "listening")
+	sent := h.codex("s", "send", map[string]any{"to": "claude:r", "text": "fyi done", "expectsReply": false})
 	eq(t, sent.status, 200)
 	wake := waiting.wait(t).str("wake")
 	// Marked as needing no reply.
@@ -233,11 +237,11 @@ func TestDirectMessageKinds(t *testing.T) {
 	contains(t, wake, texts.MessageInfoNote)
 	notContains(t, wake, texts.MessageTrustNote)
 	// Shown whole by the wake, it is read: read has nothing left.
-	eq(t, len(h.codex("r", "read", nil).result["messages"].([]any)), 0)
+	eq(t, len(h.claude("r", "read", nil).result["messages"].([]any)), 0)
 	// A working recipient's Stop is held for one too.
-	h.hook("codex", "UserPromptSubmit", "r")
-	eq(t, h.codex("s", "send", map[string]any{"to": "codex:r", "text": "also done", "expectsReply": false}).status, 200)
-	contains(t, h.hook("codex", "Stop", "r", stopInactive).str("reason"), "also done")
+	h.hook("claude", "UserPromptSubmit", "r")
+	eq(t, h.codex("s", "send", map[string]any{"to": "claude:r", "text": "also done", "expectsReply": false}).status, 200)
+	contains(t, h.hook("claude", "Stop", "r", stopInactive).str("reason"), "also done")
 }
 
 func TestMeetingEndNoticeSparesTheCloserAndAsyncMembers(t *testing.T) {
@@ -272,7 +276,7 @@ func TestMeetingNoticeWakesActiveMembersOnly(t *testing.T) {
 	h.untilStatus("codex:c", "listening")
 
 	h.ag.MeetingNotice("m1", []string{"codex:a", "codex:c", "codex:ghost"}, "Take a stance on draft #1.")
-	contains(t, waitA.wait(t).str("wake"), "Take a stance on draft #1.")
+	contains(t, h.wokenText("a", waitA.wait(t)), "Take a stance on draft #1.")
 	// The async member is not woken; it sees the notice at its next hook. A session that does not exist is skipped.
 	eq(t, h.status("codex:c"), "listening")
 	contains(t, h.hook("codex", "UserPromptSubmit", "c").context(), "Take a stance on draft #1.")
@@ -291,30 +295,30 @@ func TestMeetingNewsTextsAndReadCursor(t *testing.T) {
 	for _, s := range []string{"a", "b"} {
 		h.hook("codex", "SessionStart", s)
 	}
-	h.meeting("m1", map[string]string{"codex:b": "active"})
-	h.meeting("m2", map[string]string{"codex:b": "active"})
+	h.meeting("m1", map[string]string{"claude:b": "active"})
+	h.meeting("m2", map[string]string{"claude:b": "active"})
 	h.postInMeeting("m1", "codex:a", "short")
 	h.postInMeeting("m1", "codex:a", strings.Repeat("x", limit))
 	h.postInMeeting("m1", "codex:a", "after")
 	h.postInMeeting("m2", "codex:a", "other meeting")
 	h.exec(`UPDATE meeting_messages SET category = 'PROPOSAL' WHERE meeting_id = 'm1' AND seq = 1`)
-	reason := h.hook("codex", "Stop", "b", stopInactive)["reason"].(string)
+	reason := h.hook("claude", "Stop", "b", stopInactive)["reason"].(string)
 	contains(t, reason, fmt.Sprintf(texts.MeetingMessageHeader, 1, h.session("codex:a").Name, "x", " (PROPOSAL)")+"\nshort\n")
 	contains(t, reason, strings.Repeat("x", limit-5)+"\n"+fmt.Sprintf(texts.MessageCut, limit-5, limit))
 	contains(t, reason, fmt.Sprintf(texts.MeetingNotShown, 1, 3, 3))
 	contains(t, reason, fmt.Sprintf(texts.MeetingNews, "Topic m2", "m2", 1, 1, 1)+"\n"+fmt.Sprintf(texts.MeetingNotShown, 1, 1, 1))
 	contains(t, reason, texts.MeetingReadRest)
 	notContains(t, reason, "after")
-	eq(t, h.cursor("codex:b", "m1"), h.row("m1", 1))
-	eq(t, h.cursor("codex:b", "m2"), 0)
+	eq(t, h.cursor("claude:b", "m1"), h.row("m1", 1))
+	eq(t, h.cursor("claude:b", "m2"), 0)
 
 	// Shown by a tool call only, #4 stays unread; a Stop that then shows #5
 	// leaves it unread too, since #4 before it is.
 	h.postInMeeting("m1", "codex:a", "four")
-	contains(t, h.hook("codex", "PostToolUse", "b").context(), "\nfour\n")
+	contains(t, h.hook("claude", "PostToolUse", "b").context(), "\nfour\n")
 	h.postInMeeting("m1", "codex:a", "five")
-	contains(t, h.hook("codex", "Stop", "b", stopInactive)["reason"].(string), "\nfive\n")
-	eq(t, h.cursor("codex:b", "m1"), h.row("m1", 1))
+	contains(t, h.hook("claude", "Stop", "b", stopInactive)["reason"].(string), "\nfive\n")
+	eq(t, h.cursor("claude:b", "m1"), h.row("m1", 1))
 }
 
 // News shown only after a tool call (whose context may be a sub-agent's) is

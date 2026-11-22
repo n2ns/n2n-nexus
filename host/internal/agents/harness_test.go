@@ -332,6 +332,14 @@ func (h *harness) untilStatus(id, status string) {
 	h.until(id+" "+status, func() bool { return h.status(id) == status })
 }
 
+// wokenText is the text a woken Codex turn gets: out, the wake, only says what
+// is new, the hook context of the prompt it becomes has the texts.
+func (h *harness) wokenText(sessionID string, out hookOutput) string {
+	h.t.Helper()
+	contains(h.t, out.str("wake"), prefix+" New: ")
+	return h.hook("codex", "UserPromptSubmit", sessionID).context()
+}
+
 func eq[T comparable](t *testing.T, got, want T) {
 	t.Helper()
 	if got != want {

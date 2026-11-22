@@ -142,6 +142,11 @@ type Hook struct {
 		ReadRest                string `json:"readRest"`
 		ReplyTool               string `json:"replyTool"`
 		NoReplyMark             string `json:"noReplyMark"`
+		BriefMessages           string `json:"briefMessages"`
+		BriefMeeting            string `json:"briefMeeting"`
+		BriefNotices            string `json:"briefNotices"`
+		BriefWake               string `json:"briefWake"`
+		BriefHold               string `json:"briefHold"`
 		EarlierUnread           string `json:"earlierUnread"`
 		MeetingNews             string `json:"meetingNews"`
 		MeetingMessageHeader    string `json:"meetingMessageHeader"`

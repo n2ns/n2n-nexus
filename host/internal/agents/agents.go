@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -57,14 +58,14 @@ type Agents struct {
 	// autoTurns: automatic turns per session since its user last prompted.
 	autoTurns map[string]int
 	// wokenAt: when a background wait last woke each session, to tell the woken turn's prompt from the user's.
-	wokenAt map[string]time.Time
+	wokenAt map[string]wakeMark
 	// dispatches: the last wake per session whose delivery the client has not reported yet
 	// (WakeResult) and that no real hook event of the session has followed.
 	dispatches map[string]*dispatch
 	// toolAnnounced: per session, the unread messages that may wake it and that only tool
-	// calls announced (markNone) since its last prompt or Stop; see stop.
+	// calls or a brief held Stop announced (markNone) since its last prompt or Stop; see stop.
 	toolAnnounced map[string][]string
-	// toolMeetings records the boundary before news announced only by tools.
+	// toolMeetings records the boundary before news announced only that way.
 	toolMeetings map[string]map[string]int64
 	// inEvent is the session whose own hook event runs now: its background waits,
 	// which an Antigravity event leaves open, deliver nothing meanwhile.
@@ -83,7 +84,14 @@ type dispatch struct {
 	// counted: the wake counted an automatic turn.
 	counted bool
 	// prevWokenAt is the session's wokenAt before this wake (zero: none).
-	prevWokenAt time.Time
+	prevWokenAt wakeMark
+}
+
+// wakeMark is a background wake: when, and whether the automatic-turn limit
+// kept direct messages out of it.
+type wakeMark struct {
+	at     time.Time
+	capped bool
 }
 
 // waiter is one held hook request. Its functions run with Agents.mu held.
@@ -118,7 +126,7 @@ func New(o Options) (*Agents, error) {
 		closing:       make(chan struct{}),
 		waiters:       map[string][]*waiter{},
 		autoTurns:     map[string]int{},
-		wokenAt:       map[string]time.Time{},
+		wokenAt:       map[string]wakeMark{},
 		dispatches:    map[string]*dispatch{},
 		toolAnnounced: map[string][]string{},
 		toolMeetings:  map[string]map[string]int64{},
@@ -428,7 +436,7 @@ func (a *Agents) waitForMessages(ctx context.Context, client, sessionID string) 
 			a.logErr("listening stop", err)
 			return
 		}
-		text, _, err := a.continueWith(sessionID, b, "new", a.o.Contract.Hook.Texts.StopClosing)
+		text, err := a.holdWith(client, sessionID, b, "new", markBrief)
 		if err != nil {
 			a.logErr("listening stop", err)
 			return
@@ -484,13 +492,14 @@ func (a *Agents) backgroundWait(ctx context.Context, sessionID string) *waiter {
 			a.logErr("background wait", a.setStatus(sessionID, "listening"))
 		}
 		// Past the automatic-turn limit, direct messages wait for the user; meeting news still wakes the session.
-		b, err := a.gather(sessionID, false, !a.autoTurnAllowed(sessionID))
+		capped := !a.autoTurnAllowed(sessionID)
+		b, err := a.gather(sessionID, false, capped)
 		if err != nil || !b.wakes() {
 			a.logErr("background wait", err)
 			return
 		}
 		d := &dispatch{id: newDispatchID(), prevWokenAt: a.wokenAt[sessionID], counted: b.counts()}
-		text, members, err := a.continueWith(sessionID, b, "new", a.o.Contract.Hook.Texts.NotifyClosing)
+		text, members, err := a.wakeWith(s.Client, sessionID, b)
 		if err != nil {
 			a.logErr("background wait", err)
 			return
@@ -504,7 +513,7 @@ func (a *Agents) backgroundWait(ctx context.Context, sessionID string) *waiter {
 		}
 		a.dispatches[sessionID] = d
 		a.logErr("background wait", a.setStatus(sessionID, "working"))
-		a.wokenAt[sessionID] = a.o.Clock.Now()
+		a.wokenAt[sessionID] = wakeMark{at: a.o.Clock.Now(), capped: capped}
 		finish(map[string]any{"wake": text, "dispatchId": d.id})
 	}
 	a.startWait(ctx, w)
@@ -548,7 +557,7 @@ func (a *Agents) wakeResult(sessionID, dispatchID string, ok bool) error {
 			delete(a.autoTurns, sessionID)
 		}
 	}
-	if d.prevWokenAt.IsZero() {
+	if d.prevWokenAt.at.IsZero() {
 		delete(a.wokenAt, sessionID)
 	} else {
 		a.wokenAt[sessionID] = d.prevWokenAt
@@ -592,15 +601,15 @@ func (a *Agents) autoTurn(sessionID, text string) string {
 }
 
 // userPrompted: a prompt resets the count, unless it starts the turn a wake
-// just began; it reports whether it does.
-func (a *Agents) userPrompted(sessionID string, now time.Time) bool {
-	woken, ok := a.wokenAt[sessionID]
+// just began; it reports whether it does, and whether that wake was capped.
+func (a *Agents) userPrompted(sessionID string, now time.Time) (woken, capped bool) {
+	wake, ok := a.wokenAt[sessionID]
 	delete(a.wokenAt, sessionID)
-	if !ok || now.Sub(woken) > ms(a.o.Contract.Hook.Timing.WakePromptWindowMs) {
+	if !ok || now.Sub(wake.at) > ms(a.o.Contract.Hook.Timing.WakePromptWindowMs) {
 		delete(a.autoTurns, sessionID)
-		return false
+		return false, false
 	}
-	return true
+	return true, wake.capped
 }
 
 // ---------------------------------------------------------------------------
@@ -710,8 +719,12 @@ func (a *Agents) gather(sessionID string, all, capped bool) (batch, error) {
 type readMark int
 
 const (
-	// markNone: a tool call's context can reach a sub-agent only, so every message stays unread for read.
+	// markNone: a tool call's context can reach a sub-agent only, and a brief held Stop shows
+	// no text, so every message stays unread for read; the Stop of a turn that an earlier Stop
+	// continued offers those still unread again (stop).
 	markNone readMark = iota
+	// markBrief: a brief listening Stop shows no text; every message stays unread for read.
+	markBrief
 	// markNoReply: a prompt's context reaches the conversation; a message that needs no reply is done once shown.
 	markNoReply
 	// markShown: the text drives the turn (it wakes the session or holds its Stop), so what it shows whole is read.
@@ -825,6 +838,15 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			read = whole
 		}
 	}
+	if err := a.markAnnounced(sessionID, b, shown, read, mark); err != nil {
+		return "", err
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// markAnnounced marks a batch notified, the messages in shown and, up to the
+// message named per meeting in read, its meeting news read.
+func (a *Agents) markAnnounced(sessionID string, b batch, shown []string, read map[string]int64, mark readMark) error {
 	now := a.iso(a.o.Clock.Now())
 	err := a.tx(func(tx *sql.Tx) error {
 		for _, m := range b.messages {
@@ -845,7 +867,7 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 		return a.markMeetingsNotified(tx, sessionID, b.news, read)
 	})
 	if err != nil {
-		return "", err
+		return err
 	}
 	if mark == markNone {
 		for _, n := range b.news {
@@ -867,21 +889,76 @@ func (a *Agents) announce(sessionID string, b batch, label, closing string, mark
 			}
 		}
 	}
-	return strings.Join(lines, "\n"), nil
+	return nil
+}
+
+// briefClient: what starts or continues a turn of this client is shown in its
+// chat as the user's message (Codex: the prompt of codex queue and the reason of
+// a Stop), so it only says what is new; the context of its hooks is not shown.
+func briefClient(client string) bool { return client == "codex" }
+
+// briefNews says in one line what a batch has, without the texts; notices are
+// counted only with countNotices. "" when there is nothing new.
+func (a *Agents) briefNews(b batch, countNotices bool) string {
+	h := a.o.Contract.Hook
+	var parts []string
+	if n := len(b.messages); n > 0 {
+		var from []string
+		for _, m := range b.messages {
+			if !slices.Contains(from, m.FromName) {
+				from = append(from, m.FromName)
+			}
+		}
+		if rest := len(from) - h.Limits.NotifyListLimit; rest > 0 {
+			from = append(from[:h.Limits.NotifyListLimit], fmt.Sprintf("%d more", rest))
+		}
+		parts = append(parts, fmt.Sprintf(h.Texts.BriefMessages, n, strings.Join(from, ", ")))
+	}
+	for _, n := range b.news {
+		parts = append(parts, fmt.Sprintf(h.Texts.BriefMeeting, len(n.messages), oneLine(n.topic), n.meetingID))
+	}
+	if n := len(b.notices); n > 0 && countNotices {
+		parts = append(parts, fmt.Sprintf(h.Texts.BriefNotices, n))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// announceBriefly is announce for a Stop of a brief client: one line says what
+// is new, read and read_messages return the texts. Only notices, which no tool
+// returns, are shown.
+func (a *Agents) announceBriefly(sessionID string, b batch, mark readMark) (string, error) {
+	h := a.o.Contract.Hook
+	var lines []string
+	if news := a.briefNews(b, false); news != "" {
+		lines = append(lines, h.Texts.NoticePrefix+" "+fmt.Sprintf(h.Texts.BriefHold, news))
+	}
+	if len(b.earlier) > 0 {
+		lines = append(lines, h.Texts.NoticePrefix+" "+fmt.Sprintf(h.Texts.EarlierUnread, len(b.earlier)))
+	}
+	for _, n := range b.earlierNews {
+		lines = append(lines, h.Texts.NoticePrefix+" "+fmt.Sprintf(h.Texts.MeetingEarlierUnread, n.topic, n.meetingID, n.count))
+	}
+	if len(b.notices) > 0 {
+		lines = append(lines, h.Texts.NoticePrefix+" Notices:")
+		for _, n := range b.notices {
+			lines = append(lines, "- "+n.Text)
+		}
+	}
+	return strings.Join(lines, "\n"), a.markAnnounced(sessionID, b, nil, nil, mark)
 }
 
 // notifyAll: for a prompt, every unread message (the earlier ones counted), pending notices and meeting news; "" when there are none.
 func (a *Agents) notifyAll(sessionID, closing string) (string, error) {
-	return a.notifyWith(sessionID, true, "unread", closing, markNoReply)
+	return a.notifyWith(sessionID, true, false, "unread", closing, markNoReply)
 }
 
 // notifyFresh: for a tool call, or the prompt of a woken turn, what was not announced yet, or "" when nothing is new.
 func (a *Agents) notifyFresh(sessionID, closing string, mark readMark) (string, error) {
-	return a.notifyWith(sessionID, false, "new", closing, mark)
+	return a.notifyWith(sessionID, false, false, "new", closing, mark)
 }
 
-func (a *Agents) notifyWith(sessionID string, all bool, label, closing string, mark readMark) (string, error) {
-	b, err := a.gather(sessionID, all, false)
+func (a *Agents) notifyWith(sessionID string, all, capped bool, label, closing string, mark readMark) (string, error) {
+	b, err := a.gather(sessionID, all, capped)
 	if err != nil || b.empty() {
 		return "", err
 	}
@@ -892,6 +969,37 @@ func (a *Agents) notifyWith(sessionID string, all bool, label, closing string, m
 // counts the meeting wakes and, for direct messages, the automatic turn. It
 // returns the text and the meeting states before (mu held).
 func (a *Agents) continueWith(sessionID string, b batch, label, closing string) (string, []memberState, error) {
+	return a.continueTurn(sessionID, b, func() (string, error) { return a.announce(sessionID, b, label, closing, markShown) })
+}
+
+// holdWith is continueWith for a Stop, brief for a brief client with what it
+// marks then.
+func (a *Agents) holdWith(client, sessionID string, b batch, label string, brief readMark) (string, error) {
+	var text string
+	var err error
+	if briefClient(client) {
+		text, _, err = a.continueTurn(sessionID, b, func() (string, error) { return a.announceBriefly(sessionID, b, brief) })
+	} else {
+		text, _, err = a.continueWith(sessionID, b, label, a.o.Contract.Hook.Texts.StopClosing)
+	}
+	return text, err
+}
+
+// wakeWith is continueWith for a background wait. The wake of a brief client
+// says what is new and marks nothing: the prompt it becomes brings the texts
+// (UserPromptSubmit).
+func (a *Agents) wakeWith(client, sessionID string, b batch) (string, []memberState, error) {
+	h := a.o.Contract.Hook
+	if !briefClient(client) {
+		return a.continueWith(sessionID, b, "new", h.Texts.NotifyClosing)
+	}
+	return a.continueTurn(sessionID, b, func() (string, error) {
+		return h.Texts.NoticePrefix + " " + fmt.Sprintf(h.Texts.BriefWake, a.briefNews(b, true)), nil
+	})
+}
+
+// continueTurn counts what continueWith says around the announcement build makes (mu held).
+func (a *Agents) continueTurn(sessionID string, b batch, build func() (string, error)) (string, []memberState, error) {
 	before, err := a.countMeetingWakes(sessionID, b.news)
 	if err != nil {
 		return "", nil, err
@@ -899,7 +1007,7 @@ func (a *Agents) continueWith(sessionID string, b batch, label, closing string) 
 	if err := a.countEarlierWakes(sessionID, b); err != nil {
 		return "", nil, err
 	}
-	text, err := a.announce(sessionID, b, label, closing, markShown)
+	text, err := build()
 	if err != nil {
 		return "", nil, err
 	}

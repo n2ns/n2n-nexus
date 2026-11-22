@@ -201,14 +201,17 @@ func (a *Agents) hook(ctx context.Context, client string, input map[string]any) 
 	case "UserPromptSubmit":
 		delete(a.toolAnnounced, id)
 		delete(a.toolMeetings, id)
-		woken := a.userPrompted(id, now)
+		woken, capped := a.userPrompted(id, now)
 		if err := a.setStatus(id, "working"); err != nil {
 			return nil, nil, err
 		}
 		// The turn a wake began got the announcement as its prompt: only what arrived since.
+		// A brief client's wake announced nothing: its messages come here and drive the turn.
 		var text string
 		var err error
-		if woken {
+		if woken && briefClient(client) {
+			text, err = a.notifyWith(id, false, capped, "new", a.o.Contract.Hook.Texts.NotifyClosing, markShown)
+		} else if woken {
 			text, err = a.notifyFresh(id, a.o.Contract.Hook.Texts.NotifyClosing, markNoReply)
 		} else {
 			text, err = a.notifyAll(id, a.o.Contract.Hook.Texts.NotifyClosing)
@@ -264,7 +267,7 @@ func (a *Agents) stop(ctx context.Context, client, id string, input map[string]a
 			return nil, nil, err
 		}
 		if b.wakes() {
-			text, _, err := a.continueWith(id, b, "unread", a.o.Contract.Hook.Texts.StopClosing)
+			text, err := a.holdWith(client, id, b, "unread", markNone)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -274,8 +277,8 @@ func (a *Agents) stop(ctx context.Context, client, id string, input map[string]a
 			return blockOutput(client, text), nil, nil
 		}
 	} else if len(toolAnnounced) > 0 || len(toolMeetings) > 0 {
-		// The Stop of a continued turn holds nothing, so the messages that only tool calls announced
-		// in it and that are still unread count as not announced: the wait below or the background
+		// The Stop of a continued turn holds nothing, so the messages that only tool calls or the brief
+		// Stop that continued it announced and that are still unread count as not announced: the wait below or the background
 		// wait delivers them, once (that announcement is not a tool call's).
 		if err := a.unmarkUnread(id, toolAnnounced, toolMeetings); err != nil {
 			return nil, nil, err

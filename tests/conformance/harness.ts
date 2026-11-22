@@ -49,6 +49,7 @@ export const HOOK = readContract<{
     timing: Record<"listenWaitMs" | "toolUseBindingTtlMs" | "messageTtlMs" | "idleSubscriptionTtlMs" | "staleSessionMs" | "wakePromptWindowMs", number>;
     limits: { defaultMaxAutoTurns: number; maxMessageChars: number; maxNoteChars: number; previewChars: number; notifyListLimit: number; notifyTextChars: number; maxHostnameChars: number };
     texts: Record<"noticePrefix" | "notifyClosing" | "stopClosing" | "statusNote" | "sessionStartClosing" | "collaborationRules" | "messageTrustNote" | "messageEnd" | "messageCut" | "replyInstruction" | "readRest" | "replyTool" | "noAgentSessionError"
+        | "briefMessages" | "briefNotices" | "briefWake" | "briefHold"
         | "meetingReadRest" | "seatSender" | "seatTaken" | "seatMoved" | "seatVeto" | "aiConsensus" | "aiConsensusLost" | "proposedEnd", string>;
 }>("hook.json");
 export const ERRORS = readContract<{ contractVersion: number; maxBodyBytes: number }>("errors.json");

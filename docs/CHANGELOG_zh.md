@@ -4,6 +4,12 @@
 
 本项目的所有重大变更都将记录在此文件中。
 
+## [未发布]
+
+### 变更
+
+- Codex 对话的聊天窗口不再显示整段 `[n2n-nexus]` 通知。被叫醒的那一轮的提示词只有一行，说明有什么新内容，正文由该提示词的 hook 上下文带来，Codex 不显示它；拦住一轮的 Stop（以及待命的 Stop）也只用一行说明，AI 用 `read`（会议用 `read_messages`）取得正文。没有工具能返回的通知，在拦住 Stop 时仍直接显示。拦住一轮的 Stop 点到而 AI 没读的消息，在这一轮结束时再送一次。其他客户端不变。需要新版 host。
+
 ## [0.14.0] - 2026-11-21
 
 将 host 和客户端升级到 0.14.0（协议版本仍为 5）。保留 `nexus.db`：迁移 0011 自动执行并保留现有数据；旧版 host 无法打开升级后的数据库。Claude Code、Codex 和 pi 无需重新安装。Google Antigravity 需执行 `n2n-nexus install antigravity`，并新开一个 Antigravity 对话。

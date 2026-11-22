@@ -2,7 +2,7 @@
 // wait here is the event under test, never the timeout. The last test stops the host.
 import { afterEach, describe, expect, it } from "vitest";
 import { until, useHost } from "./harness.js";
-import { BACKGROUND_WAIT_EVENT, NOTICE_PREFIX, WAKE_RESULT_EVENT, agentKit, context, ids, nameOf } from "./agents.js";
+import { BACKGROUND_WAIT_EVENT, BRIEF_HOLD, BRIEF_MESSAGES, BRIEF_NOTICES, BRIEF_WAKE, NOTICE_PREFIX, WAKE_RESULT_EVENT, agentKit, context, format, ids, nameOf } from "./agents.js";
 
 const host = useHost({ listenWaitMs: 60_000, rateLimit: 0 });
 const { hook, openHook, claudeTool, codexTool, send, status, endSessions } = agentKit(host);
@@ -27,17 +27,17 @@ describe("POST /api/hook: background wait", () => {
 
     it("waits while the turn is still ending, and Stop keeps the session listening", async () => {
         const s = ids();
-        const r = `codex:${s("r")}`;
+        const r = `claude:${s("r")}`;
         await hook("codex", "SessionStart", s("s"));
-        await hook("codex", "UserPromptSubmit", s("r"));
+        await hook("claude", "UserPromptSubmit", s("r"));
         await send(s("s"), r, "before the turn ended");
-        const waiting = openHook("codex", BACKGROUND_WAIT_EVENT, s("r"));      // started alongside Stop
+        const waiting = openHook("claude", BACKGROUND_WAIT_EVENT, s("r"));      // started alongside Stop
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(await status(r)).toBe("working");
 
         // Stop announces the unread message itself; the wait must not repeat it.
-        expect((await hook("codex", "Stop", s("r"), { stop_hook_active: false }))?.decision).toBe("block");
-        expect(await hook("codex", "Stop", s("r"), { stop_hook_active: true })).toBeNull();
+        expect((await hook("claude", "Stop", s("r"), { stop_hook_active: false }))?.decision).toBe("block");
+        expect(await hook("claude", "Stop", s("r"), { stop_hook_active: true })).toBeNull();
         expect(await status(r)).toBe("listening");
         await send(s("s"), r, "after");
         const { payload } = await waiting.response;
@@ -57,8 +57,7 @@ describe("POST /api/hook: background wait", () => {
         await send(s("s"), r, "please answer");
 
         const first = (await openHook("codex", BACKGROUND_WAIT_EVENT, s("r")).response).payload.output;
-        expect(first?.wake).toContain("please answer");
-        expect(first?.wake).toContain("Notices:");
+        expect(first?.wake).toBe(`${NOTICE_PREFIX} ${format(BRIEF_WAKE, `${format(BRIEF_MESSAGES, 1, nameOf("codex", "proj", s("s")))}; ${format(BRIEF_NOTICES, 1)}`)}`);
         expect(first?.dispatchId).toBeTruthy();
         expect(await status(r)).toBe("working");
 
@@ -74,6 +73,10 @@ describe("POST /api/hook: background wait", () => {
         expect(await hook("codex", WAKE_RESULT_EVENT, s("r"), { dispatch_id: again?.dispatchId, ok: true })).toBeNull();
         expect(await hook("codex", WAKE_RESULT_EVENT, s("r"), { dispatch_id: again?.dispatchId, ok: false })).toBeNull();
         expect(await status(r)).toBe("working");
+        // The prompt the wake becomes brings the texts, in the hook context Codex does not show.
+        const text = context(await hook("codex", "UserPromptSubmit", s("r")));
+        expect(text).toContain("please answer");
+        expect(text).toContain("Notices:");
     });
 
     it("leaves listening when the waiting client disconnects", async () => {
@@ -92,13 +95,13 @@ describe("POST /api/hook: background wait", () => {
 describe("POST /api/hook: listen mode", () => {
     it("wakes a listening session as soon as a new message arrives", async () => {
         const s = ids();
-        const r = `codex:${s("r")}`;
+        const r = `claude:${s("r")}`;
         await hook("codex", "SessionStart", s("s"));
-        await hook("codex", "SessionStart", s("r"));
-        await codexTool(s("r"), "listen", { on: true });
+        await hook("claude", "SessionStart", s("r"));
+        await claudeTool(s("r"), "listen", { on: true });
 
         const startedAt = Date.now();
-        const waiting = openHook("codex", "Stop", s("r"), { stop_hook_active: false });
+        const waiting = openHook("claude", "Stop", s("r"), { stop_hook_active: false });
         await until(async () => (await status(r)) === "listening");
         await send(s("s"), r, "wake up");
         const { payload } = await waiting.response;
@@ -107,6 +110,17 @@ describe("POST /api/hook: listen mode", () => {
         expect(payload.output?.reason).toContain(`${NOTICE_PREFIX} 1 new direct message:`);
         expect(payload.output?.reason).toContain("wake up");
         expect(await status(r)).toBe("working");
+    });
+
+    it("Codex: a held Stop says only what is new, and read returns the text", async () => {
+        const s = ids();
+        await hook("codex", "SessionStart", s("s"));
+        await hook("codex", "UserPromptSubmit", s("r"));
+        await send(s("s"), `codex:${s("r")}`, "not shown in the chat");
+        const out = await hook("codex", "Stop", s("r"), { stop_hook_active: false });
+        expect(out?.reason).toBe(`${NOTICE_PREFIX} ${format(BRIEF_HOLD, format(BRIEF_MESSAGES, 1, nameOf("codex", "proj", s("s"))))}`);
+        const read = await codexTool<{ messages: { text: string }[] }>(s("r"), "read");
+        expect(read.payload.result?.messages.map((m) => m.text)).toEqual(["not shown in the chat"]);
     });
 
     it("is woken by a notice, such as a notifyWhenIdle target finishing its turn", async () => {

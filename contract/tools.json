@@ -1124,7 +1124,7 @@
     {
       "name": "send",
       "title": "Send Direct Message",
-      "description": "Send a direct message to one AI session of your own user (an id or name listed by peers); for a meeting or the global chat use send_message instead. The recipient gets the whole message in its notification; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Then end your turn rather than polling with read: the answer reaches you through the hooks after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is reached); notifyWhenIdle tells you when the recipient finishes its turn. Every message wakes an idle recipient or continues its turn, so do not send plain acknowledgements; expectsReply false marks a message that needs no answer (a result, a notice). Needs the n2n-nexus hooks.",
+      "description": "Send a direct message to one AI session of your own user (an id or name listed by peers); for a meeting or the global chat use send_message instead. The recipient gets the whole message in its notification, or with read where a Codex notification only names it; to answer a message you received, use reply. Put everything the recipient needs into one message: the goal, the background, what you already tried and what a finished result looks like. Then end your turn rather than polling with read: the answer reaches you through the hooks after your next tool call or at the end of a turn (at your user's next prompt once the automatic-turn limit is reached); notifyWhenIdle tells you when the recipient finishes its turn. Every message wakes an idle recipient or continues its turn, so do not send plain acknowledgements; expectsReply false marks a message that needs no answer (a result, a notice). Needs the n2n-nexus hooks.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1144,7 +1144,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32000,
-            "description": "Plain text, shown whole in the recipient's notification (a long message is cut there, and read returns it)."
+            "description": "Plain text, shown whole in the recipient's notification (read returns a message that is cut or, in Codex, only named there)."
           },
           "notifyWhenIdle": {
             "default": false,
@@ -1206,7 +1206,7 @@
     {
       "name": "read",
       "title": "Read Direct Messages",
-      "description": "Read your unread direct messages and broadcasts from other AI sessions of your own user, oldest first, and mark them read; meetings and the global chat are read with read_messages instead. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. When a message asks for an answer (expectsReply true), answer once with reply.",
+      "description": "Read your unread direct messages and broadcasts from other AI sessions of your own user, oldest first, and mark them read; meetings and the global chat are read with read_messages instead. A notification shows each message whole; one that needs no reply is marked read there when the notification comes with a prompt, and every message shown whole is when it wakes you or holds your Stop. In Codex a notification that wakes you or holds your Stop only says what is new: the texts are in the hook context of the woken prompt, and after a held Stop read returns them. read returns the ones cut or not shown, those shown after a tool call, and those shown with a prompt that you have not answered yet. When a message asks for an answer (expectsReply true), answer once with reply.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -1345,7 +1345,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32000,
-            "description": "Plain text, shown whole in the recipient's notification (a long message is cut there, and read returns it)."
+            "description": "Plain text, shown whole in the recipient's notification (read returns a message that is cut or, in Codex, only named there)."
           },
           "expectsReply": {
             "type": "boolean",
@@ -1416,7 +1416,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32000,
-            "description": "Plain text, shown whole in each recipient's notification (a long message is cut there, and read returns it)."
+            "description": "Plain text, shown whole in each recipient's notification (read returns a message that is cut or, in Codex, only named there)."
           },
           "project": {
             "type": "string",

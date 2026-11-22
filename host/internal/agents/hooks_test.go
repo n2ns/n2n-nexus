@@ -414,15 +414,16 @@ func TestBackgroundWaitWhileTurnEnds(t *testing.T) {
 
 	// Stop announces the unread message itself; the wait must not repeat it.
 	eq(t, h.hook("codex", "Stop", "r", stopInactive).str("decision"), "block")
+	h.codex("r", "read", nil)
 	if out := h.hook("codex", "Stop", "r", stopActive); out != nil {
 		t.Fatal(out)
 	}
 	eq(t, h.status("codex:r"), "listening")
 	h.send("s", "codex:r", "after", false)
-	out := waiting.wait(t)
-	contains(t, out.str("wake"), "after")
-	notContains(t, out.str("wake"), "before the turn ended")
-	notContains(t, out.str("wake"), "mcp__n2n-nexus__reply") // the Claude Code tool name is for Claude sessions only
+	text := h.wokenText("r", waiting.wait(t))
+	contains(t, text, "after")
+	notContains(t, text, "before the turn ended")
+	notContains(t, text, "mcp__n2n-nexus__reply") // the Claude Code tool name is for Claude sessions only
 }
 
 func TestBackgroundWaitEnds(t *testing.T) {
@@ -452,24 +453,24 @@ func TestBackgroundWaitEnds(t *testing.T) {
 func TestListeningStopDeliversBeforeBackgroundWait(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "UserPromptSubmit", "r")
-	h.codex("r", "listen", map[string]any{"on": true})
-	background := h.openHook("codex", texts0BackgroundWait(), "r") // registered first
-	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("codex:r")) == 1 })
-	listening := h.openHook("codex", "Stop", "r", stopInactive)
-	h.untilStatus("codex:r", "listening")
-	h.until("listening stop held", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return h.ag.listeningStop("codex:r") })
-	h.send("s", "codex:r", "for the listening stop", false)
+	h.hook("claude", "UserPromptSubmit", "r")
+	h.claude("r", "listen", map[string]any{"on": true})
+	background := h.openHook("claude", texts0BackgroundWait(), "r") // registered first
+	h.until("wait registered", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return len(h.ag.backgroundWaits("claude:r")) == 1 })
+	listening := h.openHook("claude", "Stop", "r", stopInactive)
+	h.untilStatus("claude:r", "listening")
+	h.until("listening stop held", func() bool { h.ag.mu.Lock(); defer h.ag.mu.Unlock(); return h.ag.listeningStop("claude:r") })
+	h.send("s", "claude:r", "for the listening stop", false)
 	stop := listening.wait(t)
 	eq(t, stop.str("decision"), "block")
 	contains(t, stop.str("reason"), "for the listening stop")
 	eq(t, background.wait(t)["timeout"], any(true)) // it did not take the message
 
 	// The next listening Stop times out; the client's next background wait delivers what arrives then.
-	h.hook("codex", "Stop", "r", stopActive)
-	again := h.openHook("codex", texts0BackgroundWait(), "r")
-	h.untilStatus("codex:r", "listening")
-	h.send("s", "codex:r", "for the background wait", false)
+	h.hook("claude", "Stop", "r", stopActive)
+	again := h.openHook("claude", texts0BackgroundWait(), "r")
+	h.untilStatus("claude:r", "listening")
+	h.send("s", "claude:r", "for the background wait", false)
 	out := again.wait(t)
 	contains(t, out.str("wake"), "for the background wait")
 	notContains(t, out.str("wake"), "for the listening stop")
@@ -575,18 +576,18 @@ func TestContinuedTurnOffersToolAnnouncedMessagesAgain(t *testing.T) {
 func TestContinuedTurnOffersToolAnnouncedMessagesAgainWhileListening(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "SessionStart", "r")
-	h.codex("r", "listen", map[string]any{"on": true})
-	h.hook("codex", "UserPromptSubmit", "r")
-	h.send("s", "codex:r", "first", false)
-	eq(t, h.hook("codex", "Stop", "r", stopInactive).str("decision"), "block")
-	h.send("s", "codex:r", "second", false)
-	contains(t, h.hook("codex", "PostToolUse", "r").context(), "second")
-	held := h.hook("codex", "Stop", "r", stopActive)
+	h.hook("claude", "SessionStart", "r")
+	h.claude("r", "listen", map[string]any{"on": true})
+	h.hook("claude", "UserPromptSubmit", "r")
+	h.send("s", "claude:r", "first", false)
+	eq(t, h.hook("claude", "Stop", "r", stopInactive).str("decision"), "block")
+	h.send("s", "claude:r", "second", false)
+	contains(t, h.hook("claude", "PostToolUse", "r").context(), "second")
+	held := h.hook("claude", "Stop", "r", stopActive)
 	eq(t, held.str("decision"), "block")
 	contains(t, held.str("reason"), "second")
 	// Shown whole in the text that drives the turn: read, so the next Stop only waits.
-	if out := h.hook("codex", "Stop", "r", stopActive); out != nil {
+	if out := h.hook("claude", "Stop", "r", stopActive); out != nil {
 		t.Fatal(out)
 	}
 }
@@ -743,12 +744,12 @@ func TestNoAutoTurnLimit(t *testing.T) {
 func TestListeningStopWakes(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "SessionStart", "r")
-	h.codex("r", "listen", map[string]any{"on": true})
+	h.hook("claude", "SessionStart", "r")
+	h.claude("r", "listen", map[string]any{"on": true})
 	started := time.Now()
-	waiting := h.openHook("codex", "Stop", "r", stopInactive)
-	h.untilStatus("codex:r", "listening")
-	h.send("s", "codex:r", "wake up", false)
+	waiting := h.openHook("claude", "Stop", "r", stopInactive)
+	h.untilStatus("claude:r", "listening")
+	h.send("s", "claude:r", "wake up", false)
 	out := waiting.wait(t)
 	if time.Since(started) >= listenMS*time.Millisecond {
 		t.Fatalf("took %v", time.Since(started))
@@ -756,7 +757,7 @@ func TestListeningStopWakes(t *testing.T) {
 	eq(t, out.str("decision"), "block")
 	contains(t, out.str("reason"), prefix+" 1 new direct message:")
 	contains(t, out.str("reason"), "wake up")
-	eq(t, h.status("codex:r"), "working")
+	eq(t, h.status("claude:r"), "working")
 }
 
 func TestListeningStopTimesOut(t *testing.T) {
@@ -784,12 +785,12 @@ func TestListeningStopTimesOut(t *testing.T) {
 func TestListeningStopReturnsPendingAtOnce(t *testing.T) {
 	h := start(t)
 	h.hook("codex", "SessionStart", "s")
-	h.hook("codex", "SessionStart", "r")
-	h.codex("r", "listen", map[string]any{"on": true})
-	h.send("s", "codex:r", "during continuation", false)
-	out := h.hook("codex", "Stop", "r", stopActive)
+	h.hook("claude", "SessionStart", "r")
+	h.claude("r", "listen", map[string]any{"on": true})
+	h.send("s", "claude:r", "during continuation", false)
+	out := h.hook("claude", "Stop", "r", stopActive)
 	contains(t, out.str("reason"), "during continuation")
-	eq(t, h.status("codex:r"), "working")
+	eq(t, h.status("claude:r"), "working")
 }
 
 func TestListeningStopWokenByNotice(t *testing.T) {
@@ -924,7 +925,7 @@ func TestRestartAfterALongStopKeepsTheWaitingSessions(t *testing.T) {
 	waiting := h.openHook("codex", texts0BackgroundWait(), "b")
 	h.untilStatus("codex:b", "listening")
 	h.send("s", "codex:b", "after the restart", false)
-	contains(t, waiting.wait(t).str("wake"), "after the restart")
+	contains(t, h.wokenText("b", waiting.wait(t)), "after the restart")
 	if out := h.hook("codex", texts0BackgroundWait(), "ended"); out != nil {
 		t.Fatalf("ended session resumed waiting: %v", out)
 	}
@@ -1029,7 +1030,7 @@ func TestStaleSessionWakesAWaitingSubscriber(t *testing.T) {
 	}
 	h.at(ms(timing.StaleSessionMs) + time.Second)
 	out := h.openHook("codex", texts0BackgroundWait(), "w").wait(t)
-	contains(t, out.str("wake"), "claude@proj#t (claude:t) went offline.")
+	contains(t, h.wokenText("w", out), "claude@proj#t (claude:t) went offline.")
 }
 
 func TestIdleSubscriptionTTL(t *testing.T) {
@@ -1092,18 +1093,18 @@ func TestSeveralHostsAtOnce(t *testing.T) {
 	h2 := start(t)
 	for _, h := range []*harness{h1, h2} {
 		h.hook("codex", "SessionStart", "s")
-		h.hook("codex", "SessionStart", "r")
-		h.codex("r", "listen", map[string]any{"on": true})
+		h.hook("claude", "SessionStart", "r")
+		h.claude("r", "listen", map[string]any{"on": true})
 	}
-	waiting := h1.openHook("codex", "Stop", "r")
-	h1.untilStatus("codex:r", "listening")
-	h2.send("s", "codex:r", "on host 2", false)
+	waiting := h1.openHook("claude", "Stop", "r")
+	h1.untilStatus("claude:r", "listening")
+	h2.send("s", "claude:r", "on host 2", false)
 	select {
 	case <-waiting.done:
 		t.Fatal("host 1 woke for a message on host 2")
 	case <-time.After(100 * time.Millisecond):
 	}
-	h1.send("s", "codex:r", "on host 1", false)
+	h1.send("s", "claude:r", "on host 1", false)
 	contains(t, waiting.wait(t).str("reason"), "on host 1")
 }
 

@@ -207,7 +207,8 @@ export function nextQueueRetry(delay: number): number | null {
  * `--wait`, started by a Stop hook when a turn ends. Claude runs it as an
  * asyncRewake hook: exit code 2 with the notification on stderr wakes the
  * conversation. Codex has no such hook, so its Stop hook starts a detached copy
- * (`--session <id>`) and returns at once; the copy hands the notification to
+ * (`--session <id>`) and returns at once; the copy hands the notification (one
+ * line; the started turn's UserPromptSubmit hook brings the texts) to
  * `codex queue` (NEXUS_CODEX_COMMAND, default `codex`), which starts a turn,
  * and reports to the host whether it did (WAKE_RESULT_EVENT): after a failed
  * queue the host undoes the wake and the copy waits again after a delay that

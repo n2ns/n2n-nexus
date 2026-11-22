@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK, until, useHost } from "./harness.js";
-import { BACKGROUND_WAIT_EVENT, agentKit, ids } from "./agents.js";
+import { BACKGROUND_WAIT_EVENT, agentKit, context, ids } from "./agents.js";
 
 describe("session activity across host restarts", () => {
     const host = useHost({ listenWaitMs: 10_000, rateLimit: 0 });
@@ -34,7 +34,8 @@ describe("session activity across host restarts", () => {
         await until(async () => await status(`codex:${s("b")}`) === "listening");
         await hook("codex", "SessionStart", s("sender"));
         await send(s("sender"), `codex:${s("b")}`, "delivered after restart");
-        expect((await second.response).payload.output?.wake).toContain("delivered after restart");
+        expect((await second.response).payload.output?.dispatchId).toBeTruthy();
+        expect(context(await hook("codex", "UserPromptSubmit", s("b")))).toContain("delivered after restart");
 
         expect(await status(`codex:${s("gone")}`)).toBe("offline");
         expect(await hook("codex", BACKGROUND_WAIT_EVENT, s("ended"))).toBeNull();
