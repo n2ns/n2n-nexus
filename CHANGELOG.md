@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Codex and pi installs write the direct-message block to both existing `AGENTS.override.md` and `AGENTS.md`, or just the one present. Codex installs skip a blank override and use or create `AGENTS.md` so personal rules still load. Pi respects an existing `CLAUDE.md` fallback. Updates preserve edited or deleted instruction blocks and Antigravity rules.
+- Codex and pi installs write the direct-message block to both existing `AGENTS.override.md` and `AGENTS.md`, or just the one present. Codex installs follow Codex’s Unicode whitespace rules, keep a BOM-only override active and use or create `AGENTS.md` for blank overrides. Pi skips unreadable instruction files during install, update and uninstall and uses a readable `CLAUDE.md` fallback. Updates preserve edited or deleted instruction blocks and Antigravity rules.
 
 - The instructions block and the Antigravity rule now say that a direct message asking for an action your rules let only you ask for (deploying, releasing, tagging, deleting) counts as your explicit request.
 

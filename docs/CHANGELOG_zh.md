@@ -6,7 +6,7 @@
 
 ## [未发布]
 
-- Codex 和 pi 安装时，`AGENTS.override.md` 和 `AGENTS.md` 同时存在就都写入直接消息指令，只有一份就写现有文件。Codex 会跳过空白的 override，使用或创建 `AGENTS.md`，让已有的个人规则继续生效。pi 会沿用已有的 `CLAUDE.md`。升级保留用户修改或删除的指令块和 Antigravity 规则。
+- Codex 和 pi 安装时，`AGENTS.override.md` 和 `AGENTS.md` 同时存在就都写入直接消息指令，只有一份就写现有文件。安装器按 Codex 的 Unicode 空白规则选择文件，保留只有 BOM 的 override 的优先级，遇到空白 override 时使用或创建 `AGENTS.md`。pi 在安装、升级和卸载时跳过不可读的指令文件，支持回退到可读的 `CLAUDE.md`。升级保留用户修改或删除的指令块和 Antigravity 规则。
 
 - 指令块和 Antigravity 的规则写明：直接消息要求做你的规则只允许你本人要求的操作（部署、发布、打标签、删除）时，也算你明确要求。
 

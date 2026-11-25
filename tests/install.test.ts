@@ -543,6 +543,7 @@ describe("install codex", () => {
 
     it.each([
         { scenario: "empty override with personal rules", blank: "", own: "# Personal rules\n" },
+        { scenario: "Unicode next-line with personal rules", blank: "\u0085", own: "# Personal rules\n" },
         { scenario: "whitespace-only override without AGENTS.md", blank: " \t\r\n", own: "" }
     ])("keeps a blank Codex override intact and uses AGENTS.md ($scenario)", ({ blank, own }) => {
         const override = path.join(codexHome, "AGENTS.override.md");
@@ -560,6 +561,22 @@ describe("install codex", () => {
         expect(fs.readFileSync(override, "utf8")).toBe(blank);
         if (own) expect(fs.readFileSync(regular, "utf8")).toBe(own);
         else expect(fs.existsSync(regular)).toBe(false);
+    });
+
+    it("installs into a BOM-only Codex override and restores its BOM on uninstall", () => {
+        const override = path.join(codexHome, "AGENTS.override.md");
+        const regular = path.join(codexHome, "AGENTS.md");
+        fs.mkdirSync(codexHome, { recursive: true });
+        fs.writeFileSync(override, "\uFEFF");
+        fs.writeFileSync(regular, "Personal rules.\n");
+        for (let i = 0; i < 2; i++) {
+            expect(run(["install", "codex"]).code).toBe(0);
+            expect(fs.readFileSync(override, "utf8")).toBe("\uFEFF" + instructionsFor("codex") + "\n");
+            expect(fs.readFileSync(regular, "utf8")).toBe("Personal rules.\n\n" + instructionsFor("codex") + "\n");
+        }
+        expect(run(["uninstall", "codex"]).code).toBe(0);
+        expect(fs.readFileSync(override, "utf8")).toBe("\uFEFF");
+        expect(fs.readFileSync(regular, "utf8")).toBe("Personal rules.\n");
     });
 
     it("refuses when codex is not on PATH or hooks.json is broken, writing nothing", () => {
@@ -649,17 +666,27 @@ describe("install pi", () => {
         }
     });
 
-    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("ignores an unreadable inactive CLAUDE.md during install", () => {
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0).each([
+        { unreadable: "AGENTS.override.md", active: "CLAUDE.md" },
+        { unreadable: "CLAUDE.md", active: "AGENTS.md" }
+    ])("installs and uninstalls pi using $active when $unreadable is unreadable", ({ unreadable, active }) => {
         fs.mkdirSync(piAgentDir, { recursive: true });
-        fs.writeFileSync(path.join(piAgentDir, "AGENTS.md"), "Active rules.\n");
-        const inactive = path.join(piAgentDir, "CLAUDE.md");
+        const selected = path.join(piAgentDir, active);
+        fs.writeFileSync(selected, "Active rules.\n");
+        const inactive = path.join(piAgentDir, unreadable);
         fs.writeFileSync(inactive, "Inactive rules.\n", { mode: 0 });
         try {
             expect(run(["install", "pi"]).code).toBe(0);
             expect(calls().at(-1)).toEqual(mcpAdd("pi", NODE));
+            expect(fs.readFileSync(selected, "utf8")).toBe("Active rules.\n\n" + instructionsFor("pi") + "\n");
+            expect(run(["uninstall", "pi"]).code).toBe(0);
+            expect(calls().at(-1)).toEqual(["pi", "mcp", "remove", "n2n-nexus"]);
+            expect(fs.existsSync(extension())).toBe(false);
+            expect(fs.readFileSync(selected, "utf8")).toBe("Active rules.\n");
         } finally {
             fs.chmodSync(inactive, 0o600);
         }
+        expect(fs.readFileSync(inactive, "utf8")).toBe("Inactive rules.\n");
     });
 
     it("refuses to overwrite an extension that n2n-nexus did not write, and writes nothing", () => {

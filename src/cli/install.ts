@@ -364,14 +364,22 @@ function instructionPaths(client: InstructionClient) {
     const seen = new Set<string>();
     for (const name of names) {
         const file = path.join(dir, name);
-        const stat = fs.statSync(file, { bigint: true, throwIfNoEntry: false });
-        if (!stat?.isFile()) continue;
-        const real = fs.realpathSync.native(file);
-        // realpath can preserve the requested spelling on case-insensitive volumes.
-        const key = real.toLowerCase() + ":" + stat.dev + ":" + stat.ino;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        existing.push(file);
+        try {
+            const stat = fs.statSync(file, { bigint: true, throwIfNoEntry: false });
+            if (!stat?.isFile()) continue;
+            // pi tries the next candidate if it cannot open this one for reading.
+            if (client === "pi") fs.closeSync(fs.openSync(file, "r"));
+            const real = fs.realpathSync.native(file);
+            // realpath can preserve the requested spelling on case-insensitive volumes.
+            const key = real.toLowerCase() + ":" + stat.dev + ":" + stat.ino;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            existing.push(file);
+        } catch (error) {
+            const { code } = error as NodeJS.ErrnoException;
+            if (client === "pi" && (code === "EACCES" || code === "EPERM")) continue;
+            throw error;
+        }
     }
     return { existing, fallback };
 }
@@ -384,19 +392,15 @@ function agentInstructionFiles(existing: string[]): string[] {
 function installInstructionFiles(client: InstructionClient, existing: string[], fallback: string): string[] {
     if (client === "codex") {
         const override = existing.find((file) => path.basename(file) === "AGENTS.override.md");
-        // Codex falls back to AGENTS.md while the override is blank.
-        if (override && !fs.readFileSync(override, "utf8").trim()) return [fallback];
+        // Codex uses Unicode White_Space, which includes NEL and excludes BOM.
+        if (override && !/\P{White_Space}/u.test(fs.readFileSync(override, "utf8"))) return [fallback];
     }
     const agents = agentInstructionFiles(existing);
     // Older pi installers created AGENTS.md even when CLAUDE.md was in use.
     // Restore the shadowed file only when the higher one is entirely our default.
     if (client === "pi" && agents.length === 1 && agents[0] === fallback && existing.length > 1 &&
         fs.readFileSync(fallback, "utf8") === instructionsFor(client) + "\n") {
-        // pi's loader skips unreadable files. Do not migrate into one of them.
-        for (const file of existing.slice(1)) {
-            try { fs.accessSync(file, fs.constants.R_OK); } catch { continue; }
-            return [file];
-        }
+        return [existing[1]];
     }
     return agents.length ? agents : [existing[0] ?? fallback];
 }
@@ -409,6 +413,11 @@ function writeInstructions(client: InstructionClient, file: string, install: boo
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    // A leading BOM makes even an otherwise empty Codex override active. Keep
+    // the prefix through install and uninstall so Codex keeps selecting it.
+    const prefix = client === "codex" && path.basename(file) === "AGENTS.override.md"
+        ? text.match(/^[\uFEFF\p{White_Space}]+/u)?.[0] ?? "" : "";
+    text = text.slice(prefix.length);
     // The user's text around the block stays as it is; only the blank lines that joined it to the block go.
     let rest = text;
     const begin = text.indexOf(instructionsBegin(client));
@@ -422,11 +431,11 @@ function writeInstructions(client: InstructionClient, file: string, install: boo
     const kept = rest.replace(/\n+$/, "");
     const next = install ? `${kept ? `${kept}\n\n` : ""}${instructionsFor(client)}\n` : rest;
     if (next === text) return false;
-    if (!next.trim()) {
+    if (!prefix && !next.trim()) {
         fs.rmSync(target, { force: true });
         return true;
     }
-    replaceFile(target, next);
+    replaceFile(target, prefix + next);
     return true;
 }
 

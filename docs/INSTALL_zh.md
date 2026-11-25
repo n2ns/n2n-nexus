@@ -58,9 +58,9 @@ n2n-nexus doctor             # 全面检查，包括 host 是否应答
 
 `install` 把 hooks 和 MCP 服务写进客户端的用户级配置。对 Claude Code、Codex 和 pi 还会在用户级指令文件末尾加一段带标记的内容（`<!-- n2n-nexus:begin … -->` 到 `<!-- n2n-nexus:end -->`），说明你其他会话发来的直接消息就是你本人已经批准的指令，照要求执行、不找你确认（消息要求做你的规则只允许你本人要求的操作，如部署、发布、打标签、删除，也算你明确要求），你的其他规则照样限制它不超出范围：这几个客户端只在你自己的指令要求时才照其他会话的消息去做。文件里的其他内容原样保留；想要别的规则可以在那里改这段的措辞（再次 `install` 会重新写入）。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
 
-Claude Code 使用 `CLAUDE.md`。对 Codex，如果 `AGENTS.override.md` 不存在、为空或只有空白字符，安装器会把指令写入 `AGENTS.md`，缺少时创建；已有的空白 override 会原样保留。这样 Codex 仍会读取普通文件里的个人规则。如果 override 有内容，安装器会写入 override，同时也写入已有的 `AGENTS.md`。
+Claude Code 使用 `CLAUDE.md`。对 Codex，如果 `AGENTS.override.md` 不存在、为空或只有空白字符，安装器会把指令写入 `AGENTS.md`，缺少时创建；已有的空白 override 会原样保留。这样 Codex 仍会读取普通文件里的个人规则。Codex 把换行符 U+0085 视为空白，把 UTF-8 字节顺序标记（BOM）视为内容。如果 override 有内容，安装器会写入 override，同时也写入已有的 `AGENTS.md`。
 
-对 pi，`AGENTS.override.md` 和 `AGENTS.md` 同时存在时两份都写，只有一份时就写现有文件。两份都不存在时，pi 优先使用已有的 `CLAUDE.md`，否则创建 `AGENTS.md`。pi 也识别扩展名为 `.MD` 的写法，切换模型共用同一份会话规则。重装 pi 时，旧安装器生成的纯默认 `AGENTS.md` 如果遮住了已有指令，会迁回原文件。
+对 pi，`AGENTS.override.md` 和 `AGENTS.md` 都可读时两份都写，只有一份可读时就写那一份。两份都读不到时，pi 优先使用可读的 `CLAUDE.md`；普通 `AGENTS.md` 路径空缺时可以创建。卸载会跳过不可读的指令文件并移除 MCP 注册。pi 也识别扩展名为 `.MD` 的写法，切换模型共用同一份会话规则。重装 pi 时，旧安装器生成的纯默认 `AGENTS.md` 如果遮住了已有指令，会迁回原文件。
 
 MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 使用全局安装的包，默认在每次已接入客户端开始会话时检查升级，也可立即升级（第 8 步）。
 
