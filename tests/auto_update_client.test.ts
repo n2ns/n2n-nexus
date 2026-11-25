@@ -12,7 +12,7 @@ import { newerStable } from "../src/cli/auto-update.js";
 import { hookCommand } from "../src/cli/hook-command.js";
 import { DIRECT_MESSAGE_RULE, INSTRUCTIONS, hookTemplate, instructionsFor, npxFor } from "../src/cli/install.js";
 import { readPiExtension, renderPiExtension } from "../src/cli/pi.js";
-import { REPO, runCli } from "./helpers/cli.js";
+import { npmTestEnv, REPO, runCli } from "./helpers/cli.js";
 
 it("publishes the contract of this client's embedded hook contract in its npm metadata", () => {
     expect(JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8")).nexusContractVersion).toBe(CONTRACT_VERSION);
@@ -31,7 +31,7 @@ const root = path.join(prefix, process.platform === "win32" ? "" : "lib", "node_
 const entry = path.join(root, "build", "index.js");
 const extension = path.join(tmp, "pi", "extensions", "n2n-nexus.ts");
 const env: NodeJS.ProcessEnv = {
-    ...process.env, HOME: tmp, USERPROFILE: tmp,
+    ...npmTestEnv(), HOME: tmp, USERPROFILE: tmp,
     CLAUDE_CONFIG_DIR: path.join(tmp, "claude"), CODEX_HOME: path.join(tmp, "codex"), PI_CODING_AGENT_DIR: path.join(tmp, "pi"),
     npm_config_prefix: prefix, npm_config_cache: path.join(tmp, "cache"),
     npm_config_audit: "false", npm_config_fund: "false", npm_config_fetch_retries: "0", npm_config_userconfig: path.join(tmp, ".npmrc"),

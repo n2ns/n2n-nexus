@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
-import { REPO, runCli } from "./helpers/cli.js";
+import { npmTestEnv, REPO, runCli } from "./helpers/cli.js";
 
 it("checks each session start without waiting for npm; off survives restarts but never suppresses manual checks", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-startup-"));
@@ -45,7 +45,7 @@ it("checks each session start without waiting for npm; off survives restarts but
     await new Promise<void>(resolve => registry.listen(0, "127.0.0.1", resolve));
     const addr = registry.address();
     if (!addr || typeof addr === "string") throw new Error("no port");
-    const env = { ...process.env, HOME: tmp, USERPROFILE: tmp, LOCALAPPDATA: path.join(tmp, "local"), npm_config_prefix: prefix,
+    const env = { ...npmTestEnv(), HOME: tmp, USERPROFILE: tmp, LOCALAPPDATA: path.join(tmp, "local"), npm_config_prefix: prefix,
         npm_config_registry: `http://127.0.0.1:${addr.port}/`, npm_config_userconfig: path.join(tmp, ".npmrc"), npm_config_cache: path.join(tmp, "cache"), npm_config_fetch_retries: "0" };
     const id = createHash("sha256").update(fs.realpathSync(prefix)).digest("hex").slice(0, 24);
     const lock = path.join(tmp, ".local/state/n2n-nexus/client-update", id, "lock.db");

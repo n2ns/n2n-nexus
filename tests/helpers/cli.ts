@@ -33,6 +33,11 @@ export function cliEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     return { ...env, ...extra };
 }
 
+/** Start npm fixtures without inherited config, including uppercase aliases from Windows CI. */
+export function npmTestEnv(): NodeJS.ProcessEnv {
+    return Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
+}
+
 /** The CLIs runCli started that have not exited. */
 const running = new Set<ChildProcess>();
 // A test that failed or timed out no longer waits for its CLI, and a background wait asks for up to a day: end it.
