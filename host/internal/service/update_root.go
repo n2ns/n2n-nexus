@@ -16,12 +16,24 @@ func UpdateRoot(exe string) (string, error) {
 	if dir := os.Getenv("NEXUS_ROOT"); dir != "" {
 		return dir, nil
 	}
+	root, err := RegisteredServiceRoot(exe)
+	if err != nil {
+		return "", err
+	}
+	if root == "" {
+		return config.DataDir(), nil
+	}
+	return root, nil
+}
+
+// RegisteredServiceRoot only returns the root of a service installed from this executable.
+func RegisteredServiceRoot(exe string) (string, error) {
 	cmd, err := registeredServe()
 	if err != nil {
 		return "", err
 	}
 	if len(cmd) == 0 || !program.Same(cmd[0], exe) {
-		return config.DataDir(), nil
+		return "", nil
 	}
 	i := slices.Index(cmd, "--root")
 	if i < 1 || i+1 >= len(cmd) || !filepath.IsAbs(cmd[i+1]) {

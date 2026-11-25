@@ -5,7 +5,7 @@ import path from "node:path";
 import { ENTRY, REPO, runCliSync } from "./helpers/cli.js";
 import { cleanupExecutables, executablePath, writeExecutable } from "./helpers/executable.js";
 
-import { INSTRUCTIONS, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
+import { INSTRUCTIONS, instructionsFor, npxFor, runInstall, satisfiesEngines } from "../src/cli/install.js";
 import { antigravityHookCommand, isOurCodexHook, parseAntigravityHookCommand } from "../src/cli/hook-command.js";
 import { RULE_MARK } from "../src/cli/antigravity.js";
 import { PI_EXTENSION_MARK, readPiExtension, writePiExtension } from "../src/cli/pi.js";
@@ -523,6 +523,45 @@ describe("install codex", () => {
         expect(calls()).toEqual([]);
     });
 
+    it("writes the instructions into AGENTS.md after the user's own text, and uninstall restores the file", () => {
+        const agentsMd = path.join(codexHome, "AGENTS.md");
+        const own = "# Mine\n";
+        fs.mkdirSync(codexHome, { recursive: true });
+        fs.writeFileSync(agentsMd, own);
+
+        const result = run(["install", "codex"]);
+        expect(result.code).toBe(0);
+        expect(result.stdout).toContain(`Wrote the n2n-nexus instructions to ${agentsMd}\n`);
+        expect(fs.readFileSync(agentsMd, "utf8")).toBe(`${own}\n${instructionsFor("codex")}\n`);
+        expect(instructionsFor("codex")).toContain('"n2n-nexus uninstall codex"');
+        expect(run(["install", "codex"]).code).toBe(0);
+        expect(fs.readFileSync(agentsMd, "utf8")).toBe(`${own}\n${instructionsFor("codex")}\n`);
+
+        expect(run(["uninstall", "codex"]).code).toBe(0);
+        expect(fs.readFileSync(agentsMd, "utf8")).toBe(own);
+    });
+
+    it.each([
+        { scenario: "empty override with personal rules", blank: "", own: "# Personal rules\n" },
+        { scenario: "whitespace-only override without AGENTS.md", blank: " \t\r\n", own: "" }
+    ])("keeps a blank Codex override intact and uses AGENTS.md ($scenario)", ({ blank, own }) => {
+        const override = path.join(codexHome, "AGENTS.override.md");
+        const regular = path.join(codexHome, "AGENTS.md");
+        fs.mkdirSync(codexHome, { recursive: true });
+        fs.writeFileSync(override, blank);
+        if (own) fs.writeFileSync(regular, own);
+
+        for (let i = 0; i < 2; i++) {
+            expect(run(["install", "codex"]).code).toBe(0);
+            expect(fs.readFileSync(override, "utf8")).toBe(blank);
+            expect(fs.readFileSync(regular, "utf8")).toBe((own ? own + "\n" : "") + instructionsFor("codex") + "\n");
+        }
+        expect(run(["uninstall", "codex"]).code).toBe(0);
+        expect(fs.readFileSync(override, "utf8")).toBe(blank);
+        if (own) expect(fs.readFileSync(regular, "utf8")).toBe(own);
+        else expect(fs.existsSync(regular)).toBe(false);
+    });
+
     it("refuses when codex is not on PATH or hooks.json is broken, writing nothing", () => {
         fs.rmSync(executablePath(path.join(bin, "codex")));
         expect(run(["install", "codex"]).code).toBe(1);
@@ -535,6 +574,25 @@ describe("install codex", () => {
         expect(fs.readFileSync(codexHooks(), "utf8")).toBe("[not json");
         expect(fs.readdirSync(codexHome)).toEqual(["hooks.json"]);
     });
+});
+
+it.each(["codex", "pi"] as const)("installs and removes both existing %s instruction files, without creating a missing sibling", (client) => {
+    const home = client === "codex" ? codexHome : piAgentDir;
+    const override = path.join(home, "AGENTS.override.md");
+    const regular = path.join(home, "AGENTS.md");
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(override, "Override text.\n");
+    expect(run(["install", client]).code).toBe(0);
+    expect(fs.existsSync(regular)).toBe(false);
+    fs.writeFileSync(regular, "Regular text.\n");
+    for (let i = 0; i < 2; i++) {
+        expect(run(["install", client]).code).toBe(0);
+        expect(fs.readFileSync(override, "utf8")).toBe("Override text.\n\n" + instructionsFor(client) + "\n");
+        expect(fs.readFileSync(regular, "utf8")).toBe("Regular text.\n\n" + instructionsFor(client) + "\n");
+    }
+    expect(run(["uninstall", client]).code).toBe(0);
+    expect(fs.readFileSync(override, "utf8")).toBe("Override text.\n");
+    expect(fs.readFileSync(regular, "utf8")).toBe("Regular text.\n");
 });
 
 describe("install pi", () => {
@@ -566,6 +624,42 @@ describe("install pi", () => {
         expect(run(["uninstall", "pi"]).code).toBe(0);
         expect(fs.existsSync(extension())).toBe(false);
         expect(calls().at(-1)).toEqual(["pi", "mcp", "remove", "n2n-nexus"]);
+    });
+
+    it("writes the instructions into AGENTS.md, and uninstall removes the file it holds alone", () => {
+        const agentsMd = path.join(piAgentDir, "AGENTS.md");
+        expect(run(["install", "pi"]).code).toBe(0);
+        expect(fs.readFileSync(agentsMd, "utf8")).toBe(`${instructionsFor("pi")}\n`);
+        expect(run(["uninstall", "pi"]).code).toBe(0);
+        expect(fs.existsSync(agentsMd)).toBe(false);
+    });
+
+    it("uses the existing CLAUDE.md and repairs an earlier default-only AGENTS.md on reinstall", () => {
+        const claude = path.join(piAgentDir, "CLAUDE.md");
+        const agents = path.join(piAgentDir, "AGENTS.md");
+        fs.mkdirSync(piAgentDir, { recursive: true });
+        fs.writeFileSync(claude, "My pi rules.\n");
+        for (const legacy of [false, true]) {
+            if (legacy) fs.writeFileSync(agents, instructionsFor("pi") + "\n");
+            expect(run(["install", "pi"]).code).toBe(0);
+            expect(fs.readFileSync(claude, "utf8")).toBe("My pi rules.\n\n" + instructionsFor("pi") + "\n");
+            expect(fs.existsSync(agents)).toBe(false);
+            expect(run(["uninstall", "pi"]).code).toBe(0);
+            expect(fs.readFileSync(claude, "utf8")).toBe("My pi rules.\n");
+        }
+    });
+
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("ignores an unreadable inactive CLAUDE.md during install", () => {
+        fs.mkdirSync(piAgentDir, { recursive: true });
+        fs.writeFileSync(path.join(piAgentDir, "AGENTS.md"), "Active rules.\n");
+        const inactive = path.join(piAgentDir, "CLAUDE.md");
+        fs.writeFileSync(inactive, "Inactive rules.\n", { mode: 0 });
+        try {
+            expect(run(["install", "pi"]).code).toBe(0);
+            expect(calls().at(-1)).toEqual(mcpAdd("pi", NODE));
+        } finally {
+            fs.chmodSync(inactive, 0o600);
+        }
     });
 
     it("refuses to overwrite an extension that n2n-nexus did not write, and writes nothing", () => {

@@ -50,15 +50,19 @@ Requires Node.js 22.14+ on the 22.x release line, or Node.js 23.6+.
 ```bash
 npm i -g n2n-nexus@latest
 n2n-nexus install claude     # ~/.claude/settings.json and CLAUDE.md (or in $CLAUDE_CONFIG_DIR) + claude mcp add --scope user
-n2n-nexus install codex      # ~/.codex/hooks.json (or $CODEX_HOME) + codex mcp add
-n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts (or in $PI_CODING_AGENT_DIR) + pi mcp add
+n2n-nexus install codex      # ~/.codex/hooks.json and user instructions (or in $CODEX_HOME) + codex mcp add
+n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts and user instructions (or in $PI_CODING_AGENT_DIR) + pi mcp add
 n2n-nexus install antigravity  # ~/.gemini/config/hooks.json and rules/n2n-nexus.md, the waiter's permission grants + agy mcp add
 n2n-nexus doctor             # checks everything, including that the host answers
 ```
 
-`install` writes the hooks and the MCP server into the client's user configuration. For Claude Code it also adds a marked block (`<!-- n2n-nexus:begin … -->` to `<!-- n2n-nexus:end -->`) at the end of your user-level `CLAUDE.md`, saying that a direct message from your other sessions is your instruction, already approved, to carry out exactly and without asking you for confirmation, while your other rules still keep the work from going beyond it: Claude Code acts on another session's message only where your own instructions call for it. The rest of the file is kept as it is; edit the block's wording there if you want other rules (a new `install` writes it again). Start a **new** conversation afterwards: running conversations do not load the new MCP server.
+`install` writes the hooks and the MCP server into the client's user configuration. For Claude Code, Codex and pi it also adds a marked block (`<!-- n2n-nexus:begin … -->` to `<!-- n2n-nexus:end -->`) at the end of your user-level instruction files, saying that a direct message from your other sessions is your instruction, already approved, to carry out exactly and without asking you for confirmation (a message asking for an action your rules let only you ask for, such as deploying, releasing, tagging or deleting, counts as your explicit request), while your other rules still keep the work from going beyond it: these clients act on another session's message only where your own instructions call for it. The rest of the file is kept as it is; edit the block's wording there if you want other rules (a new `install` writes it again). Start a **new** conversation afterwards: running conversations do not load the new MCP server.
 
-The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package. It updates daily by default and can also be updated on demand (step 8).
+Claude Code uses `CLAUDE.md`. For Codex, install writes to `AGENTS.md` (creating it if needed) when `AGENTS.override.md` is absent, empty, or whitespace-only. A blank override keeps its original contents. This keeps personal rules in `AGENTS.md` visible to Codex. If the override contains text, install writes to it and to `AGENTS.md` if present.
+
+For pi, install writes to both `AGENTS.override.md` and `AGENTS.md` if both exist, or only to the one present. With neither present, pi uses an existing `CLAUDE.md` or creates `AGENTS.md`. Pi also recognizes the `.MD` spellings and keeps the same instructions when switching models. Reinstalling pi repairs an older default-only `AGENTS.md` that shadows existing instructions.
+
+The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package. It checks for updates at each hooked session start and can also be updated on demand (step 8).
 
 - Pass `--endpoint <url>` to each install command when the host is not at `http://127.0.0.1:5688`, or `--endpoint discover` to find a host on the LAN (step 6).
 - On Windows, run `npm i -g` and `install` from a regular terminal, not from the terminal of a packaged app such as Codex: that terminal installs into the app's private copy of `%APPDATA%`, which hides the global install from the app.
@@ -150,18 +154,22 @@ n2n-nexus update
 
 This checks the local host and the global npm client in turn and reports each result. A failure still allows the other check to run and makes the command exit with status 1. Client-only machines skip the host. Hosts reached over the LAN update on their own machine. Each new conversation continues to start the latest MCP adapter.
 
-Daily updates are enabled by default. Installing the global npm client registers its job. If installation scripts were skipped, connecting a client or starting a hooked session retries setup. The stable host registers its job when its tray or server starts. To turn off either component:
+By default a stable host checks in the background after it starts listening (foreground server, tray-hosted server or service). The global npm client checks in a detached process on each hooked `SessionStart`, not on every tool call. Neither startup waits for the network. These checks install compatible releases without a daily job. To turn off either component:
 
 ```bash
 n2n-nexus auto-update off       # Global npm client and its hooks
 n2n-nexus-host auto-update off  # Local host
 ```
 
-Each component remembers an explicit `off` across restarts, upgrades and reinstallation. Use `on` to enable it again. Linux requires a running systemd user manager. macOS uses a LaunchAgent for the logged-in user. Windows uses a limited Task Scheduler job under the logged-in user so it can access the same network and credentials as a manual update. The account that runs the job needs write access to the installation. Disable the jobs before uninstalling their programs.
+Each component remembers an explicit `off` across restarts, upgrades and reinstallation. Use `on` to enable it again. `off` affects startup checks only, not manual updates. The account running the component needs network and write access to upgrade. If you tested the unreleased daily scheduler, run both old `auto-update off` commands before replacing those builds; run `on` in the new builds to enable startup checks.
 
-The host detects Scoop, Homebrew and release-archive installations. Archive updates require GitHub CLI on PATH with working `gh attestation verify` to verify the build provenance. The updater checks the actual version after restarting a running host and keeps a stopped host stopped. The combined command searches PATH and standard install locations. Put a custom installation directory on PATH. It uses the data directory recorded when the host starts or when you run `auto-update on --root <dir>`. Turning off daily updates does not erase this location. You can also set `NEXUS_ROOT`.
+On Windows the boot service can start before anyone signs in. It requests the update in the service owner's signed-in session, using a limited Task Scheduler task so the updater can use that user's network credentials. If the owner is signed out, the check waits for sign-in. The owner's tray can also pick up a pending check.
 
-Automatic updates install compatible stable releases. The host also compares database migrations. Follow the release notes to upgrade manually when a release requires coordination. The two components are versioned independently. The global client recognizes an installation made with `npm install -g --prefix <dir>` even in a new shell. It refreshes changed hook templates, preserving their Node and endpoint. Updates replace the Claude instructions block only if it still matches the previous default; edited or removed instructions are left alone. Start a new pi session or use `/reload` to load a changed pi extension.
+The host detects Scoop, Homebrew and release-archive installations. Archive updates require GitHub CLI on PATH with working `gh attestation verify` to verify the build provenance. When several hosts start from the same executable with different data directories, each waits for the installation to finish and verifies its own running version after restarting. A stopped host stays stopped. The combined command searches PATH and standard install locations. Put a custom installation directory on PATH. It uses the data directory recorded when the host starts or when you run `auto-update on --root <dir>`. Turning off startup checks does not erase this location. You can also set `NEXUS_ROOT`.
+
+Run `n2n-nexus doctor` to see the most recent client update failure, including a release that requires a coordinated upgrade. A successful check clears the previous failure.
+
+Automatic updates install compatible stable releases. The host also compares database migrations. Follow the release notes to upgrade manually when a release requires coordination. The two components are versioned independently. The global client recognizes an installation made with `npm install -g --prefix <dir>` even in a new shell. It refreshes changed hook templates, preserving their Node and endpoint. Updates replace the instructions block of Claude Code, Codex or pi only if it still matches the previous default; edited or removed instructions are left alone. The same protection applies to the Antigravity rule. Updates without a saved hash for its previous default leave the rule as found. Start a new pi session or use `/reload` to load a changed pi extension.
 
 For the first upgrade from versions without these commands, or for a coordinated update, use the original installation method:
 
@@ -170,7 +178,7 @@ For the first upgrade from versions without these commands, or for a coordinated
 
 ## 9. Uninstalling
 
-`n2n-nexus uninstall <claude|codex|pi|antigravity>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, the `CLAUDE.md` block that `install` added (the file too when nothing else is in it), for Antigravity the rule file, the named hook and the waiter's grants first (with a grant list, a settings file, `hooks.json` or the `rules` folder that nothing else is left in), and leaves the rest of the configuration alone. Open Antigravity conversations keep their message waiter until they are closed.
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` removes the hooks (for pi, its extension file), the MCP server and, for Claude Code, Codex and pi, its marked blocks in the user-level instruction files (the file too when nothing else is in it), for Antigravity the rule file, the named hook and the waiter's grants first (with a grant list, a settings file, `hooks.json` or the `rules` folder that nothing else is left in), and leaves the rest of the configuration alone. Open Antigravity conversations keep their message waiter until they are closed.
 
 ```bash
 n2n-nexus uninstall claude

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -125,7 +126,7 @@ func TestArchiveUpdate(t *testing.T) {
 			})
 			t.Cleanup(func() { http.DefaultTransport = real })
 			var out bytes.Buffer
-			err = run(t.Context(), exe, old.Version, root, "", &out)
+			err = run(t.Context(), exe, old.Version, root, "", false, &out)
 			if tc.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 					t.Fatalf("got %v, want %q", err, tc.wantError)
@@ -181,6 +182,93 @@ func TestRunningHostMustConfirmVersion(t *testing.T) {
 		t.Fatalf("old service accepted: %v", err)
 	}
 	if _, err = os.Stat(filepath.Join(root, host.RestartRequestFile)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An updater for another root owns the installation lock and replaces the binary.
+// This listener must activate that version even if the release server is now offline.
+func TestStartupWaitsAndActivatesInstalledBuild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX executable")
+	}
+	old, err := LocalBuild("1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := old
+	next.Version = "1.0.1"
+	root := t.TempDir()
+	exe := filepath.Join(t.TempDir(), "n2n-nexus-host")
+	writeBuild := func(b Build) {
+		t.Helper()
+		if err := os.WriteFile(exe, []byte(infoScript(t, b)), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBuild(old)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	first := installationLock(exe, "archive")
+	if err := first.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Unlock()
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	var restarted atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v := old.Version
+		if restarted.Load() {
+			v = next.Version
+		}
+		fmt.Fprintf(w, `{"ok":true,"service":"n2n-nexus","version":"%s"}`, v)
+	}))
+	defer srv.Close()
+	holder, err := host.AcquireLock(root, 123, 10, host.RoleSupervised)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Release()
+	listen := func(b Build) {
+		t.Helper()
+		if err := host.RecordListener(root, strings.TrimPrefix(srv.URL, "http://"), exe, b.Version, b.Contract, b.Schema); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listen(old)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, exe, old.Version, root, "", true, io.Discard) }()
+	select {
+	case err := <-done:
+		t.Fatalf("startup worker left while installation was locked: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	writeBuild(next)
+	if err := first.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(root, host.RestartRequestFile)); err == nil {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("worker ended before restarting its listener: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	holder.Release()
+	replacement, err := host.AcquireLock(root, 124, 10, host.RoleSupervised)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replacement.Release()
+	listen(next)
+	restarted.Store(true)
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 }

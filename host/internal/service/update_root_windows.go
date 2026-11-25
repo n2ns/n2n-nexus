@@ -1,15 +1,19 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 
 	"golang.org/x/sys/windows"
 )
 
 func registeredServe() ([]string, error) {
-	_, out, err := RunPowerShell(WindowsTaskActionScript())
+	code, out, err := RunPowerShell(WindowsTaskActionScript())
 	if err != nil {
 		return nil, err
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("read Windows host service: %s", strings.TrimSpace(out))
 	}
 	exe, args, _ := strings.Cut(strings.TrimSpace(out), "\n")
 	if exe == "" {

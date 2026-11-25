@@ -23,12 +23,12 @@ USAGE:
                      Remove the hooks and the MCP server installed by install
   n2n-nexus update    Upgrade the installed client and host on this machine
   n2n-nexus auto-update on|off|run
-                     Manage daily updates of this global installation (enabled by default), or check now
+                     Manage session-start updates of this global installation (enabled by default), or check now
   n2n-nexus doctor [claude|codex|pi|antigravity]
                      Check that the Node path and entry script in the installed hooks and
                      the Node path and npx in the MCP command exist and run, and that the
                      host answers with the same contract version; exit 1 and say how to
-                     fix them when not
+                     fix them when not. Also reports the last client update failure.
   n2n-nexus hook <claude|codex|pi> [--endpoint <url>] [--wait]
   n2n-nexus hook antigravity <Event>|--wait [--endpoint <url>]
                      Forward a client hook event to the host (run by the hooks)
@@ -74,10 +74,12 @@ async function main() {
         const [action, ...extra] = process.argv.slice(3);
         if (extra.length === 0) {
             if (action === "on" || action === "off") {
-                const { clientUpdateSchedule } = await import("./cli/update-schedule.js");
-                process.exit(await clientUpdateSchedule(action));
+                const { setClientStartupUpdates } = await import("./cli/startup-update.js");
+                await setClientStartupUpdates(action);
+                return;
             }
-            if (action === "run") {
+            if (action === "run" || action === "startup") {
+                if (action === "startup" && !(await import("./cli/startup-update.js")).shouldCheckClient()) return;
                 const { updateGlobalClient } = await import("./cli/auto-update.js");
                 await updateGlobalClient();
                 return;

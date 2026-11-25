@@ -7,9 +7,10 @@ import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { CONTRACT_VERSION } from "../src/contract.js";
+import { antigravityHook, renderRule, setAntigravityHook } from "../src/cli/antigravity.js";
 import { newerStable } from "../src/cli/auto-update.js";
 import { hookCommand } from "../src/cli/hook-command.js";
-import { DIRECT_MESSAGE_RULE, INSTRUCTIONS, hookTemplate, npxFor } from "../src/cli/install.js";
+import { DIRECT_MESSAGE_RULE, INSTRUCTIONS, hookTemplate, instructionsFor, npxFor } from "../src/cli/install.js";
 import { readPiExtension, renderPiExtension } from "../src/cli/pi.js";
 import { REPO, runCli } from "./helpers/cli.js";
 
@@ -151,6 +152,57 @@ it("refreshes only intact previous Claude defaults, independent of changes to ho
         const result = await runCli([pending], { env: { ...env, CLAUDE_CONFIG_DIR: dir }, entry: path.join(root, "build/cli/refresh-hooks.js") });
         expect(result.code, result.stderr).toBe(0);
         expect(fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined).toBe(afterText);
+    }
+});
+
+it("refreshes an intact previous Codex default recorded per client", async () => {
+    const dir = fs.mkdtempSync(path.join(tmp, "codex-refresh-"));
+    const file = path.join(dir, "AGENTS.md");
+    const command = hookCommand(process.execPath, entry, "codex", "discover");
+    const pending = path.join(dir, "pending.json");
+    const override = path.join(dir, "AGENTS.override.md");
+    const previous = instructionsFor("codex").replace(DIRECT_MESSAGE_RULE, "Original default.");
+    fs.writeFileSync(path.join(dir, "hooks.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command }] }] } }));
+    fs.writeFileSync(file, "User preface.\n\n" + previous + "\n");
+    fs.writeFileSync(override, previous + "\n");
+    const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+    fs.writeFileSync(pending, JSON.stringify({ version, templates: { codex: hookTemplate("codex") }, instructions: { codex: previous } }));
+    const result = await runCli([pending], { env: { ...env, CODEX_HOME: dir }, entry: path.join(root, "build/cli/refresh-hooks.js") });
+    expect(result.code, result.stderr).toBe(0);
+    expect(fs.readFileSync(file, "utf8")).toBe("User preface.\n\n" + instructionsFor("codex") + "\n");
+    expect(fs.readFileSync(override, "utf8")).toBe(instructionsFor("codex") + "\n");
+    fs.writeFileSync(file, previous + "\n");
+    fs.writeFileSync(override, "Local override only.\n");
+    const retry = await runCli([pending], { env: { ...env, CODEX_HOME: dir }, entry: path.join(root, "build/cli/refresh-hooks.js") });
+    expect(retry.code, retry.stderr).toBe(0);
+    expect(fs.readFileSync(override, "utf8")).toBe("Local override only.\n");
+});
+
+it("updates only the original Antigravity rule while independently refreshing its registered hooks and grants", async () => {
+    const home = fs.mkdtempSync(path.join(tmp, "antigravity-refresh-"));
+    const config = path.join(home, ".gemini/config");
+    const rule = path.join(config, "rules/n2n-nexus.md");
+    fs.mkdirSync(path.dirname(rule), { recursive: true });
+    const hooks = {};
+    setAntigravityHook(hooks, antigravityHook(process.execPath, entry, "discover"));
+    fs.writeFileSync(path.join(config, "hooks.json"), JSON.stringify(hooks));
+    const previous = renderRule("discover", "Previous default.");
+    const current = renderRule("discover", DIRECT_MESSAGE_RULE);
+    const digest = createHash("sha256").update(previous).digest("hex");
+    const pending = path.join(home, "pending.json");
+    const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+    for (const [original, hash, expected] of [
+        [previous, digest, current], [previous + "Ask first.\n", digest, previous + "Ask first.\n"],
+        [undefined, digest, undefined], [previous, undefined, previous], ["My replacement.\n", digest, "My replacement.\n"],
+    ] as const) {
+        if (original === undefined) fs.rmSync(rule, { force: true }); else fs.writeFileSync(rule, original);
+        const settings = path.join(config, "config.json");
+        fs.rmSync(settings, { force: true });
+        fs.writeFileSync(pending, JSON.stringify({ version, templates: { antigravity: "older" }, antigravityRuleHash: hash }));
+        const result = await runCli([pending], { env: { ...env, HOME: home, USERPROFILE: home }, entry: path.join(root, "build/cli/refresh-hooks.js") });
+        expect(result.code, result.stderr).toBe(0);
+        expect(fs.existsSync(rule) ? fs.readFileSync(rule, "utf8") : undefined).toBe(expected);
+        expect(fs.readFileSync(settings, "utf8")).toContain("--endpoint discover");
     }
 });
 

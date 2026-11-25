@@ -10,6 +10,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func detachUpdateWorker(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP}
+}
+
 var procAttachConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("AttachConsole")
 
 const attachParentProcess = ^uintptr(0) // ATTACH_PARENT_PROCESS, (DWORD)-1

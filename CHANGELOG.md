@@ -6,9 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Updates preserve edited or removed Claude instructions, recognize custom global npm prefixes, and remember the running host’s data directory when daily updates are disabled. Homebrew updates no longer require `brew` on the scheduler’s PATH.
+- Codex and pi installs write the direct-message block to both existing `AGENTS.override.md` and `AGENTS.md`, or just the one present. Codex installs skip a blank override and use or create `AGENTS.md` so personal rules still load. Pi respects an existing `CLAUDE.md` fallback. Updates preserve edited or deleted instruction blocks and Antigravity rules.
 
-- Run `n2n-nexus update` to update the local host and global npm client together. Both check for updates daily by default and defer incompatible releases. The host verifies its running version after restarting.
+- The instructions block and the Antigravity rule now say that a direct message asking for an action your rules let only you ask for (deploying, releasing, tagging, deleting) counts as your explicit request.
+
+- Updates preserve edited or removed Claude instructions, recognize custom global npm prefixes, and remember the running host’s data directory when startup checks are disabled. Homebrew updates no longer require `brew` on PATH.
+
+- Run `n2n-nexus update` to update the local host and global npm client together. The host checks in the background on startup; the global client checks at each hooked session start. Incompatible releases are deferred. `n2n-nexus doctor` reports the last client update failure. Hosts starting concurrently from the same installation each verify their running version after the upgrade. The Windows boot service checks using the signed-in owner's credentials.
 
 ## [0.14.1] - 2026-11-23
 

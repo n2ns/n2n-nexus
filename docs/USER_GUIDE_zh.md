@@ -24,11 +24,11 @@ Claude 桌面版里有两种对话：
 
 ## 3. 对话之间的直接消息
 
-每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文）；Codex 的聊天窗口会显示被叫醒的那一轮的提示词和拦住一轮的理由，所以这两处只有一行说明有什么新内容，正文由 hook 上下文带给 AI，或由它用 `read` 读取。收件方可以为它做什么由你自己的指令决定：对 Claude Code，`n2n-nexus install claude` 写进用户级 `CLAUDE.md` 的那段说明让它当作你的指令照要求执行、不找你确认、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`，pi 通过它的 n2n-nexus 扩展，把通知作为下一条用户消息发给 pi，Antigravity 通过消息等待器：通知说它没有运行时，模型按 `install antigravity` 写入的规则把它作为后台命令启动），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
+每个对话都会出现在 `peers` 里。新消息会自动通知收件方：用户发来新消息时、每次工具调用后、本轮结束前一次。通知里直接显示正文（被截断的消息用 `read` 读取全文）；Codex 的聊天窗口会显示被叫醒的那一轮的提示词和拦住一轮的理由，所以这两处只有一行说明有什么新内容，正文由 hook 上下文带给 AI，或由它用 `read` 读取。收件方可以为它做什么由你自己的指令决定：对 Claude Code、Codex 和 pi，`n2n-nexus install` 写进用户级指令文件 的那段说明让它当作你的指令照要求执行、不找你确认（要求做你的规则只允许你本人要求的操作，如部署、删除，也照做）、不超出范围；有疑问会问发来的那个会话，你不用切换终端。空闲的对话也会被叫醒：每轮结束时，一个后台 hook 最多等待一天，有新消息就让对话开始新的一轮（Claude Code 通过 `asyncRewake` hook，Codex 通过 `codex queue`，pi 通过它的 n2n-nexus 扩展，把通知作为下一条用户消息发给 pi，Antigravity 通过消息等待器：通知说它没有运行时，模型按 `install antigravity` 写入的规则把它作为后台命令启动），AI 会话之间无需有人输入就能执行对方的请求并回复。无人值守的 `claude -p` 不会被它拖住：这时该 hook 立即返回。Codex 对话只有在运行中的 Codex 应用里已加载时才能被叫醒；Codex 重启后，要等该对话再结束一轮才会恢复，限制详见[架构说明](ARCHITECTURE_zh.md#会话在线状态与唤醒空闲对话)。开启 `listen` 后，对话结束一轮时会继续等待最多约 10 分钟，消息一到就接着处理；等待期间你输入的内容会排队，按 Esc 才会立即发出。
 
 ## 4. 检查是否正常
 
-- `n2n-nexus doctor` 检查已安装的命令和 host：见[安装手册](INSTALL_zh.md#7-检查安装)。
+- `n2n-nexus doctor` 检查已安装的命令和 host，也显示最近一次客户端升级失败的原因。见[安装手册](INSTALL_zh.md#7-检查安装)。
 - 在对话里让 AI 调用 `peers`：它会列出在线的其他会话。
 - 托盘菜单里显示在线会话数。
 
@@ -81,7 +81,7 @@ n2n-nexus-host version
 # 启动 MCP 适配器（由 IDE 启动）
 NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <实例 ID>]
 
-# 为 Claude Code、Codex、pi 或 Antigravity 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容；pi 的 hooks 是一个扩展文件；Antigravity 还有规则文件和等待器的权限授权）
+# 为 Claude Code、Codex、pi 或 Antigravity 安装 / 删除 hooks 和 MCP 服务（Claude Code、Codex 和 pi 还有用户级指令文件里的标记段落；pi 的 hooks 是一个扩展文件；Antigravity 还有规则文件和等待器的权限授权）
 n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]
 n2n-nexus uninstall <claude|codex|pi|antigravity>
 n2n-nexus update
@@ -147,6 +147,6 @@ host 把全部协作数据保存在数据目录里的一个 SQLite 数据库中�
 └── host.lock         # 每个数据目录只运行一个 host
 ```
 
-后台服务，以及自己运行 host 时的托盘，把日志写到日志目录的 `host.log`（单个 10 MB，保留 3 个旧文件）；托盘自己的日志写到同一目录的 `tray.log`；`n2n-nexus-host serve` 输出到标准错误。host 删除哪些数据、什么时候删，见[架构说明](ARCHITECTURE_zh.md#清理与保留期)。
+后台服务，以及自己运行 host 时的托盘，把日志写到日志目录的 `host.log`（单个 10 MB，保留 3 个旧文件）；托盘自己的日志写到同一目录的 `tray.log`；`n2n-nexus-host serve` 输出到标准错误。启动时的后台升级检查会把结果写到同一日志目录的 `update.log`。host 删除哪些数据、什么时候删，见[架构说明](ARCHITECTURE_zh.md#清理与保留期)。
 
 n2n-nexus 0.9.0 之前的数据（`~/.n2n-nexus`）不会导入：host 不读取它，也不动它。客户端在这个文件夹里仍保留一个文件 `discovered-endpoint`，即 `discover` 的缓存结果。

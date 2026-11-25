@@ -10,7 +10,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { entryScript } from "./entry.js";
 
 import {
     BACKGROUND_WAIT_EVENT, WAKE_RESULT_EVENT, HOOK_INPUT_FIELDS, HOOK_REQUEST_TIMEOUT_MS, HOOK_STOP_REQUEST_TIMEOUT_MS, SESSION_END_REQUEST_TIMEOUT_MS, WAIT_HOOK_TIMEOUT_SEC, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS, noDaemonHint,
@@ -108,12 +108,9 @@ async function forward(argv: string[]): Promise<string> {
     const event = input.hook_event_name;
     if (event === "SessionStart") {
         try {
-            const { clientScheduleNeedsSetup } = await import("./update-schedule.js");
-            if (clientScheduleNeedsSetup()) {
-                const worker = fileURLToPath(new URL("../../autoupdate/postinstall.mjs", import.meta.url));
-                await startDetached(process.execPath, [worker, "--session-start"]);
-            }
-        } catch { /* The hook still forwards the event if the scheduler is unavailable. */ }
+            const { shouldCheckClient } = await import("./startup-update.js");
+            if (shouldCheckClient()) await startDetached(process.execPath, [entryScript(), "auto-update", "startup"]);
+        } catch { /* A failed update launch must not prevent forwarding the event. */ }
     }
     // Every event says where the conversation runs; the host refuses one without it.
     input.machine = machineInfo();
@@ -366,7 +363,9 @@ async function runAntigravityWait(configured: string): Promise<number> {
 async function startDetached(file: string, args: string[], clientPid?: () => number | undefined): Promise<void> {
     if (process.platform !== "win32") {
         const pid = clientPid?.();
-        spawn(file, [...args, ...(pid !== undefined ? ["--client-pid", String(pid)] : [])], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        const child = spawn(file, [...args, ...(pid !== undefined ? ["--client-pid", String(pid)] : [])], { detached: true, stdio: "ignore", windowsHide: true });
+        await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+        child.unref();
         return;
     }
     const literal = (s: string) => `'${s.replace(/['‘’‚‛]/g, "$&$&")}'`;

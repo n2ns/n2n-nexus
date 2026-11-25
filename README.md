@@ -54,7 +54,7 @@ n2n-nexus gives AI assistants a shared coordination workspace. A long-running lo
 **Quick summary**
 
 - **Install**: the host `n2n-nexus-host` with Scoop / Homebrew / a Releases archive; the client with `npm i -g n2n-nexus@latest`, then `n2n-nexus install <claude|codex|pi|antigravity>`
-- The client and host update automatically every day. Run `n2n-nexus update` to check and upgrade this machine immediately. [Daily updates and compatibility](docs/INSTALL.md#8-upgrading)
+- The host checks for updates when it starts; the global client checks when a hooked session starts. Run `n2n-nexus update` to check and upgrade this machine immediately. [Startup updates and compatibility](docs/INSTALL.md#8-upgrading)
 - **Protocol**: Model Context Protocol (MCP); the adapters reach the host over HTTP
 - **Storage**: one SQLite database in the host's data directory
 - **Good for**: multi-assistant coding sessions, project handoffs, shared decisions, meeting records, task tracking, project manifests

@@ -5,15 +5,21 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
+	"github.com/n2ns/n2n-nexus/host/internal/config"
+	"github.com/n2ns/n2n-nexus/host/internal/host"
 	"github.com/n2ns/n2n-nexus/host/internal/update"
 )
 
 func autoUpdate(args []string) int {
+	if len(args) > 0 && (args[0] == "service-start" || args[0] == "service-login") {
+		return serviceUpdateCommand(args)
+	}
 	if len(args) > 0 && (args[0] == "on" || args[0] == "off") {
-		if err := scheduleHostUpdate(args[0], args[1:]); err != nil {
+		if err := setHostStartupUpdates(args[0], args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "auto-update:", err)
 			return 1
 		}
@@ -30,7 +36,7 @@ func autoUpdate(args []string) int {
 		}
 		return 0
 	}
-	if len(args) == 0 || args[0] != "run" {
+	if len(args) == 0 || (args[0] != "run" && args[0] != "startup") {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
@@ -40,6 +46,25 @@ func autoUpdate(args []string) int {
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 		return 2
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+	var out, errOut io.Writer = os.Stdout, os.Stderr
+	if args[0] == "startup" {
+		log := host.UpdateLogWriter(config.LogDir())
+		defer log.Close()
+		out, errOut = log, log
+		if *root == "" {
+			return 2
+		}
+		enabled, err := prepareHostUpdate(ctx, "startup", *root, *method)
+		if err != nil {
+			fmt.Fprintln(errOut, "startup update:", err)
+			return 1
+		}
+		if !enabled {
+			return 0
+		}
+	}
 	if *root == "" && os.Getenv("NEXUS_ROOT") == "" {
 		saved, err := savedUpdateRoot()
 		if err != nil {
@@ -48,10 +73,8 @@ func autoUpdate(args []string) int {
 		}
 		*root = saved
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
-	defer cancel()
-	if err := update.Run(ctx, version, *root, *method, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "auto-update:", err)
+	if err := update.Run(ctx, version, *root, *method, args[0] == "startup", out); err != nil {
+		fmt.Fprintln(errOut, "auto-update:", err)
 		return 1
 	}
 	return 0

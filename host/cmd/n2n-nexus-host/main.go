@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -84,9 +83,7 @@ func runTray() int {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return 1
 	}
-	err := tray.Run(tray.Options{Version: version, DataDir: dataDir, LogDir: config.LogDir(), Exe: executable()}, func(logger *log.Logger) func() {
-		return startDefaultHostUpdates(os.Getenv("NEXUS_ROOT"), logger)
-	})
+	err := tray.Run(tray.Options{Version: version, DataDir: dataDir, LogDir: config.LogDir(), Exe: executable(), ServiceUpdateRequested: trayServiceUpdateRecovery()}, startHostUpdate)
 	if err != nil {
 		attachConsole()
 		fmt.Fprintln(os.Stderr, err)
@@ -146,8 +143,11 @@ func serve(args []string) int {
 	}
 	// The conformance harness reads the port from this line.
 	logger.Print(host.ReadyLine(version, h))
-	stopUpdateSetup := startDefaultHostUpdates(dataDir, logger)
-	defer stopUpdateSetup()
+	if dispatchServiceUpdate(supervisor) {
+		launchUpdateWorker("service-start", dataDir, logger)
+	} else {
+		startHostUpdate(dataDir, logger)
+	}
 	logger.Printf("data: %s", dataDir)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

@@ -10,6 +10,7 @@
  * nothing installed is only reported when it was named. Exit code 1 when a
  * check failed.
  */
+import { lastClientUpdateFailure } from "./startup-update.js";
 import fs from "node:fs";
 
 import { CONTRACT_VERSION, HOOK_CLIENTS, MCP_SERVER_NAME, WAIT_HOOK_TIMEOUT_SEC, isHookClient, noDaemonHint, type HookClient } from "../contract.js";
@@ -303,7 +304,9 @@ export async function runDoctor(argv: string[]): Promise<number> {
         return 1;
     }
     try {
-        let failed = false;
+        const updateFailure = await lastClientUpdateFailure().catch(() => "Could not read the last client update result.");
+        let failed = Boolean(updateFailure);
+        if (updateFailure) process.stdout.write(`client update\n  FAIL ${updateFailure}\n`);
         const defaultEndpoint = configuredEndpoint();
         const endpoints = new Set<string>();
         for (const c of client ? [client] : HOOK_CLIENTS) {

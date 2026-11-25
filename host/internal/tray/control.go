@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"log"
 	"os/exec"
 	"runtime"
 	"time"
@@ -12,10 +13,11 @@ import (
 
 // Options configure the tray.
 type Options struct {
-	Version string
-	DataDir string
-	LogDir  string
-	Exe     string
+	Version                string
+	DataDir                string
+	LogDir                 string
+	Exe                    string
+	ServiceUpdateRequested func(*log.Logger)
 }
 
 // isLAN reports whether settings make the host reachable from the LAN.

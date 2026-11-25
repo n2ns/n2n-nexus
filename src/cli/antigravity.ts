@@ -132,7 +132,7 @@ export function grantsIn(config: Json, keys: string[]): unknown[] {
 /** The line after the front matter that marks the rule file as ours. */
 export const RULE_MARK = "<!-- Written by \"n2n-nexus install antigravity\", removed by \"n2n-nexus uninstall antigravity\". -->";
 
-/** The rule file. `instructions` is the direct-message paragraph Claude Code gets in CLAUDE.md. */
+/** The rule file. `instructions` is the direct-message paragraph Claude Code, Codex and pi get in their user-level instructions. */
 export function renderRule(endpoint: string | undefined, instructions: string): string {
     const command = waiterCommand(endpoint);
     return [

@@ -313,6 +313,6 @@ func Executable() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	stable, _ := program.Stable(exe)
+	stable, _ := program.Invoked(exe, os.Args[0])
 	return filepath.Abs(stable)
 }

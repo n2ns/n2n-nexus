@@ -2,7 +2,6 @@ package update
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -24,15 +21,18 @@ import (
 
 // Run updates the installation from which it was invoked, preserving the host's
 // running/stopped state. Nothing remote is accepted as an installation path.
-func Run(ctx context.Context, v, root, method string, out io.Writer) error {
+func Run(ctx context.Context, v, root, method string, startup bool, out io.Writer) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	return run(ctx, self, v, root, method, out)
+	if startup {
+		self, _ = program.Invoked(self, os.Args[0])
+	}
+	return run(ctx, self, v, root, method, startup, out)
 }
 
-func run(ctx context.Context, self, v, root, method string, out io.Writer) error {
+func run(ctx context.Context, self, v, root, method string, startup bool, out io.Writer) error {
 	if !StableVersion(v) {
 		return fmt.Errorf("only stable release installations can update (this build: %s)", v)
 	}
@@ -54,20 +54,14 @@ func run(ctx context.Context, self, v, root, method string, out io.Writer) error
 			return err
 		}
 	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return err
+	lock := installationLock(exe, method)
+	var ok bool
+	if startup {
+		// Each starting host must eventually reconcile its own data directory.
+		ok, err = lock.TryLockContext(ctx, 200*time.Millisecond)
+	} else {
+		ok, err = lock.TryLock()
 	}
-	dir := filepath.Join(cache, "n2n-nexus", "auto-update")
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	key := exe
-	if runtime.GOOS == "windows" {
-		key = strings.ToLower(key)
-	}
-	lock := flock.New(filepath.Join(dir, fmt.Sprintf("host-%x.lock", sha256.Sum256([]byte(key)))))
-	ok, err := lock.TryLock()
 	if err != nil {
 		return err
 	}
@@ -85,11 +79,25 @@ func run(ctx context.Context, self, v, root, method string, out io.Writer) error
 		return err
 	}
 	if disk != current {
-		return errors.New("the on-disk version changed; run update again")
+		if !startup || !StableVersion(disk.Version) || compare(disk.Version, v) <= 0 {
+			return errors.New("the on-disk version changed; run update again")
+		}
+		if err := current.compatible(disk); err != nil {
+			return err
+		}
 	}
 	before, err := active(root, exe)
 	if err != nil {
 		return err
+	}
+	// Another updater may already have installed a compatible release. Activate
+	// it for this listener without downloading it again or requiring the network.
+	if startup && before.Held && before.Version != disk.Version {
+		return activate(ctx, root, exe, disk, before, out)
+	}
+	if disk != current {
+		fmt.Fprintf(out, "Host %s is already installed.\n", disk.Version)
+		return nil
 	}
 	targetVersion, err := latest(ctx)
 	if err != nil {
@@ -159,6 +167,20 @@ func run(ctx context.Context, self, v, root, method string, out io.Writer) error
 	fmt.Fprintf(out, "Installed host %s; the host is stopped.\n", target.Version)
 	return nil
 }
+
+// Keep the lock with the installation across accounts, cache directories and
+// version changes. Managed version directories themselves are replaced on upgrade.
+func installationLock(exe, method string) *flock.Flock {
+	dir := filepath.Dir(exe)
+	switch method {
+	case "brew": // <prefix>/opt/n2n-nexus-host/bin/<exe>
+		dir = filepath.Dir(filepath.Dir(dir))
+	case "scoop": // <apps>/n2n-nexus-host/current/<exe>
+		dir = filepath.Dir(dir)
+	}
+	return flock.New(filepath.Join(dir, ".n2n-nexus-host-update.lock"))
+}
+
 func inspect(ctx context.Context, exe string) (Build, error) {
 	var result Build
 	cmd := exec.CommandContext(ctx, exe, "auto-update", "info")

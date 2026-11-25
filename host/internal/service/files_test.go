@@ -241,3 +241,14 @@ func TestServicesGetTheLogDir(t *testing.T) {
 		t.Error("CheckWindowsPath --log-dir")
 	}
 }
+
+func TestInteractiveUpdateTaskScope(t *testing.T) {
+	s := WindowsInteractiveUpdateScript(`D:\Apps\n2n-nexus-host-tray.exe`)
+	mustContain(t, s, `Get-ScheduledTask -TaskPath '\' -TaskName $name`, `Register-ScheduledTask -TaskPath '\' -TaskName $name`, `Start-ScheduledTask -TaskPath '\' -TaskName $name`,
+		"-AtLogOn -User $user", "-LogonType Interactive -RunLevel Limited", "-MultipleInstances Queue", "auto-update service-login")
+	if strings.Contains(s, "-AtStartup") || strings.Contains(s, "-Daily") || strings.Contains(s, "-RunAs") || strings.Contains(s, "-Password") {
+		t.Fatal("interactive task should only run as the logged-in owner")
+	}
+	un := WindowsUninstallScript()
+	mustContain(t, un, `Get-ScheduledTask -TaskPath '\' -TaskName 'n2n-nexus-host-startup-update'`, `Unregister-ScheduledTask -TaskPath '\' -TaskName 'n2n-nexus-host-startup-update'`)
+}

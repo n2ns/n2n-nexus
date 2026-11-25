@@ -12,9 +12,6 @@
     "build",
     "contract/*.json",
     "assets",
-    "autoupdate/*.sh",
-    "autoupdate/*.ps1",
-    "autoupdate/postinstall.mjs",
     "README.md",
     "llms.txt",
     "CHANGELOG.md",
@@ -86,7 +83,6 @@
     "node": "^22.14.0 || >=23.6.0"
   },
   "scripts": {
-    "postinstall": "node autoupdate/postinstall.mjs",
     "build": "node -e \"fs.rmSync('build', { recursive: true, force: true })\" && tsc",
     "start": "node build/index.js",
     "dev": "tsc -w",

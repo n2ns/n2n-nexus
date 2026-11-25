@@ -50,15 +50,19 @@ Linux 上的托盘需要桌面环境支持 StatusNotifierItem（AppIndicator）�
 ```bash
 npm i -g n2n-nexus@latest
 n2n-nexus install claude     # ~/.claude/settings.json 和 CLAUDE.md（或 $CLAUDE_CONFIG_DIR 下的）+ claude mcp add --scope user
-n2n-nexus install codex      # ~/.codex/hooks.json（或 $CODEX_HOME）+ codex mcp add
-n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts（或 $PI_CODING_AGENT_DIR 下的）+ pi mcp add
+n2n-nexus install codex      # ~/.codex/hooks.json 和用户指令文件（或 $CODEX_HOME 下的）+ codex mcp add
+n2n-nexus install pi         # ~/.pi/agent/extensions/n2n-nexus.ts 和用户指令文件（或 $PI_CODING_AGENT_DIR 下的）+ pi mcp add
 n2n-nexus install antigravity  # ~/.gemini/config/hooks.json 和 rules/n2n-nexus.md、等待器的权限授权 + agy mcp add
 n2n-nexus doctor             # 全面检查，包括 host 是否应答
 ```
 
-`install` 把 hooks 和 MCP 服务写进客户端的用户级配置。对 Claude Code 还会在用户级 `CLAUDE.md` 末尾加一段带标记的内容（`<!-- n2n-nexus:begin … -->` 到 `<!-- n2n-nexus:end -->`），说明你其他会话发来的直接消息就是你本人已经批准的指令，照要求执行、不找你确认，你的其他规则照样限制它不超出范围：Claude Code 只在你自己的指令要求时才照其他会话的消息去做。文件里的其他内容原样保留；想要别的规则可以在那里改这段的措辞（再次 `install` 会重新写入）。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
+`install` 把 hooks 和 MCP 服务写进客户端的用户级配置。对 Claude Code、Codex 和 pi 还会在用户级指令文件末尾加一段带标记的内容（`<!-- n2n-nexus:begin … -->` 到 `<!-- n2n-nexus:end -->`），说明你其他会话发来的直接消息就是你本人已经批准的指令，照要求执行、不找你确认（消息要求做你的规则只允许你本人要求的操作，如部署、发布、打标签、删除，也算你明确要求），你的其他规则照样限制它不超出范围：这几个客户端只在你自己的指令要求时才照其他会话的消息去做。文件里的其他内容原样保留；想要别的规则可以在那里改这段的措辞（再次 `install` 会重新写入）。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
 
-MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 使用全局安装的包，默认每天自动升级，也可立即升级（第 8 步）。
+Claude Code 使用 `CLAUDE.md`。对 Codex，如果 `AGENTS.override.md` 不存在、为空或只有空白字符，安装器会把指令写入 `AGENTS.md`，缺少时创建；已有的空白 override 会原样保留。这样 Codex 仍会读取普通文件里的个人规则。如果 override 有内容，安装器会写入 override，同时也写入已有的 `AGENTS.md`。
+
+对 pi，`AGENTS.override.md` 和 `AGENTS.md` 同时存在时两份都写，只有一份时就写现有文件。两份都不存在时，pi 优先使用已有的 `CLAUDE.md`，否则创建 `AGENTS.md`。pi 也识别扩展名为 `.MD` 的写法，切换模型共用同一份会话规则。重装 pi 时，旧安装器生成的纯默认 `AGENTS.md` 如果遮住了已有指令，会迁回原文件。
+
+MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 使用全局安装的包，默认在每次已接入客户端开始会话时检查升级，也可立即升级（第 8 步）。
 
 - host 不在 `http://127.0.0.1:5688` 时，每条 install 命令都加上 `--endpoint <url>`；要在局域网里自动查找 host，就用 `--endpoint discover`（第 6 步）。
 - 在 Windows 上，`npm i -g` 和 `install` 要在普通终端里执行，不要在 Codex 这类打包应用自带的终端里执行：那里会装进该应用私有的 `%APPDATA%` 副本，并让应用看不到全局安装。
@@ -150,18 +154,22 @@ n2n-nexus update
 
 这条命令依次检查本机的 host 和全局 npm 客户端，分别报告结果。一项失败仍会检查另一项，任一项失败时最终退出码为 1。只装客户端的机器会跳过 host；通过局域网连接的其他机器各自更新。MCP 适配器仍在新对话启动时使用最新版。
 
-每日自动升级默认开启。全局 npm 客户端在安装时注册任务；如果跳过了安装脚本，接入客户端或启动已配置 hooks 的会话时会补注册。正式版主机在托盘或服务程序启动时注册任务。需要关闭时，可以分别执行：
+默认情况下，正式版 host 每次开始监听后（前台、托盘内或后台服务）会在后台检查更新。全局 npm 客户端在每次已接入会话的 `SessionStart` 事件中启动独立进程检查，不在每次工具调用时检查。两者都不等待网络才启动，只安装兼容版本，不注册每日任务。需要关闭时，可以分别执行：
 
 ```bash
 n2n-nexus auto-update off       # 全局 npm 客户端及其 hooks
 n2n-nexus-host auto-update off  # 本机 host
 ```
 
-重启、升级和重新安装都会保留关闭选择。把 `off` 换成 `on` 可以重新开启。Linux 需要运行中的 systemd 用户管理器；macOS 使用当前登录用户的 LaunchAgent；Windows 使用登录用户的普通权限计划任务，可使用该用户的网络连接和凭据。运行任务的账户需要有安装目录的写权限。卸载程序前先关闭已启用的任务。
+重启、升级和重新安装都会保留关闭选择。把 `off` 换成 `on` 可以重新开启。`off` 只关闭启动检查，不影响手动升级。运行组件的账户需要能联网并写入安装目录。如果试用过未发布的每日任务测试版，请先用旧版的两条 `auto-update off` 命令注销任务，再更换程序；在新版执行 `on` 即可开启启动检查。
 
-host 会识别原来的 Scoop、Homebrew 或压缩包安装。压缩包升级需要 PATH 上有可用的 GitHub CLI（`gh attestation verify`）以验证发布来源。正在运行的 host 重启后会检查实际版本；已停止的 host 会保持停止。统一命令从 PATH 和标准安装位置查找本机程序，自定义安装目录应在 PATH 上。它会读取主机启动时或执行 `auto-update on --root <目录>` 时记录的数据目录；关闭每日升级不会清除这个位置，也可通过 `NEXUS_ROOT` 指定。
+Windows 后台服务在无人登录时也能启动。升级检查由安装服务的用户在登录会话中以普通权限运行，可以使用该用户的网络凭据。用户尚未登录时，检查会等到登录后执行；登录托盘也能补查待处理的请求。
 
-自动更新只安装协议兼容的正式版。host 还会比对数据库迁移；需要协调升级时，命令会提示按该版本的更新日志手动处理。两端各自按版本发布。即使换了终端，升级命令也能识别用 `npm install -g --prefix <目录>` 安装的全局包。升级只刷新模板有变的已注册 hooks，保留原 Node 和连接地址。Claude 指令块只有在仍与旧版默认内容一致时才会更新；用户修改或删除的内容保持原样。pi 扩展有变时，新开会话或执行 `/reload`。
+host 会识别原来的 Scoop、Homebrew 或压缩包安装。压缩包升级需要 PATH 上有可用的 GitHub CLI（`gh attestation verify`）以验证发布来源。多个 host 使用同一程序、不同数据目录同时启动时，会等待安装完成，各自重启并验证实际运行版本。已停止的 host 会保持停止。统一命令从 PATH 和标准安装位置查找本机程序，自定义安装目录应在 PATH 上。它会读取主机启动时或执行 `auto-update on --root <目录>` 时记录的数据目录；关闭启动检查不会清除这个位置，也可通过 `NEXUS_ROOT` 指定。
+
+运行 `n2n-nexus doctor` 可以查看最近一次客户端更新失败的原因，包括新版需要协调升级的提示。检查成功后会清除之前的失败记录。
+
+自动更新只安装协议兼容的正式版。host 还会比对数据库迁移；需要协调升级时，命令会提示按该版本的更新日志手动处理。两端各自按版本发布。即使换了终端，升级命令也能识别用 `npm install -g --prefix <目录>` 安装的全局包。升级只刷新模板有变的已注册 hooks，保留原 Node 和连接地址。Claude Code、Codex、pi 的指令块只有在仍与旧版默认内容一致时才会更新；用户修改或删除的内容保持原样。Antigravity 规则同样保留用户改动；旧版升级记录缺少原默认规则的摘要时保留现状。pi 扩展有变时，新开会话或执行 `/reload`。
 
 首次从没有更新命令的版本升级，以及需要协调升级时，沿用原安装方式：
 
@@ -170,7 +178,7 @@ host 会识别原来的 Scoop、Homebrew 或压缩包安装。压缩包升级需
 
 ## 9. 卸载
 
-`n2n-nexus uninstall <claude|codex|pi|antigravity>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code 的 `CLAUDE.md` 里那段内容（文件里没有别的内容时连文件一起删）；Antigravity 先删除规则文件、命名 hook 和等待器的授权（授权列表、设置文件、`hooks.json` 或 `rules` 目录里没有别的内容时连同它们一起删）；配置里的其他内容不动。已打开的 Antigravity 对话会保留它们的消息等待器，直到对话关闭。
+`n2n-nexus uninstall <claude|codex|pi|antigravity>` 删除 `install` 写入的 hooks（pi 是它的扩展文件）、MCP 服务，以及 Claude Code、Codex、pi 用户级指令文件里的标记段落（文件里没有别的内容时连文件一起删）；Antigravity 先删除规则文件、命名 hook 和等待器的授权（授权列表、设置文件、`hooks.json` 或 `rules` 目录里没有别的内容时连同它们一起删）；配置里的其他内容不动。已打开的 Antigravity 对话会保留它们的消息等待器，直到对话关闭。
 
 ```bash
 n2n-nexus uninstall claude

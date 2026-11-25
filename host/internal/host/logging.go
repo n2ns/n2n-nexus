@@ -27,6 +27,11 @@ func TrayLogWriter(logDir string) io.WriteCloser {
 	return &lumberjack.Logger{Filename: filepath.Join(logDir, "tray.log"), MaxSize: 10, MaxBackups: 3}
 }
 
+// UpdateLogWriter keeps detached startup checks separate from the serving process.
+func UpdateLogWriter(logDir string) io.WriteCloser {
+	return &lumberjack.Logger{Filename: filepath.Join(logDir, "update.log"), MaxSize: 1, MaxBackups: 1}
+}
+
 // NewLogger is the host's logger on w.
 func NewLogger(w io.Writer) *log.Logger { return log.New(w, LogPrefix, log.LstdFlags) }
 

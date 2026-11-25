@@ -81,7 +81,7 @@ var psStopTask = fmt.Sprintf(`if (Get-ScheduledTask -TaskName %[1]s -ErrorAction
 // WindowsTaskActionScript prints the program the scheduled task runs and,
 // on the next line, its arguments; nothing when it is not registered.
 func WindowsTaskActionScript() string {
-	return psPreamble + fmt.Sprintf(`$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
+	return psPreamble + fmt.Sprintf(`$task = Get-ScheduledTask -TaskName %s -TaskPath '\' -ErrorAction SilentlyContinue
 if ($task) { Write-Output $task.Actions[0].Execute; Write-Output $task.Actions[0].Arguments }
 `, psQuote(TaskName))
 }
@@ -146,13 +146,16 @@ Write-Output %s
 // WindowsUninstallScript stops and removes the task.
 func WindowsUninstallScript() string {
 	q := psQuote(TaskName)
-	return psPreamble + psRequireAdmin + psStopTask + fmt.Sprintf(`if (Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName %s -Confirm:$false
-    Write-Output %s
-} else {
-    Write-Output %s
+	return psPreamble + psRequireAdmin + psStopTask + fmt.Sprintf(`if (Get-ScheduledTask -TaskPath '\' -TaskName %[2]s -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskPath '\' -TaskName %[2]s -Confirm:$false
 }
-`, q, q, psQuote(`Removed scheduled task "`+TaskName+`".`), psQuote(`Scheduled task "`+TaskName+`" is not installed.`))
+if (Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName %[1]s -Confirm:$false
+    Write-Output %[3]s
+} else {
+    Write-Output %[4]s
+}
+`, q, psQuote(TaskName+"-startup-update"), psQuote(`Removed scheduled task "`+TaskName+`".`), psQuote(`Scheduled task "`+TaskName+`" is not installed.`))
 }
 
 // WindowsStatusScript prints "installed <State>" or "not-installed".
@@ -298,3 +301,22 @@ X-GNOME-Autostart-enabled=true
 
 // WindowsRunValue is the HKCU Run value: the quoted executable (the tray).
 func WindowsRunValue(exe string) string { return `"` + exe + `"` }
+
+// WindowsInteractiveUpdateScript uses the service owner's ordinary interactive
+// logon for credentials. Existing S4U boot tasks can add the companion on their
+// next start without re-registering the boot service or prompting for a password.
+func WindowsInteractiveUpdateScript(exe string) string {
+	const args = "auto-update service-login"
+	return psPreamble + fmt.Sprintf(`$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$name = %s
+$existing = Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction SilentlyContinue
+if (-not $existing -or @($existing.Actions).Count -ne 1 -or @($existing.Triggers).Count -ne 1 -or $existing.Triggers[0].CimClass.CimClassName -ne 'MSFT_TaskLogonTrigger' -or $existing.Triggers[0].UserId -ne $user -or -not $existing.Triggers[0].Enabled -or $existing.Actions[0].Execute -ne %s -or $existing.Actions[0].Arguments -ne %s -or $existing.Principal.UserId -ne $user -or $existing.Principal.LogonType -ne 'Interactive' -or $existing.Principal.RunLevel -ne 'Limited' -or $existing.Settings.MultipleInstances -ne 'Queue') {
+    $action = New-ScheduledTaskAction -Execute %s -Argument %s
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 50) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Queue
+    Register-ScheduledTask -TaskPath '\' -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+}
+Start-ScheduledTask -TaskPath '\' -TaskName $name
+`, psQuote(TaskName+"-startup-update"), psQuote(exe), psQuote(args), psQuote(exe), psQuote(args))
+}

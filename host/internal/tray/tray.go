@@ -44,17 +44,17 @@ type app struct {
 	settings        config.Settings
 	stopUpdateWatch chan struct{}
 	onUpdate        func()
+	checkUpdate     func(string, *log.Logger)
 
 	status, address, sessions, lan, autostart, restart *systray.MenuItem
 }
 
 // Run shows the tray until Quit; it blocks. The tray logs to tray.log; only
 // a host it runs in-process (which then holds host.lock) writes host.log.
-func Run(o Options, startUpdateSetup func(*log.Logger) func()) error {
+func Run(o Options, checkUpdate func(string, *log.Logger)) error {
 	a, logs := newApp(o)
 	defer logs.Close()
-	stopUpdateSetup := startUpdateSetup(a.logger)
-	defer stopUpdateSetup()
+	a.checkUpdate = checkUpdate
 	relaunch := make(chan struct{}, 1)
 	a.onUpdate = func() { relaunch <- struct{}{}; systray.Quit() }
 	systray.Run(a.ready, a.exit)
@@ -179,6 +179,9 @@ func (a *app) start() {
 		return
 	}
 	a.h, a.hostLogs = h, logs
+	if a.checkUpdate != nil {
+		a.checkUpdate(a.o.DataDir, a.logger)
+	}
 	if a.onUpdate != nil {
 		a.stopUpdateWatch = make(chan struct{})
 		host.WatchRequest(a.o.DataDir, host.UpdateRestartFile, started, time.Second, a.stopUpdateWatch, a.onUpdate)
@@ -191,6 +194,9 @@ func (a *app) start() {
 
 // poll (a.mu held) reads the session count, and in controller mode whether the service answers.
 func (a *app) poll() {
+	if a.o.ServiceUpdateRequested != nil {
+		a.o.ServiceUpdateRequested(a.logger)
+	}
 	switch {
 	case a.h != nil:
 		n, err := a.h.OnlineSessions()

@@ -10,6 +10,6 @@ import (
 )
 
 // Run reports that this build has no tray.
-func Run(Options, func(*log.Logger) func()) error {
+func Run(Options, func(string, *log.Logger)) error {
 	return errors.New("this build has no tray: build with CGO_ENABLED=1 on macOS, or run `n2n-nexus-host serve`")
 }

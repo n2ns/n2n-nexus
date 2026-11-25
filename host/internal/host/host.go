@@ -125,7 +125,7 @@ func start(o Options, lock *Lock) (*Host, error) {
 	}
 	exe, err := os.Executable()
 	if err == nil {
-		stable, _ := program.Stable(exe)
+		stable, _ := program.Invoked(exe, os.Args[0])
 		var digest string
 		digest, err = store.MigrationDigest()
 		if err == nil {
