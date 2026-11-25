@@ -253,3 +253,37 @@ func TestControllerFollowsSettingsChanges(t *testing.T) {
 		t.Fatalf("external %q (want %q), error %v, online %d", external, want, lastErr, online)
 	}
 }
+
+func TestTrayUpdateWatchAfterRecoveringFromStartFailure(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(settings, []byte("invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a, logs := newApp(Options{Version: "test", DataDir: dir, LogDir: t.TempDir()})
+	defer logs.Close()
+	defer a.stopHost()
+	seen := make(chan struct{}, 1)
+	a.onUpdate = func() { seen <- struct{}{} }
+	a.start()
+	if a.h != nil || a.lastErr == nil {
+		t.Fatal("invalid settings did not prevent startup")
+	}
+	s := config.Defaults()
+	s.Port = 0
+	if err := config.SaveSettings(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	a.restartHost()
+	if a.h == nil {
+		t.Fatalf("could not recover: %v", a.lastErr)
+	}
+	if err := os.WriteFile(filepath.Join(dir, host.UpdateRestartFile), []byte("restart\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-seen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("recovered tray did not consume the update restart")
+	}
+}

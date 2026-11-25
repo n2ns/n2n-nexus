@@ -21,6 +21,9 @@ USAGE:
                      Google Antigravity (agy)
   n2n-nexus uninstall <claude|codex|pi|antigravity>
                      Remove the hooks and the MCP server installed by install
+  n2n-nexus update    Upgrade the installed client and host on this machine
+  n2n-nexus auto-update on|off|run
+                     Manage daily updates of this global installation (enabled by default), or check now
   n2n-nexus doctor [claude|codex|pi|antigravity]
                      Check that the Node path and entry script in the installed hooks and
                      the Node path and npx in the MCP command exist and run, and that the
@@ -60,6 +63,28 @@ async function main() {
     if (command === "install" || command === "uninstall") {
         const { runInstallCommand } = await import("./cli/install.js");
         process.exit(await runInstallCommand(command, process.argv.slice(3)));
+    }
+
+    if (command === "update") {
+        const { runUpdate } = await import("./cli/update.js");
+        process.exit(await runUpdate(process.argv.slice(3)));
+    }
+
+    if (command === "auto-update") {
+        const [action, ...extra] = process.argv.slice(3);
+        if (extra.length === 0) {
+            if (action === "on" || action === "off") {
+                const { clientUpdateSchedule } = await import("./cli/update-schedule.js");
+                process.exit(await clientUpdateSchedule(action));
+            }
+            if (action === "run") {
+                const { updateGlobalClient } = await import("./cli/auto-update.js");
+                await updateGlobalClient();
+                return;
+            }
+        }
+        process.stderr.write("Usage: n2n-nexus auto-update on|off|run\n");
+        process.exit(2);
     }
 
     if (command === "doctor") {

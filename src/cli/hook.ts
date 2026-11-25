@@ -10,6 +10,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
     BACKGROUND_WAIT_EVENT, WAKE_RESULT_EVENT, HOOK_INPUT_FIELDS, HOOK_REQUEST_TIMEOUT_MS, HOOK_STOP_REQUEST_TIMEOUT_MS, SESSION_END_REQUEST_TIMEOUT_MS, WAIT_HOOK_TIMEOUT_SEC, WAKE_RETRY_FIRST_DELAY_MS, WAKE_RETRY_MAX_DELAY_MS, noDaemonHint,
@@ -105,6 +106,15 @@ async function forward(argv: string[]): Promise<string> {
         }
     }
     const event = input.hook_event_name;
+    if (event === "SessionStart") {
+        try {
+            const { clientScheduleNeedsSetup } = await import("./update-schedule.js");
+            if (clientScheduleNeedsSetup()) {
+                const worker = fileURLToPath(new URL("../../autoupdate/postinstall.mjs", import.meta.url));
+                await startDetached(process.execPath, [worker, "--session-start"]);
+            }
+        } catch { /* The hook still forwards the event if the scheduler is unavailable. */ }
+    }
     // Every event says where the conversation runs; the host refuses one without it.
     input.machine = machineInfo();
     // A pi process names itself (--client-pid, its extension passes it): tool calls from it find the session.
@@ -353,13 +363,13 @@ async function runAntigravityWait(configured: string): Promise<number> {
  * the client process as `--client-pid`: from `clientPid` on Linux and macOS,
  * found by the launching PowerShell itself on Windows.
  */
-async function startDetached(file: string, args: string[], clientPid: () => number | undefined): Promise<void> {
+async function startDetached(file: string, args: string[], clientPid?: () => number | undefined): Promise<void> {
     if (process.platform !== "win32") {
-        const pid = clientPid();
+        const pid = clientPid?.();
         spawn(file, [...args, ...(pid !== undefined ? ["--client-pid", String(pid)] : [])], { detached: true, stdio: "ignore", windowsHide: true }).unref();
         return;
     }
-    const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
+    const literal = (s: string) => `'${s.replace(/['‘’‚‛]/g, "$&$&")}'`;
     // Start-Process joins -ArgumentList with spaces, so each argument is quoted for the command line itself.
     const quoted = (s: string) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
     // The client process (--client-pid) is found here, in the PowerShell that starts the copy anyway, not
@@ -367,8 +377,8 @@ async function startDetached(file: string, args: string[], clientPid: () => numb
     // through PowerShell). Not found: the copy runs without it.
     const shells = SHELL_NAMES.map(literal).join(",");
     const command = `$a = @(${args.map((a) => literal(quoted(a))).join(",")}); `
-        + `try { $c = ${process.ppid}; for ($i = 0; $i -lt 4; $i++) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $c); if (-not $p) { break }; `
-        + `if (@(${shells}) -notcontains ($p.Name -replace '[.]exe$', '').ToLower()) { $a += ${literal(quoted("--client-pid"))}, ('"' + $c + '"'); break }; $c = $p.ParentProcessId } } catch { }; `
+        + (clientPid ? `try { $c = ${process.ppid}; for ($i = 0; $i -lt 4; $i++) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $c); if (-not $p) { break }; `
+        + `if (@(${shells}) -notcontains ($p.Name -replace '[.]exe$', '').ToLower()) { $a += ${literal(quoted("--client-pid"))}, ('"' + $c + '"'); break }; $c = $p.ParentProcessId } } catch { }; ` : "")
         + `Start-Process -WindowStyle Hidden -FilePath ${literal(file)} -ArgumentList $a`;
     const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     await new Promise<void>((resolve, reject) => {

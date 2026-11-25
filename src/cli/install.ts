@@ -21,6 +21,7 @@
  * `n2n-nexus@latest` through npm's npx with that Node, so every new
  * conversation starts the latest published client.
  */
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -86,7 +87,7 @@ function sameFile(a: string, b: string): boolean {
  * process.execPath. Relative PATH entries and fnm's per-shell directory are
  * skipped: the commands must work from any directory and after the shell ends.
  */
-function stableNodePath(env: NodeJS.ProcessEnv = process.env): string {
+export function stableNodePath(env: NodeJS.ProcessEnv = process.env): string {
     for (const dir of (env.PATH ?? "").split(path.delimiter)) {
         if (!path.isAbsolute(dir) || PER_SHELL_NODE_DIR.test(dir)) continue;
         const candidate = path.join(dir, process.platform === "win32" ? "node.exe" : "node");
@@ -402,6 +403,7 @@ function antigravityStep(action: InstallOptions["action"], command: { node: stri
     if (rule !== undefined && !ruleOurs && install) throw new InstallError(`${ruleFile} exists and is not written by n2n-nexus; move it aside and run again.`);
     const hooksFile = antigravityHooksFile();
     const hooks = readJsonObject(hooksFile);
+    const beforeHook = JSON.stringify(hooks[ANTIGRAVITY_HOOK_NAME]);
     const hadHook = setAntigravityHook(hooks, install ? antigravityHook(command!.node, command!.entry, command!.endpoint) : undefined);
     const grants = antigravityGrantFiles().map(({ label, file, keys }) => {
         const config = readJsonObject(file);
@@ -415,10 +417,10 @@ function antigravityStep(action: InstallOptions["action"], command: { node: stri
     let removed = false;
     if (rule !== undefined && !ruleOurs) {
         process.stdout.write(`Left ${ruleFile} alone: it is not written by n2n-nexus.\n`);
-    } else if (install) {
+    } else if (install && rule !== renderRule(command!.endpoint, DIRECT_MESSAGE_RULE)) {
         replaceFile(linkTarget(ruleFile), renderRule(command!.endpoint, DIRECT_MESSAGE_RULE));
         process.stdout.write(`Wrote the n2n-nexus rule to ${ruleFile}\n`);
-    } else if (ruleOurs) {
+    } else if (!install && ruleOurs) {
         fs.rmSync(linkTarget(ruleFile), { force: true });
         removeEmptyDir(path.dirname(ruleFile));
         process.stdout.write(`Removed the n2n-nexus rule from ${ruleFile}\n`);
@@ -429,7 +431,7 @@ function antigravityStep(action: InstallOptions["action"], command: { node: stri
         if (!install && Object.keys(config).length === 0) fs.rmSync(linkTarget(file), { force: true });
         else writeConfig(file, config);
     };
-    if (install || hadHook) {
+    if (install ? beforeHook !== JSON.stringify(hooks[ANTIGRAVITY_HOOK_NAME]) : hadHook) {
         writeOrRemove(hooksFile, hooks);
         process.stdout.write(`${install ? "Wrote the" : "Removed the"} "${ANTIGRAVITY_HOOK_NAME}" hook ${install ? "to" : "from"} ${hooksFile}\n`);
     }
@@ -472,7 +474,9 @@ function piExtensionStep(action: InstallOptions["action"], command: PiExtensionC
         return false;
     }
     if (action === "install") {
-        writePiExtension(file, renderPiExtension(command!));
+        const next = renderPiExtension(command!);
+        if (text === next) return ours;
+        writePiExtension(file, next);
         process.stdout.write(`Wrote the pi extension to ${file}\n`);
     } else if (ours) {
         fs.rmSync(file, { force: true });
@@ -615,6 +619,60 @@ export function runInstall(options: InstallOptions): number {
 /** The product names the installer's messages use. */
 const CLIENT_NAMES: Record<HookClient, string> = { claude: "Claude Code", codex: "Codex", pi: "pi", antigravity: "Google Antigravity" };
 
+/** Fingerprint what this package would install, independent of each user's paths. */
+export function hookTemplate(client: HookClient): string {
+    const node = "NODE", entry = "n2n-nexus/ENTRY", endpoint = "ENDPOINT";
+    let template: unknown;
+    if (client === "pi") template = renderPiExtension({ node, entry, endpoint });
+    else if (client === "antigravity") template = [antigravityHook(node, entry, endpoint), renderRule(endpoint, DIRECT_MESSAGE_RULE), waiterGrant(endpoint), antigravityGrantFiles().map(({ keys }) => keys)];
+    else {
+        const config: HooksFile = {};
+        addOurEntries(config, client, hookCommand(node, entry, client, endpoint),
+            client === "codex" ? windowsHookCommand(node, entry, client, endpoint) : undefined);
+        template = config;
+    }
+    return createHash("sha256").update(JSON.stringify(template)).digest("hex");
+}
+
+/** During unattended updates, replace only an intact previous default block, in place. */
+export function refreshClaudeInstructions(previous: string): void {
+    if (!previous || previous === INSTRUCTIONS) return;
+    const file = linkTarget(instructionsFile());
+    let text: string;
+    try {
+        text = fs.readFileSync(file, "utf8");
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+    }
+    const start = text.indexOf(INSTRUCTIONS_BEGIN);
+    if (start < 0 || start !== text.lastIndexOf(INSTRUCTIONS_BEGIN) || !text.startsWith(previous, start)) return;
+    replaceFile(file, text.slice(0, start) + INSTRUCTIONS + text.slice(start + previous.length));
+}
+
+/** Refresh only this installation's generated hook configuration, keeping the existing
+ * Node and endpoint. The MCP server registration is independent of the global package. */
+export function refreshHooks(client: HookClient, installed: PiExtensionCommand): boolean {
+    if (client === "pi") {
+        piExtensionStep("install", installed);
+        return false;
+    }
+    if (client === "antigravity") {
+        antigravityStep("install", installed);
+        return false;
+    }
+    const file = configFile(client);
+    const config = readConfig(file);
+    const before = JSON.stringify(config);
+    const { node, entry, endpoint } = installed;
+    removeOurEntries(config, client, file);
+    addOurEntries(config, client, hookCommand(node, entry, client, endpoint),
+        client === "codex" ? windowsHookCommand(node, entry, client, endpoint) : undefined);
+    const changed = JSON.stringify(config) !== before;
+    if (changed) writeConfig(file, config);
+    return changed;
+}
+
 /** Parse `<claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]` and run. */
 export async function runInstallCommand(action: "install" | "uninstall", argv: string[]): Promise<number> {
     const client = argv[0];
@@ -637,7 +695,11 @@ export async function runInstallCommand(action: "install" | "uninstall", argv: s
     const node = option("--node", "a path");
     if (node === null) return 1;
     const code = runInstall({ action, client, endpoint, node });
-    if (code === 0 && action === "install" && client === "codex") await trustCodex();
+    if (code === 0 && action === "install") {
+        if (client === "codex") await trustCodex();
+        const { ensureClientUpdateSchedule } = await import("./update-schedule.js");
+        await ensureClientUpdateSchedule();
+    }
     return code;
 }
 
@@ -645,7 +707,7 @@ export async function runInstallCommand(action: "install" | "uninstall", argv: s
  * Codex runs the hooks just written only once they are trusted: trust them
  * through Codex itself, or say how to do it by hand. Never fails the install.
  */
-async function trustCodex(): Promise<void> {
+export async function trustCodex(strict = false): Promise<void> {
     const { MANUAL_TRUST, NOT_LISTED, codexHookTrust, codexProgram } = await import("./codex-trust.js");
     const program = codexProgram();
     try {
@@ -655,6 +717,7 @@ async function trustCodex(): Promise<void> {
         if (state.untrusted.length > 0) throw new Error(`Codex (${program.label}) still does not trust ${state.untrusted.join(", ")}`);
         process.stdout.write(`Trusted the ${state.ours} n2n-nexus hooks in Codex (${program.label}); start a new Codex conversation to use them.\n`);
     } catch (error) {
+        if (strict) throw error;
         process.stdout.write(`Could not trust the hooks automatically (${(error as Error).message}). Codex does not run them until you ${MANUAL_TRUST}.\n`);
     }
 }

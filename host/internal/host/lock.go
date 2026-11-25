@@ -1,8 +1,11 @@
 package host
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -40,6 +43,11 @@ type LockInfo struct {
 	Held       bool   // a running host holds it
 	PID        int    // the holder's PID (0 if not recorded)
 	Supervisor int    // the PID of its `serve --supervise`, 0 if none
+	Address    string // actual bound address, including a dynamically assigned port
+	Contract   int
+	Schema     string
+	Executable string // stable host program for this installation
+	Version    string // build that owns the lock
 	Role       string // RoleTray, RoleServe or RoleSupervised ("" if not recorded)
 }
 
@@ -94,10 +102,14 @@ func ReadLock(dataDir string) (LockInfo, error) {
 	if err != nil {
 		return info, err
 	}
-	buf := make([]byte, 128)
+	buf := make([]byte, 32<<10)
 	n, _ := f.ReadAt(buf, lockRecordOffset)
 	f.Close()
-	info.PID, info.Supervisor, info.Role = parseRecord(string(buf[:n]))
+	header, details, _ := bytes.Cut(buf[:n], []byte("\n"))
+	if len(details) > 0 {
+		_ = json.Unmarshal(details, &info)
+	}
+	info.PID, info.Supervisor, info.Role = parseRecord(string(header))
 
 	fl := flock.New(LockFile(dataDir))
 	ok, err := fl.TryLock()
@@ -125,4 +137,21 @@ func parseRecord(s string) (pid, supervisor int, role string) {
 		}
 	}
 	return pid, supervisor, role
+}
+
+// RecordListener extends the existing lock record once the socket is bound. Older
+// readers still read the first line. The holder alone writes to the locked file.
+func RecordListener(dataDir, address, exe, v string, contract int, schema string) error {
+	f, err := os.OpenFile(LockFile(dataDir), os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err = f.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	return json.NewEncoder(f).Encode(struct {
+		Address, Executable, Version, Schema string
+		Contract                             int
+	}{address, exe, v, schema, contract})
 }

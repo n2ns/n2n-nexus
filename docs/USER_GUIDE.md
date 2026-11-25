@@ -68,6 +68,8 @@ n2n-nexus-host autostart on|off
 # Windows: install or upgrade from the folder of an extracted release (default %LOCALAPPDATA%\Programs\n2n-nexus-host)
 n2n-nexus-host install [--dir <dir>]
 
+n2n-nexus-host auto-update on|run [--root <dir>] [--method archive|brew|scoop]
+n2n-nexus-host auto-update off
 n2n-nexus-host version
 ```
 
@@ -82,6 +84,8 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <instance id>]
 # Install / remove the hooks and MCP server for Claude Code, Codex, pi or Antigravity (and the CLAUDE.md block for Claude Code; for pi the hooks are an extension file; for Antigravity also its rule file and the waiter's permission grants)
 n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]
 n2n-nexus uninstall <claude|codex|pi|antigravity>
+n2n-nexus update
+n2n-nexus auto-update on|off|run
 
 # Check that the installed hook and MCP commands still run and that the host answers
 # with the client's contract version (exit 1 when not)

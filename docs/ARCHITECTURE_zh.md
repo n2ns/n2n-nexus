@@ -30,7 +30,7 @@ n2n-nexus（npm）：无状态适配器，每条 MCP 连接一个
 两个程序共用一份协议：
 
 - **`n2n-nexus-host`**（Go，`host/`）：保存全部数据、工具定义和业务逻辑。从 GitHub Releases、Homebrew 或 Scoop 安装。
-- **`n2n-nexus`**（TypeScript，npm，`src/`）：只有客户端——MCP 适配器（`mcp`）、hook 命令（`hook`）、为 Claude Code、Codex、pi 和 Google Antigravity 执行的 `install` / `uninstall`，以及 `doctor`。不含存储，也不含服务器。
+- **`n2n-nexus`**（TypeScript，npm，`src/`）：只有客户端——MCP 适配器（`mcp`）、hook 命令（`hook`）、为 Claude Code、Codex、pi 和 Google Antigravity 执行的 `install` / `uninstall`，以及 `doctor`。本地维护命令为 `update` 和 `auto-update`，npm 更新器按全局安装位置保存升级锁和待刷新的 hook 配置。
 - **`contract/`** 是两边协议的唯一来源：`tools.json`（每个工具的名称、标题、说明、annotations、输入和输出 JSON Schema）、`hook.json`（hook 字段、`_meta` 键名、局域网发现查询串、时限、上限、通知文本）、`errors.json`（接口、错误格式、状态码）。host 嵌入这些文件，客户端运行时读取 `hook.json`，`tests/conformance/` 里的一致性测试用它们检验 host。`GET /health` 返回 host 的 `contractVersion`，`n2n-nexus doctor` 拿它和客户端的版本比较。
 
 ### 核心原则
@@ -175,7 +175,7 @@ Antigravity 没有能在后台等待的 hook，所以它的等待器是一条由
 
 ### 单实例
 
-host 在打开数据库之前对 `<数据目录>/host.lock` 加独占锁，并在其中记录自己的 PID、监督进程的 PID 和角色（`tray`、`serve` 或 `supervised`）。同一数据目录的第二个 host 会报“another n2n-nexus-host is running for <dir> (PID n)”并退出。
+host 在打开数据库之前对 `<数据目录>/host.lock` 加独占锁，并在其中记录自己的 PID、监督进程的 PID 和角色（`tray`、`serve` 或 `supervised`）。监听就绪后，锁文件还会记录实际地址、程序路径、运行版本和兼容性信息，供更新器核实。同一数据目录的第二个 host 会报“another n2n-nexus-host is running for <dir> (PID n)”并退出。
 
 ---
 

@@ -54,6 +54,7 @@ n2n-nexus 为 AI 助手提供共享协作空间。一个长期运行的本地 ho
 **概要**
 
 - **安装**：host 用 Scoop / Homebrew / Release 压缩包安装 `n2n-nexus-host`；客户端 `npm i -g n2n-nexus@latest` 后执行 `n2n-nexus install <claude|codex|pi|antigravity>`
+- 客户端和 host 默认每天自动升级。运行 `n2n-nexus update` 可立即检查并升级本机安装。[每日自动升级及兼容性说明](INSTALL_zh.md#8-升级)
 - **协议**：Model Context Protocol (MCP)，适配器通过 HTTP 连接 host
 - **存储**：host 数据目录下的一个 SQLite 数据库
 - **适合**：多助手编码会话、项目交接、共享决策、会议记录、任务跟踪、项目 Manifest

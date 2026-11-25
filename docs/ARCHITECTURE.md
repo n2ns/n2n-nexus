@@ -30,7 +30,7 @@ n2n-nexus (npm): stateless adapter, one per MCP connection
 Two programs share one protocol:
 
 - **`n2n-nexus-host`** (Go, `host/`): owns all data, tool definitions and business logic. Installed from GitHub Releases, Homebrew or Scoop.
-- **`n2n-nexus`** (TypeScript, npm, `src/`): the client only — the MCP adapter (`mcp`), the hook command (`hook`), `install` / `uninstall` for Claude Code, Codex, pi and Google Antigravity, and `doctor`. It contains no storage and no server.
+- **`n2n-nexus`** (TypeScript, npm, `src/`): the client only — the MCP adapter (`mcp`), the hook command (`hook`), `install` / `uninstall` for Claude Code, Codex, pi and Google Antigravity, and `doctor`. The local maintenance commands are `update` and `auto-update`. The npm updater stores a lock and pending hook refreshes per global prefix.
 - **`contract/`** is the single source of the protocol between them: `tools.json` (every tool's name, title, description, annotations, input and output JSON Schema), `hook.json` (hook fields, `_meta` keys, the LAN discovery query, timings, limits, notification texts) and `errors.json` (endpoints, error body, status codes). The host embeds these files, the client reads `hook.json` at run time, and the conformance tests in `tests/conformance/` check a host against them. `GET /health` reports the host's `contractVersion`; `n2n-nexus doctor` compares it with the client's.
 
 ### Core Principles
@@ -177,7 +177,7 @@ Every service runs `n2n-nexus-host serve --supervise --root <data dir> --log-dir
 
 ### Single instance
 
-A host takes an exclusive lock on `<data dir>/host.lock` before it opens the database and records its PID, its supervisor's and its role (`tray`, `serve` or `supervised`) there. A second host for the same data directory exits with "another n2n-nexus-host is running for <dir> (PID n)".
+A host takes an exclusive lock on `<data dir>/host.lock` before it opens the database and records its PID, its supervisor's and its role (`tray`, `serve` or `supervised`) there. Once the listener is ready, the lock record also includes the actual address, executable, build and compatibility information used to verify updates. A second host for the same data directory exits with "another n2n-nexus-host is running for <dir> (PID n)".
 
 ---
 

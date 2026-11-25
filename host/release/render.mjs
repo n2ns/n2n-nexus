@@ -20,7 +20,7 @@ fs.mkdirSync(path.join(out, "winget"), { recursive: true });
 const description = "Host of n2n-nexus: lets Claude Code, Codex and pi conversations find and message each other";
 
 // Homebrew: built from source on the user's machine, so Gatekeeper never sees a downloaded binary.
-fs.writeFileSync(path.join(out, "n2n-nexus-host.rb"), `class N2nNexusHost < Formula
+const formulaTemplate = `class N2nNexusHost < Formula
   desc "${description}"
   homepage "${repo}"
   url "${repo}/archive/refs/tags/${tag}.tar.gz"
@@ -28,9 +28,12 @@ fs.writeFileSync(path.join(out, "n2n-nexus-host.rb"), `class N2nNexusHost < Form
   sha256 "${sourceSha}"
   license "Apache-2.0"
 
+  option "with-nexus-recipe-RECIPE_ID", "Require this release recipe during an automatic update"
   depends_on "go" => :build
 
   def install
+    expected = ENV["N2N_NEXUS_BREW_RECIPE"]
+    raise "The formula changed during the update" if expected && expected != "RECIPE_ID"
     system "go", "build", *std_go_args(ldflags: "-s -w -X main.version=#{version}"), "./host/cmd/n2n-nexus-host"
   end
 
@@ -38,7 +41,9 @@ fs.writeFileSync(path.join(out, "n2n-nexus-host.rb"), `class N2nNexusHost < Form
     assert_equal version.to_s, shell_output("#{bin}/n2n-nexus-host version").strip
   end
 end
-`);
+`;
+const recipeId = createHash("sha256").update(formulaTemplate).digest("hex");
+fs.writeFileSync(path.join(out, "n2n-nexus-host.rb"), formulaTemplate.replaceAll("RECIPE_ID", recipeId));
 
 // Scoop
 fs.writeFileSync(path.join(out, "n2n-nexus-host.json"), JSON.stringify({

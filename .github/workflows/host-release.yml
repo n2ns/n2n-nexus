@@ -84,8 +84,14 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Compatibility of this build
+        run: |
+          version="${GITHUB_REF_NAME#host-v}"
+          tar -xOzf "dist/n2n-nexus-host_${version}_linux_amd64.tar.gz" ./n2n-nexus-host > "$RUNNER_TEMP/n2n-nexus-host"
+          chmod +x "$RUNNER_TEMP/n2n-nexus-host"
+          "$RUNNER_TEMP/n2n-nexus-host" auto-update info > dist/update.json
       - name: Checksums
-        run: cd dist && sha256sum n2n-nexus-host_* > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum n2n-nexus-host_* update.json > SHA256SUMS && cat SHA256SUMS
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: dist/n2n-nexus-host_*
@@ -111,7 +117,7 @@ jobs:
           if [ "$state" = none ]; then
             gh release create "$GITHUB_REF_NAME" $prerelease --title "n2n-nexus-host ${version}" \
               --notes "n2n-nexus-host ${version}. Install: see host/README.md. Verify: gh attestation verify <file> --repo ${GITHUB_REPOSITORY}" \
-              dist/n2n-nexus-host_* dist/SHA256SUMS dist/winget-manifests.zip
+              dist/n2n-nexus-host_* dist/SHA256SUMS dist/update.json dist/winget-manifests.zip
           else
             # A rerun after a later step failed: the published files stay as they are, and the
             # manifests pushed below must name them, so this run must have built the same archives.

@@ -58,7 +58,7 @@ n2n-nexus doctor             # 全面检查，包括 host 是否应答
 
 `install` 把 hooks 和 MCP 服务写进客户端的用户级配置。对 Claude Code 还会在用户级 `CLAUDE.md` 末尾加一段带标记的内容（`<!-- n2n-nexus:begin … -->` 到 `<!-- n2n-nexus:end -->`），说明你其他会话发来的直接消息就是你本人已经批准的指令，照要求执行、不找你确认，你的其他规则照样限制它不超出范围：Claude Code 只在你自己的指令要求时才照其他会话的消息去做。文件里的其他内容原样保留；想要别的规则可以在那里改这段的措辞（再次 `install` 会重新写入）。装完后要**新开**对话：正在进行的对话不会加载新的 MCP 服务器。
 
-MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 用的是全局安装的包，需要你自己升级（第 8 步）。
+MCP 服务器会自己更新：它通过 npm 的 npx 运行 `n2n-nexus@latest`，所以每次新开对话都会向 npm 查询最新版本并启动它（新版本只下载一次，之后从 npm 缓存启动）。hooks 使用全局安装的包，默认每天自动升级，也可立即升级（第 8 步）。
 
 - host 不在 `http://127.0.0.1:5688` 时，每条 install 命令都加上 `--endpoint <url>`；要在局域网里自动查找 host，就用 `--endpoint discover`（第 6 步）。
 - 在 Windows 上，`npm i -g` 和 `install` 要在普通终端里执行，不要在 Codex 这类打包应用自带的终端里执行：那里会装进该应用私有的 `%APPDATA%` 副本，并让应用看不到全局安装。
@@ -142,10 +142,31 @@ IPv6 发现会保持 HTTP 的地址族：本机监听 `::` 时使用 `[::1]`，�
 
 ## 8. 升级
 
-每台机器上的 host 和客户端都要升到同一个版本：契约版本不同的 host 和客户端会拒绝对方的请求，`n2n-nexus doctor` 会报告不匹配。升级前先看该版本的 CHANGELOG，需要重置 host 数据目录时那里会写明。
+在每台使用 n2n-nexus 的机器上，用安装时的用户执行：
 
-- 客户端：MCP 服务器不用管，每次新开对话都会启动最新版本（正在进行的对话保持它启动时的版本，以及它启动时从 host 取得的工具定义；CHANGELOG 写明某个版本改了工具定义时，升级 host 后请新开对话）。hooks 需要运行 `npm i -g n2n-nexus@latest`，之后立即用上新版本。
-- host：用当初安装它的包管理器升级（`scoop update n2n-nexus-host`、`brew upgrade n2n-nexus-host`）。Windows 上用发布的 zip 安装的，在新版本的发布包里运行 `n2n-nexus-host.exe install` 即可，它会自己重启托盘和后台服务。其他情况直接替换程序后重启（托盘：**重启**；服务：在管理员终端里再运行一次 `n2n-nexus-host service install`）。
+```bash
+n2n-nexus update
+```
+
+这条命令依次检查本机的 host 和全局 npm 客户端，分别报告结果。一项失败仍会检查另一项，任一项失败时最终退出码为 1。只装客户端的机器会跳过 host；通过局域网连接的其他机器各自更新。MCP 适配器仍在新对话启动时使用最新版。
+
+每日自动升级默认开启。全局 npm 客户端在安装时注册任务；如果跳过了安装脚本，接入客户端或启动已配置 hooks 的会话时会补注册。正式版主机在托盘或服务程序启动时注册任务。需要关闭时，可以分别执行：
+
+```bash
+n2n-nexus auto-update off       # 全局 npm 客户端及其 hooks
+n2n-nexus-host auto-update off  # 本机 host
+```
+
+重启、升级和重新安装都会保留关闭选择。把 `off` 换成 `on` 可以重新开启。Linux 需要运行中的 systemd 用户管理器；macOS 使用当前登录用户的 LaunchAgent；Windows 使用登录用户的普通权限计划任务，可使用该用户的网络连接和凭据。运行任务的账户需要有安装目录的写权限。卸载程序前先关闭已启用的任务。
+
+host 会识别原来的 Scoop、Homebrew 或压缩包安装。压缩包升级需要 PATH 上有可用的 GitHub CLI（`gh attestation verify`）以验证发布来源。正在运行的 host 重启后会检查实际版本；已停止的 host 会保持停止。统一命令从 PATH 和标准安装位置查找本机程序，自定义安装目录应在 PATH 上。它会读取主机启动时或执行 `auto-update on --root <目录>` 时记录的数据目录；关闭每日升级不会清除这个位置，也可通过 `NEXUS_ROOT` 指定。
+
+自动更新只安装协议兼容的正式版。host 还会比对数据库迁移；需要协调升级时，命令会提示按该版本的更新日志手动处理。两端各自按版本发布。即使换了终端，升级命令也能识别用 `npm install -g --prefix <目录>` 安装的全局包。升级只刷新模板有变的已注册 hooks，保留原 Node 和连接地址。Claude 指令块只有在仍与旧版默认内容一致时才会更新；用户修改或删除的内容保持原样。pi 扩展有变时，新开会话或执行 `/reload`。
+
+首次从没有更新命令的版本升级，以及需要协调升级时，沿用原安装方式：
+
+- 客户端运行 `npm i -g n2n-nexus@latest`，按更新日志刷新相应客户端的注册。
+- host 使用 `scoop update n2n-nexus-host`、`brew upgrade n2n-nexus-host`，或在新版 Windows 发布包里运行 `n2n-nexus-host.exe install`。其他压缩包安装替换程序后，按原启动方式重启。
 
 ## 9. 卸载
 

@@ -12,6 +12,9 @@ import (
 // the scheduled task's S4U logon (OpenProcess is denied), but it can write here.
 const RestartRequestFile = "restart-request"
 
+// UpdateRestartFile asks a foreground host or tray to relaunch its installed program.
+const UpdateRestartFile = "update-restart-request"
+
 // RequestRestart asks the supervised serve for dataDir to restart.
 func RequestRestart(dataDir string) error {
 	return os.WriteFile(filepath.Join(dataDir, RestartRequestFile), []byte("restart\n"), 0o600)
@@ -23,7 +26,11 @@ func RequestRestart(dataDir string) error {
 // earlier serve and is removed, a newer one (written while this serve started,
 // with settings it may not have loaded) restarts it.
 func WatchRestart(dataDir string, since time.Time, interval time.Duration, done <-chan struct{}, onRequest func()) {
-	path := filepath.Join(dataDir, RestartRequestFile)
+	WatchRequest(dataDir, RestartRequestFile, since, interval, done, onRequest)
+}
+
+func WatchRequest(dataDir, name string, since time.Time, interval time.Duration, done <-chan struct{}, onRequest func()) {
+	path := filepath.Join(dataDir, name)
 	if info, err := os.Stat(path); err == nil && info.ModTime().Before(since) {
 		_ = os.Remove(path)
 	}

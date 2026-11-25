@@ -58,7 +58,7 @@ n2n-nexus doctor             # checks everything, including that the host answer
 
 `install` writes the hooks and the MCP server into the client's user configuration. For Claude Code it also adds a marked block (`<!-- n2n-nexus:begin … -->` to `<!-- n2n-nexus:end -->`) at the end of your user-level `CLAUDE.md`, saying that a direct message from your other sessions is your instruction, already approved, to carry out exactly and without asking you for confirmation, while your other rules still keep the work from going beyond it: Claude Code acts on another session's message only where your own instructions call for it. The rest of the file is kept as it is; edit the block's wording there if you want other rules (a new `install` writes it again). Start a **new** conversation afterwards: running conversations do not load the new MCP server.
 
-The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package, which you update yourself (step 8).
+The MCP server updates itself: it runs `n2n-nexus@latest` through npm's npx, so every new conversation asks npm for the latest version and starts it (a new release is downloaded once, then started from npm's cache). The hooks run the globally installed package. It updates daily by default and can also be updated on demand (step 8).
 
 - Pass `--endpoint <url>` to each install command when the host is not at `http://127.0.0.1:5688`, or `--endpoint discover` to find a host on the LAN (step 6).
 - On Windows, run `npm i -g` and `install` from a regular terminal, not from the terminal of a packaged app such as Codex: that terminal installs into the app's private copy of `%APPDATA%`, which hides the global install from the app.
@@ -142,10 +142,31 @@ IPv6 discovery keeps the HTTP address family: a host bound to `::` on this machi
 
 ## 8. Upgrading
 
-Upgrade the host and the client on every machine to the same release: a host and a client of different contract versions refuse each other's requests, and `n2n-nexus doctor` reports the mismatch. Read the CHANGELOG entry of the release first; it says when the host's data directory has to be reset.
+Run this as the installation owner on each machine that uses n2n-nexus:
 
-- Client: the MCP server needs nothing: each new conversation starts the latest version (a running conversation keeps the one it started with, and the tool definitions it got from the host when it started; when the CHANGELOG says a release changes them, start new conversations after upgrading the host). For the hooks, run `npm i -g n2n-nexus@latest`; they use the new version at once.
-- Host: upgrade with the package manager you installed it with (`scoop update n2n-nexus-host`, `brew upgrade n2n-nexus-host`). A Windows install from the release zip upgrades with `n2n-nexus-host.exe install` from the newer release, which restarts the tray and the background service itself. Otherwise replace the program, then restart it (tray: **Restart**; service: run `n2n-nexus-host service install` again from an administrator terminal).
+```bash
+n2n-nexus update
+```
+
+This checks the local host and the global npm client in turn and reports each result. A failure still allows the other check to run and makes the command exit with status 1. Client-only machines skip the host. Hosts reached over the LAN update on their own machine. Each new conversation continues to start the latest MCP adapter.
+
+Daily updates are enabled by default. Installing the global npm client registers its job. If installation scripts were skipped, connecting a client or starting a hooked session retries setup. The stable host registers its job when its tray or server starts. To turn off either component:
+
+```bash
+n2n-nexus auto-update off       # Global npm client and its hooks
+n2n-nexus-host auto-update off  # Local host
+```
+
+Each component remembers an explicit `off` across restarts, upgrades and reinstallation. Use `on` to enable it again. Linux requires a running systemd user manager. macOS uses a LaunchAgent for the logged-in user. Windows uses a limited Task Scheduler job under the logged-in user so it can access the same network and credentials as a manual update. The account that runs the job needs write access to the installation. Disable the jobs before uninstalling their programs.
+
+The host detects Scoop, Homebrew and release-archive installations. Archive updates require GitHub CLI on PATH with working `gh attestation verify` to verify the build provenance. The updater checks the actual version after restarting a running host and keeps a stopped host stopped. The combined command searches PATH and standard install locations. Put a custom installation directory on PATH. It uses the data directory recorded when the host starts or when you run `auto-update on --root <dir>`. Turning off daily updates does not erase this location. You can also set `NEXUS_ROOT`.
+
+Automatic updates install compatible stable releases. The host also compares database migrations. Follow the release notes to upgrade manually when a release requires coordination. The two components are versioned independently. The global client recognizes an installation made with `npm install -g --prefix <dir>` even in a new shell. It refreshes changed hook templates, preserving their Node and endpoint. Updates replace the Claude instructions block only if it still matches the previous default; edited or removed instructions are left alone. Start a new pi session or use `/reload` to load a changed pi extension.
+
+For the first upgrade from versions without these commands, or for a coordinated update, use the original installation method:
+
+- For the global client run `npm i -g n2n-nexus@latest` and follow the release notes to refresh the applicable registration.
+- For the host run `scoop update n2n-nexus-host`, `brew upgrade n2n-nexus-host`, or `n2n-nexus-host.exe install` from a new Windows release zip. For other archive installs, replace the program and restart it the way it was launched.
 
 ## 9. Uninstalling
 

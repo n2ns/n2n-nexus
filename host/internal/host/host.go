@@ -18,6 +18,7 @@ import (
 	"github.com/n2ns/n2n-nexus/host/internal/config"
 	"github.com/n2ns/n2n-nexus/host/internal/core"
 	"github.com/n2ns/n2n-nexus/host/internal/discovery"
+	"github.com/n2ns/n2n-nexus/host/internal/program"
 	"github.com/n2ns/n2n-nexus/host/internal/protocol"
 	"github.com/n2ns/n2n-nexus/host/internal/store"
 	"github.com/n2ns/n2n-nexus/host/internal/testhooks"
@@ -119,6 +120,20 @@ func start(o Options, lock *Lock) (*Host, error) {
 
 	ln, err := net.Listen(listenNetwork(o.Settings.Host), net.JoinHostPort(o.Settings.Host, fmt.Sprint(o.Settings.Port)))
 	if err != nil {
+		st.Close()
+		return nil, err
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		stable, _ := program.Stable(exe)
+		var digest string
+		digest, err = store.MigrationDigest()
+		if err == nil {
+			err = RecordListener(o.DataDir, ln.Addr().String(), program.Console(stable), o.Version, contract.Version, digest)
+		}
+	}
+	if err != nil {
+		ln.Close()
 		st.Close()
 		return nil, err
 	}

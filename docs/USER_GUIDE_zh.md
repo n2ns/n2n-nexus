@@ -68,6 +68,8 @@ n2n-nexus-host autostart on|off
 # Windows：在解压后的发布包目录里安装或升级（默认装到 %LOCALAPPDATA%\Programs\n2n-nexus-host）
 n2n-nexus-host install [--dir <dir>]
 
+n2n-nexus-host auto-update on|run [--root <dir>] [--method archive|brew|scoop]
+n2n-nexus-host auto-update off
 n2n-nexus-host version
 ```
 
@@ -82,6 +84,8 @@ NEXUS_ENDPOINT=http://127.0.0.1:5688 n2n-nexus mcp [--id <实例 ID>]
 # 为 Claude Code、Codex、pi 或 Antigravity 安装 / 删除 hooks 和 MCP 服务（Claude Code 还有 CLAUDE.md 里的那段内容；pi 的 hooks 是一个扩展文件；Antigravity 还有规则文件和等待器的权限授权）
 n2n-nexus install <claude|codex|pi|antigravity> [--endpoint <url>] [--node <path>]
 n2n-nexus uninstall <claude|codex|pi|antigravity>
+n2n-nexus update
+n2n-nexus auto-update on|off|run
 
 # 检查已安装的 hook 和 MCP 命令是否还能运行，以及 host 是否以相同协议版本应答
 # （有问题时退出码 1）

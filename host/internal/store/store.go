@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"errors"
@@ -114,6 +115,24 @@ func ScanString(rows *sql.Rows) (string, error) {
 
 // ISO formats t like JavaScript's toISOString (UTC, milliseconds), the format stored in every timestamp column.
 func ISO(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
+
+// MigrationDigest identifies the complete migration series, including a reset or rewrite
+// that reuses an earlier migration number. Directory entries are in filename order.
+func MigrationDigest() (string, error) {
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	for _, entry := range entries {
+		b, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(h, "%s\x00%s\x00", entry.Name(), strings.ReplaceAll(string(b), "\r\n", "\n"))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
 
 type migration struct {
 	version int

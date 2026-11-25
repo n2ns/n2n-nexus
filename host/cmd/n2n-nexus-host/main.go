@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -29,6 +30,8 @@ const usage = `usage:
   n2n-nexus-host service install|uninstall|status [--host <addr>] [--port <port>] [--root <dir>]
   n2n-nexus-host autostart on|off
   n2n-nexus-host install [--dir <dir>]             Windows: install or upgrade from this release folder
+  n2n-nexus-host auto-update off
+  n2n-nexus-host auto-update on|run [--root <dir>] [--method archive|brew|scoop]
   n2n-nexus-host version
 `
 
@@ -55,6 +58,8 @@ func main() {
 		os.Exit(autostart(args))
 	case "install":
 		os.Exit(install(args))
+	case "auto-update":
+		os.Exit(autoUpdate(args))
 	case "version":
 		fmt.Println(version)
 	case "help", "-h", "--help":
@@ -79,7 +84,9 @@ func runTray() int {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return 1
 	}
-	err := tray.Run(tray.Options{Version: version, DataDir: dataDir, LogDir: config.LogDir(), Exe: executable()})
+	err := tray.Run(tray.Options{Version: version, DataDir: dataDir, LogDir: config.LogDir(), Exe: executable()}, func(logger *log.Logger) func() {
+		return startDefaultHostUpdates(os.Getenv("NEXUS_ROOT"), logger)
+	})
 	if err != nil {
 		attachConsole()
 		fmt.Fprintln(os.Stderr, err)
@@ -123,6 +130,7 @@ func serve(args []string) int {
 		logger.Print(err)
 		return 1
 	}
+	launchPath := executable()
 	started := time.Now() // before the settings load: restart requests from now on are for this serve
 	settings, err := config.LoadSettings(dataDir)
 	if err != nil {
@@ -138,22 +146,34 @@ func serve(args []string) int {
 	}
 	// The conformance harness reads the port from this line.
 	logger.Print(host.ReadyLine(version, h))
+	stopUpdateSetup := startDefaultHostUpdates(dataDir, logger)
+	defer stopUpdateSetup()
 	logger.Printf("data: %s", dataDir)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	restart := make(chan struct{})
+	done := make(chan struct{})
+	defer close(done)
 	if supervisor > 0 {
 		service.WatchSupervisor(supervisor, func() { stop <- syscall.SIGTERM })
 		// The tray asks for a restart through a file; its supervisor then starts serve again.
-		done := make(chan struct{})
-		defer close(done)
 		host.WatchRestart(dataDir, started, time.Second, done, func() { close(restart) })
+	} else {
+		host.WatchRequest(dataDir, host.UpdateRestartFile, started, time.Second, done, func() { close(restart) })
 	}
 	select {
 	case <-stop:
 	case <-testhooks.Shutdown():
 	case <-restart:
 		logger.Print("restart requested")
+		if supervisor == 0 {
+			h.Stop()
+			if err := service.Relaunch(launchPath); err != nil {
+				logger.Print(err)
+				return 1
+			}
+			return 0
+		}
 	}
 	logger.Print("shutting down")
 	h.Stop()

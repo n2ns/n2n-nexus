@@ -35,24 +35,35 @@ type app struct {
 	t      texts
 	logger *log.Logger // tray.log
 
-	mu       sync.Mutex
-	h        *host.Host     // the in-process host, nil when not running here
-	hostLogs io.WriteCloser // host.log of the in-process host, nil when none
-	external string         // address of a host running elsewhere (controller mode), "" if none
-	lastErr  error
-	online   int // agent sessions not offline, as last read
-	settings config.Settings
+	mu              sync.Mutex
+	h               *host.Host     // the in-process host, nil when not running here
+	hostLogs        io.WriteCloser // host.log of the in-process host, nil when none
+	external        string         // address of a host running elsewhere (controller mode), "" if none
+	lastErr         error
+	online          int // agent sessions not offline, as last read
+	settings        config.Settings
+	stopUpdateWatch chan struct{}
+	onUpdate        func()
 
 	status, address, sessions, lan, autostart, restart *systray.MenuItem
 }
 
 // Run shows the tray until Quit; it blocks. The tray logs to tray.log; only
 // a host it runs in-process (which then holds host.lock) writes host.log.
-func Run(o Options) error {
+func Run(o Options, startUpdateSetup func(*log.Logger) func()) error {
 	a, logs := newApp(o)
 	defer logs.Close()
+	stopUpdateSetup := startUpdateSetup(a.logger)
+	defer stopUpdateSetup()
+	relaunch := make(chan struct{}, 1)
+	a.onUpdate = func() { relaunch <- struct{}{}; systray.Quit() }
 	systray.Run(a.ready, a.exit)
-	return nil
+	select {
+	case <-relaunch:
+		return service.Relaunch(o.Exe)
+	default:
+		return nil
+	}
 }
 
 // newApp is the tray's state, logging to tray.log.
@@ -128,6 +139,10 @@ func (a *app) exit() {
 
 // stopHost (a.mu held) stops the in-process host, if any, and closes host.log.
 func (a *app) stopHost() {
+	if a.stopUpdateWatch != nil {
+		close(a.stopUpdateWatch)
+		a.stopUpdateWatch = nil
+	}
 	if a.h != nil {
 		a.h.Stop()
 		a.h = nil
@@ -141,6 +156,7 @@ func (a *app) stopHost() {
 
 // start (a.mu held) loads the settings and either finds a running host or starts one here.
 func (a *app) start() {
+	started := time.Now()
 	a.lastErr, a.external = nil, ""
 	s, err := config.LoadSettings(a.o.DataDir)
 	a.settings = s
@@ -163,6 +179,10 @@ func (a *app) start() {
 		return
 	}
 	a.h, a.hostLogs = h, logs
+	if a.onUpdate != nil {
+		a.stopUpdateWatch = make(chan struct{})
+		host.WatchRequest(a.o.DataDir, host.UpdateRestartFile, started, time.Second, a.stopUpdateWatch, a.onUpdate)
+	}
 	for _, l := range []*log.Logger{hostLogger, a.logger} {
 		l.Print(host.ReadyLine(a.o.Version, h))
 		l.Printf("data: %s", a.o.DataDir)

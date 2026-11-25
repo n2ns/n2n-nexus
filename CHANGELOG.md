@@ -4,6 +4,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- Updates preserve edited or removed Claude instructions, recognize custom global npm prefixes, and remember the running host’s data directory when daily updates are disabled. Homebrew updates no longer require `brew` on the scheduler’s PATH.
+
+- Run `n2n-nexus update` to update the local host and global npm client together. Both check for updates daily by default and defer incompatible releases. The host verifies its running version after restarting.
+
 ## [0.14.1] - 2026-11-23
 
 Host-only release (`host-v0.14.1`); the npm client stays at 0.14.0 and contract version stays at 5. Upgrade the host and keep `nexus.db`; there is no database migration.

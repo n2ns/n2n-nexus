@@ -21,6 +21,7 @@ import (
 
 	"github.com/n2ns/n2n-nexus/host/internal/config"
 	"github.com/n2ns/n2n-nexus/host/internal/host"
+	"github.com/n2ns/n2n-nexus/host/internal/program"
 )
 
 // ErrNotElevated is returned when the command needs administrator / root rights.
@@ -97,6 +98,9 @@ func Health(addr string, timeout time.Duration) (HealthInfo, bool) {
 		return HealthInfo{}, false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return HealthInfo{}, false
+	}
 	var body struct {
 		Service  string `json:"service"`
 		Version  string `json:"version"`
@@ -309,5 +313,6 @@ func Executable() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Abs(exe)
+	stable, _ := program.Stable(exe)
+	return filepath.Abs(stable)
 }
