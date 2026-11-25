@@ -140,8 +140,11 @@ export async function updateGlobalClient(): Promise<void> {
             ? JSON.parse(fs.readFileSync(pendingFile, "utf8")) : undefined;
         if (pending?.version === pkg.version) finishRefresh(node, entry, pendingFile);
         stage = "read the latest release metadata from npm";
-        const release = JSON.parse(npmCommand(node, npm, ["view", `${pkg.name}@latest`, "version", "nexusContractVersion", "engines", "--json", "--prefer-online"])) as Candidate;
-        if (!release.version || !stableVersion.test(release.version)) throw new UpdateFailure("The npm latest tag does not name a stable release.");
+        const metadata: Candidate | Candidate[] = JSON.parse(npmCommand(node, npm, ["view", `${pkg.name}@latest`, "version", "nexusContractVersion", "engines", "--json", "--prefer-online"]));
+        // npm 12 wraps even a single version in an array. The latest tag must resolve to exactly one release.
+        const releases = Array.isArray(metadata) ? metadata : [metadata];
+        const [release] = releases;
+        if (releases.length !== 1 || !release?.version || !stableVersion.test(release.version)) throw new UpdateFailure("The npm latest tag does not name a stable release.");
         if (!newerStable(release.version, pkg.version)) {
             fs.rmSync(failureFile, { force: true });
             process.stdout.write(`Client ${pkg.version}: no newer stable release (npm latest: ${release.version}).\n`);

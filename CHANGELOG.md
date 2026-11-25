@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 For the first upgrade from 0.14.x, install the global client with `npm install -g n2n-nexus@0.15.0` and upgrade the host using its [original installation method](docs/INSTALL.md#8-upgrading). Keep `nexus.db`. There is no database migration, and the contract version remains 5. Both components check for compatible updates by default once they are on 0.15.0.
 
+- Manual and startup client updates read the latest release metadata from both npm 11 and npm 12.
+
 - Codex and pi installs write the direct-message block to both existing `AGENTS.override.md` and `AGENTS.md`, or just the one present. Codex installs follow Codex’s Unicode whitespace rules, keep a BOM-only override active and use or create `AGENTS.md` for blank overrides. Pi skips unreadable instruction files during install, update and uninstall and uses a readable `CLAUDE.md` fallback. Updates preserve edited or deleted instruction blocks and Antigravity rules.
 
 - The instructions block and the Antigravity rule now say that a direct message asking for an action your rules let only you ask for (deploying, releasing, tagging, deleting) counts as your explicit request.
